@@ -1,3 +1,4 @@
 device-scan/** -text -whitespace
 experiments/claude-hooks/results/** -text -whitespace
 experiments/claude-channels/results/** -text -whitespace
+artifacts/** -text -whitespace

@@ -1,0 +1,29 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "pet_art.h"
+
+#define SCENE_W 240
+#define SCENE_H 320
+#define SCENE_PET_SCALE 6
+#define SCENE_PET_X 24
+#define SCENE_PET_Y 36
+#define SCENE_LABEL_Y 250
+
+typedef struct {
+    pet_state_t state;
+    uint8_t frame;
+    bool test_pattern;
+    bool fill;
+    uint32_t fill_rgb;
+} scene_t;
+
+void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out);
+uint32_t scene_background_rgb(pet_state_t state, uint8_t frame);
+uint32_t scene_text_rgb(pet_state_t state);
+const char *scene_state_name(pet_state_t state);
+const char *scene_state_label(pet_state_t state);
+bool scene_state_from_name(const char *name, pet_state_t *state);
+uint16_t scene_rgb565_wire(uint32_t rgb);

@@ -1,6 +1,11 @@
 {
   "task": "funmedal",
   "prefix": "FM",
+  "fingerprint": {
+    "exclude": [
+      "artifacts/"
+    ]
+  },
   "items": [
     {
       "id": "FM-1",

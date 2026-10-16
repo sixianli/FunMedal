@@ -4,3 +4,7 @@ firmware-backup/
 experiments/*/firmware/build/
 experiments/*/firmware/sdkconfig.old
 experiments/*/mac/build/
+.venv/
+firmware/build/
+firmware/sdkconfig.old
+artifacts/**/serial.full.log
