@@ -20,8 +20,9 @@
 - **显示**：5 种状态，每种两帧画面，每 0.5 秒换一帧，看起来是动的。画面布局是上方一个 32×32 像素的小人（每个像素放大成 6×6 的方块），下方一行中文标签。
 - **按键**：每 10 ms 读一次 GPIO0 的电压，按电压认出是哪个键；连续 3 次读到同一个键才算数，用来滤掉抖动（按键接触瞬间电压来回跳）。按下、按住 0.7 秒、松开各报一次。
 - **USB 串口命令**：Mac 上的测试程序通过 USB 串口（卡片用 USB 线连 Mac 时出现的文字通道）切换状态、截取画面、读按键电压，见“USB 串口命令”。
+- **蓝牙收状态**：卡片是 BLE（低功耗蓝牙）外设，Mac 上的桥接程序连上后写入状态名，卡片就切到那个状态。服务编号、怎么连和桥接程序见 [bridge.md](bridge.md)（FM-13）。
 
-还不能做的：蓝牙连 Mac（FM-13）；按键触发批准或拒绝（FM-14，现在按键只从串口报出来）；录音（FM-15）；睡眠省电；读电池电量；原厂的电子名片功能。
+还不能做的：按键触发批准或拒绝（FM-14，现在按键只从串口报出来）；录音（FM-15）；睡眠省电；读电池电量；原厂的电子名片功能。
 
 ## 怎么编译和烧录
 
@@ -43,13 +44,14 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 ## 程序结构
 
-固件里有 3 个并行的任务（FreeRTOS 里同时运行的程序单元，优先级数字越大越先运行）：
+固件里有 4 个并行的任务（FreeRTOS 里同时运行的程序单元，优先级数字越大越先运行）：
 
 | 任务 | 优先级 | 做什么 | 代码 |
 | --- | --- | --- | --- |
 | 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件 | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
 | 显示 | 5 | 状态变了就重画；没变时每 0.5 秒换一帧 | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c) |
 | 串口命令 | 4 | 读 USB 串口上的命令并回复 | [console.c](../firmware/main/console.c) |
+| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入时在这个任务里切换状态并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
 
 - **画面怎么送到屏幕**：一帧 240×320 像素，每像素 2 字节（RGB565，一种红 5 位、绿 6 位、蓝 5 位的颜色格式）。程序每次只算 40 行，放进两块轮流使用的内存，用 DMA（不占 CPU、由硬件自己搬数据的传输方式）经 40 MHz 的 SPI 送给屏幕。
 - **小人和字是生成的**：[tools/gen_pet.py](../tools/gen_pet.py) 用代码画出 5 种状态各两帧的小人，生成 [pet_art.c](../firmware/main/pet_art.c)；[tools/gen_font.swift](../tools/gen_font.swift) 用 macOS 的字体把标签用到的 14 个汉字画成点阵，生成 `font_data.c`：字号 30，每个字占 30 像素宽、43 像素高的格子，每个像素有 16 级透明度。改了图案或标签文字后要重新生成。2026-10-16 用下面的命令重新生成过一次，两个文件和仓库里的逐字节相同：
@@ -67,7 +69,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。
 
 两类输出的发送规则不同：
 
@@ -76,7 +78,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行） |
+| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`uptime_s`（开机多少秒） |
 | `state <idle\|working\|waiting\|done\|error>` | 切换状态 |
 | `frame <0\|1\|auto>` | 固定显示某一帧，或恢复自动换帧 |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
@@ -85,6 +87,8 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `lcd invert\|bgr <0\|1>`、`lcd mirror <0\|1> <0\|1>`、`lcd gap <x> <y>` | 调屏幕的颜色反转、颜色顺序、镜像、偏移；会按新设置重建屏幕驱动，成功回 `OK lcd <全部屏幕设置>`。重建失败时退回原来的设置；退回也失败时串口上会多一行 ESP-IDF 的错误日志，之后每次画屏都失败，`info` 的 `draw_errors` 会一直增加 |
 | `adc <1-120>` | 在给定秒数内每 20 ms 回一行 `ADC <毫伏> <原始读数> <判断>`，结束时回 `ADC END` |
 | `backlight <0-100>` | 调背光亮度 |
+| `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
+| `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
 
@@ -155,6 +159,7 @@ Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/
 | --- | --- | --- |
 | [test_firmware_host.py](../tests/test_firmware_host.py) 的按键逻辑 | 在 Mac 上编译固件的按键代码：电压怎么归到键、判断范围的边界、抖动、长按只报一次、计时器绕回、电压表里每个键只出现一次且相邻两档不重叠 | 不要 |
 | 同一文件的录音回放 | 把 [hardware.md](hardware.md) 里录的真实按键电压交给按键代码，要求正好得到确认、上、下各一次“按下、长按、松开”。录音是每 20 ms 一个点，固件实际每 10 ms 读一次，所以回放时防抖要的 3 个点是 60 ms 而不是 30 ms；电压表又是从这份录音定出来的，回放通过只说明代码和表配得上，换一次按键能不能认对要看下面的真实按键测试 | 不要 |
+| 同一文件的蓝牙状态名（FM-13） | 在 Mac 上编译固件的状态名检查：5 个状态名原样写入才接受；空内容、少字、多字、夹着或结尾带空字节、带换行、大小写不同都拒绝 | 不要 |
 | [test_card_display.py](../tests/test_card_display.py) 的状态画面 | 5 种状态 × 2 帧：四角是该状态的背景色；小人区域里有足够多的非背景像素；标签是该状态的文字颜色、宽度符合字数、水平居中；同一状态两帧不同；不同状态画面不同 | 要 |
 | 同一文件的测试图 | 白边框、四角颜色、三角形位置 | 要 |
 | 同一文件的显示任务 | 自动换帧时，重建屏幕驱动之前和之后各看 2 秒：每段里两帧都真的画到了屏幕上，并且各画了至少 3 次；画失败次数不变 | 要 |
@@ -162,6 +167,8 @@ Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/
 | 同一文件的串口堵住 | Mac 不读串口、卡片发不出去时，按键任务读电压的间隔仍不超过 100 ms，报不出去的行被丢掉而不是等着；排队的 16 条截图命令每条都有着落：完整、回 `ERR`，或者记进 `replies_dropped`；读按键电压一次也没出错 | 要 |
 | 同一文件的错误命令 | 5 种写错的命令都回 `ERR`，之后卡片照常回应 | 要 |
 | 同一文件的真实按键 | 用户依次按住上、中、下三个键，卡片报出的事件正好是三个键各一次“按下、长按、松开”，并且读按键电压一次也没出错。等按键期间卡片一直报电压，所有不是“没按”的读数存进 `key-adc.json`，没认出按键时能看出按下时电压变没变 | 要，还要有人按键 |
+
+`tests/` 下还有 FM-13 的 [test_bridge.py](../tests/test_bridge.py)，查蓝牙和 Mac 桥接程序，它查什么见 [bridge.md](bridge.md) 的“测试要覆盖的出错情况”。它要求先运行 `sh mac/bridge/build.sh` 编好桥接程序、蓝牙已允许，还会启动三次真实的终端版 Claude Code 会话，所以终端里的 `claude` 要已登录，每次会消耗少量 Haiku（Anthropic 最便宜的一档模型）用量。
 
 跑法（卡片接着 USB；真实按键那一项默认跳过）：
 

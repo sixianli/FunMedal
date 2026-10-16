@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "pet_art.h"
@@ -25,5 +26,6 @@ uint32_t scene_background_rgb(pet_state_t state, uint8_t frame);
 uint32_t scene_text_rgb(pet_state_t state);
 const char *scene_state_name(pet_state_t state);
 const char *scene_state_label(pet_state_t state);
+bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state);
 bool scene_state_from_name(const char *name, pet_state_t *state);
 uint16_t scene_rgb565_wire(uint32_t rgb);

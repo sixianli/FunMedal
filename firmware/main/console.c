@@ -7,10 +7,12 @@
 #include <string.h>
 
 #include "app.h"
+#include "ble_link.h"
 #include "display.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_check.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,10 +20,11 @@
 
 #define FIRMWARE_VERSION "funmedal-0.1"
 #define LINE_MAX_LEN 96
-#define LINE_OUT_MAX 320
+#define LINE_OUT_MAX 384
 #define WRITE_TRY_MS 20
 #define WRITE_LIMIT_US (2000 * 1000LL)
 #define EVENT_WAIT_MS 5
+#define REBOOT_DELAY_MS 100
 
 static const char *TAG = "console";
 static _Atomic uint32_t events_dropped;
@@ -39,13 +42,15 @@ static void print_info(void)
     int shown_frame;
     app_get_draw_stats(&draws, &draw_errors, &shown_frame);
     console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
-                   "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu\n",
+                   "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
+                   "ble=%s ble_writes=%lu uptime_s=%lld\n",
                    FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
                    frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
-                   (unsigned long)key_input_adc_errors());
+                   (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
+                   (unsigned long)ble_link_writes(), (long long)(esp_timer_get_time() / 1000000));
 }
 
 static bool write_all(const char *data, size_t size, int64_t *waited_us, int *timeouts)
@@ -137,6 +142,19 @@ static void snap(void)
         return;
     }
     console_printf("SNAP END max_wait_ms=%d write_timeouts=%d\n", (int)(max_wait_us / 1000), timeouts);
+}
+
+static void print_stacks(void)
+{
+    static const char *const names[] = {"keys", "display", "console", "nimble_host"};
+    char line[LINE_OUT_MAX];
+    int len = snprintf(line, sizeof(line), "OK stacks");
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        TaskHandle_t task = xTaskGetHandle(names[i]);
+        len += snprintf(line + len, sizeof(line) - (size_t)len, " %s=%ld", names[i],
+                        task != NULL ? (long)uxTaskGetStackHighWaterMark(task) : -1L);
+    }
+    console_printf("%s\n", line);
 }
 
 static bool parse_flag(const char *text, bool *value)
@@ -233,6 +251,12 @@ static void handle(char *line)
         }
         console_printf("OK adc %d\n", seconds);
         key_input_stream(seconds);
+    } else if (strcmp(line, "stacks") == 0) {
+        print_stacks();
+    } else if (strcmp(line, "reboot") == 0) {
+        console_printf("OK reboot\n");
+        vTaskDelay(pdMS_TO_TICKS(REBOOT_DELAY_MS));
+        esp_restart();
     } else if (strcmp(line, "backlight") == 0) {
         display_backlight(atoi(args));
         console_printf("OK backlight %d\n", atoi(args));

@@ -1,4 +1,5 @@
 #include "app.h"
+#include "ble_link.h"
 #include "console.h"
 #include "display.h"
 #include "esp_log.h"
@@ -140,5 +141,6 @@ void app_main(void)
     xTaskCreate(display_task, "display", 4096, NULL, 5, &display_task_handle);
     ESP_ERROR_CHECK(console_start());
     ESP_ERROR_CHECK(key_input_start(on_key));
+    ESP_ERROR_CHECK(ble_link_start());
     console_event("READY funmedal-0.1\n");
 }

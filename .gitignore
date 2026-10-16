@@ -8,3 +8,5 @@ experiments/*/mac/build/
 firmware/build/
 firmware/sdkconfig.old
 artifacts/**/serial.full.log
+mac/bridge/build/
+__pycache__/

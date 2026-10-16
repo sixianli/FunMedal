@@ -58,15 +58,20 @@ const char *scene_state_label(pet_state_t state)
     return STYLES[state].label;
 }
 
-bool scene_state_from_name(const char *name, pet_state_t *state)
+bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state)
 {
     for (int i = 0; i < PET_STATE_COUNT; i++) {
-        if (strcmp(name, STYLES[i].name) == 0) {
+        if (strlen(STYLES[i].name) == len && memcmp(data, STYLES[i].name, len) == 0) {
             *state = (pet_state_t)i;
             return true;
         }
     }
     return false;
+}
+
+bool scene_state_from_name(const char *name, pet_state_t *state)
+{
+    return scene_state_from_bytes(name, strlen(name), state);
 }
 
 static uint32_t pattern_pixel(int x, int y)
