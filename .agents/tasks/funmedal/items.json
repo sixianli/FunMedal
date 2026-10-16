@@ -186,6 +186,10 @@
         "by": "claude",
         "on": "2026-10-16",
         "why": "notes/notifications.md 里有 4 项未确认"
+      },
+      "withdrawn": {
+        "on": "2026-10-16",
+        "ref": "G19"
       }
     },
     {
@@ -206,7 +210,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G19",
           "question": "手机和电脑的应用通知汇总，算不算在使命范围内？"
         }
       ],
@@ -286,11 +290,12 @@
     },
     {
       "id": "FM-14",
-      "title": "“离开”开关配合 PermissionRequest hook，在卡片上批准或拒绝",
+      "title": "PermissionRequest hook 等卡片按键：在卡片上批准或拒绝，终端和卡片哪边先答算哪边",
       "goal_ref": [
         "G1",
         "G12",
-        "G15"
+        "G15",
+        "G18"
       ],
       "done_when": [
         {
@@ -329,6 +334,38 @@
         "by": "claude",
         "on": "2026-10-16",
         "why": "G15 要求语音也在第一阶段做好"
+      }
+    },
+    {
+      "id": "FM-16",
+      "title": "开源发布准备：同款卡片的用户照着 README 能从零装好，仓库里没有不能公开的内容",
+      "goal_ref": [
+        "G17",
+        "G21"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "FM-16"
+        },
+        {
+          "type": "doc",
+          "path": "README.md",
+          "heading": "安装"
+        },
+        {
+          "type": "doc",
+          "path": "LICENSE"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "用户要求能在 GitHub 开源给同款卡片的人安装（G17），许可证选 MIT（G21）"
       }
     }
   ]
