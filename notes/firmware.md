@@ -48,28 +48,33 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 任务 | 优先级 | 做什么 | 代码 |
 | --- | --- | --- | --- |
-| 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件 | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
+| 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件；批准画面和配对画面里的按键也在这里处理（见 [approval.md](approval.md)）；串口 `key` 命令注入的按键同样在这个任务里处理。栈 4096 字节（FM-14 从 3072 加大，见 approval.md 的“实测结果”第 5 条） | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
 | 显示 | 5 | 状态变了就重画；没变时每 0.5 秒换一帧 | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c) |
 | 串口命令 | 4 | 读 USB 串口上的命令并回复 | [console.c](../firmware/main/console.c) |
-| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入时在这个任务里切换状态并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
+| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入、批准请求写入和配对过程的消息时，都在这个任务里处理并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
 
 - **画面怎么送到屏幕**：一帧 240×320 像素，每像素 2 字节（RGB565，一种红 5 位、绿 6 位、蓝 5 位的颜色格式）。程序每次只算 40 行，放进两块轮流使用的内存，用 DMA（不占 CPU、由硬件自己搬数据的传输方式）经 40 MHz 的 SPI 送给屏幕。
-- **小人和字是生成的**：[tools/gen_pet.py](../tools/gen_pet.py) 用代码画出 5 种状态各两帧的小人，生成 [pet_art.c](../firmware/main/pet_art.c)；[tools/gen_font.swift](../tools/gen_font.swift) 用 macOS 的字体把标签用到的 14 个汉字画成点阵，生成 `font_data.c`：字号 30，每个字占 30 像素宽、43 像素高的格子，每个像素有 16 级透明度。改了图案或标签文字后要重新生成。2026-10-16 用下面的命令重新生成过一次，两个文件和仓库里的逐字节相同：
+- **小人和字是生成的**：[tools/gen_pet.py](../tools/gen_pet.py) 用代码画出 5 种状态各两帧的小人，生成 [pet_art.c](../firmware/main/pet_art.c)。改了图案后要重新生成。2026-10-16 用下面的命令重新生成过一次，和仓库里的逐字节相同：
 
   ```bash
   .venv/bin/python tools/gen_pet.py firmware/main/pet_art.c
   ```
 
+- **字体**：卡片上的字用 Noto Sans SC（Google 和 Adobe 做的开源中文字体，SIL Open Font License 授权，允许把字形嵌进程序再分发，G22）生成两套点阵：大字 `font_large.c`（30 像素，用于标签、标题和配对数字）和正文 `font_text.c`（16 像素，用于批准内容和按键提示）。每个像素有 16 级透明度。[tools/gen_fonts.py](../tools/gen_fonts.py) 从 [scene.c](../firmware/main/scene.c) 的字符串里找出所有汉字，再调用 [tools/gen_font.swift](../tools/gen_font.swift) 画成点阵；正文字体另外包括全部英文字母、数字、符号和省略号 `…`。改了屏幕上的文字后要重新生成。字体文件本身不进 git：先把 `https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf` 下载到 `third_party/noto-sans-sc/`，脚本会核对它的 SHA-256，对不上就停下：
+
   ```bash
-  swiftc -O tools/gen_font.swift -o "$TMPDIR/gen_font" && "$TMPDIR/gen_font" PingFangSC-Semibold "空闲干活中等你批准完成了出错" 30 firmware/main/font_data.c
+  .venv/bin/python tools/gen_fonts.py
   ```
+
+  Mac 上的测试 `[FM-14] both fonts hold every character the screens draw` 会检查两套字体里有没有屏幕要画的每一个字。
+- **蓝牙设置**写在 [sdkconfig.defaults](../firmware/sdkconfig.defaults)（ESP-IDF 的编译选项）：只允许 LE Secure Connections 配对（`CONFIG_BT_NIMBLE_SM_LEGACY=n`、`CONFIG_BT_NIMBLE_SM_SC_ONLY=1`），绑定信息存进 NVS（`CONFIG_BT_NIMBLE_NVS_PERSIST=y`），每次传输的上限 512 字节（`CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512`），蓝牙任务的栈 6144 字节（`CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144`）。为什么要配对加密见 [approval.md](approval.md)。
 - **按键电压表**单独放在 [key_levels.c](../firmware/main/key_levels.c)，这样 Mac 上的测试能直接用同一份表。
 
 ## USB 串口命令
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。
 
 两类输出的发送规则不同：
 
@@ -78,7 +83,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`uptime_s`（开机多少秒） |
+| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`prompt`（正在显示的批准请求编号，没有时是 `none`）、`sec`（蓝牙连接的加密状态）、`uptime_s`（开机多少秒） |
 | `state <idle\|working\|waiting\|done\|error>` | 切换状态 |
 | `frame <0\|1\|auto>` | 固定显示某一帧，或恢复自动换帧 |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
@@ -88,6 +93,8 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `adc <1-120>` | 在给定秒数内每 20 ms 回一行 `ADC <毫伏> <原始读数> <判断>`，结束时回 `ADC END` |
 | `backlight <0-100>` | 调背光亮度 |
 | `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
+| `key <ok\|up\|down> <press\|long\|hold <毫秒>>` | 模拟一次按键，走和真按键相同的处理，测试用它代替人按键，见 [approval.md](approval.md) |
+| `ble unpair` | 清掉卡片上的全部蓝牙绑定，见 [approval.md](approval.md) |
 | `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
@@ -203,7 +210,3 @@ A=artifacts/fm12-suite-$(date +%Y%m%d-%H%M%S); FM_ARTIFACTS=$A .venv/bin/python 
 - [fm12-slowreader-before-fix-20261016-192338](../artifacts/fm12-slowreader-before-fix-20261016-192338/)：“Mac 读得慢”的猜测，修之前就通过，这个猜测因此被排除，测试随后删掉了。
 
 这些目录里原始的完整串口记录改名为 `serial.full.log`，只留在本机，不进 git。这些目录原来放在 `tests/artifacts/`，2026-10-16 移到了项目根目录的 `artifacts/`：放在 `tests/` 下时，任务进度工具 `longtask.py` 会把报告 `junit.xml` 当成测试文件。所以旧报告里写的路径还是 `tests/artifacts/…`。
-
-## 要跟进的
-
-- **字体授权**：标签点阵是用 macOS 自带的苹方字体（PingFang SC）生成的。没有核对苹方的授权是否允许把字形放进卡片固件里分发。把固件发给别人之前，要换成明确允许嵌入和再分发的字体，例如思源黑体（Source Han Sans，用 SIL Open Font License 授权，这种授权允许自由嵌入和再分发），然后重新生成 `font_data.c`。

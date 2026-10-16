@@ -93,3 +93,43 @@ enum UnixSocket {
         return (try? JSONSerialization.jsonObject(with: reply)) as? [String: Any]
     }
 }
+
+final class LineReader {
+    enum Result {
+        case line(Data)
+        case closed(Data)
+        case tooLong
+        case timeout
+    }
+
+    private let fd: Int32
+    private let limit: Int
+    private var buffer = Data()
+
+    init(fd: Int32, limit: Int) {
+        self.fd = fd
+        self.limit = limit
+    }
+
+    func next(until deadline: Date) -> Result {
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        while true {
+            if let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                let line = Data(buffer[buffer.startIndex..<newline])
+                buffer.removeSubrange(buffer.startIndex...newline)
+                return .line(line)
+            }
+            if buffer.count > limit { return .tooLong }
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining <= 0 { return .timeout }
+            var request = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let rc = poll(&request, 1, Int32(min(remaining * 1000, Double(Int32.max))))
+            if rc < 0 && errno == EINTR { continue }
+            if rc < 0 { return .closed(buffer) }
+            if rc == 0 { continue }
+            let n = read(fd, &chunk, chunk.count)
+            if n <= 0 { return .closed(buffer) }
+            buffer.append(contentsOf: chunk[0..<n])
+        }
+    }
+}

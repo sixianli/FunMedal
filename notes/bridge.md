@@ -41,7 +41,7 @@
 
 ## 卡片怎么收状态
 
-卡片开一个蓝牙服务，编号 `6d2f1001-6b0e-4a8e-9a4b-46756e4d6564`，对外广播的名字是 `FunMedal`。服务里只有一个特征值（蓝牙里用来读写数据的小格子）：
+卡片开一个蓝牙服务，编号 `6d2f1001-6b0e-4a8e-9a4b-46756e4d6564`，对外广播的名字是 `FunMedal`。服务里和状态有关的是下面这个特征值（蓝牙里用来读写数据的小格子）；FM-14 加的批准用的两个特征值、以及所有特征值都要求配对加密，见 [approval.md](approval.md)：
 
 | 名字 | 编号 | 怎么用 |
 | --- | --- | --- |
@@ -68,7 +68,9 @@
 | `UserPromptSubmit`（用户发了指令） | 干活中，清空在等批准的操作 |
 | `PreToolUse`（准备用工具） | 干活中 |
 | `PermissionRequest`（要用户批准） | 把这个操作加进在等批准的操作，干活中 |
-| `PostToolUse` / `PostToolUseFailure`（工具用完 / 运行失败） | 把同一个操作从在等批准的操作里去掉，干活中 |
+| `PostToolUse` / `PostToolUseFailure`（工具用完 / 运行失败） | 把同一个操作从在等批准的操作里去掉（在卡片上批准过的，先抵掉那一次批准），干活中 |
+| 卡片上答了一个请求（FM-14） | 把这个操作从在等批准的操作里去掉 |
+| 终端里拒绝，等卡片的 hook 被 Claude Code 结束（FM-14） | 把这个操作从在等批准的操作里去掉；这个会话没有别的在等时改成空闲（G23） |
 | `Stop`（答完一轮） | 完成了，清空在等批准的操作 |
 | `StopFailure`（因为接口出错结束这一轮，比如额度用完） | 出错了，清空在等批准的操作 |
 | `SessionEnd`（会话结束） | 删掉这个会话 |
@@ -76,7 +78,8 @@
 其中几条的理由：
 
 - **为什么记“一组”等批准的操作**：Claude 可能一次发起几个要批准的操作。批准一个后，别的还在等，卡片应该仍然显示“等你批准”。`PermissionRequest` 的输入里没有操作编号，所以用“工具名 + 工具参数”认出是同一个操作。
-- **在终端里拒绝（按 Esc 或选“3. No”）或按 Esc 打断后，卡片停在原来的状态**：这时 Claude Code 不发出任何 hook 事件，桥接程序无从得知。卡片会一直显示“等你批准”或“干活中”，直到用户发出下一条指令（`UserPromptSubmit` 会清空在等批准的操作）或结束会话。实测见下文“实测结果”第 3 条。这时人就在终端前，刚亲手拒绝过，卡片显示过时的状态影响小。项目负责人 2026-10-16 确认就这样处理。
+- **在终端里拒绝（按 Esc 或选“3. No”）**：这时 Claude Code 不发出任何 hook 事件（实测见下文“实测结果”第 3 条）。FM-13 时卡片因此一直显示“等你批准”，直到下一条指令。FM-14 起 `PermissionRequest` 的 hook 会一直等卡片的回答，而终端里拒绝时 Claude Code 会结束这个 hook 进程，桥接程序看到连接断开就知道了，卡片改成空闲（项目负责人 2026-10-16 选定，G23；实测见 [approval.md](approval.md)）。将来 Claude Code 不再结束 hook 进程时，退回 FM-13 的表现。
+- **生成回答时按 Esc 打断，卡片停在“干活中”**：这时也没有 hook 事件，而且没有在等的 hook 可以断开，桥接程序无从得知。卡片一直显示“干活中”，直到下一条指令或结束会话。这时人就在终端前，影响小。项目负责人 2026-10-16 确认就这样处理。
 - **为什么不用 `Notification` 的 `idle_prompt`**：`idle_prompt` 是 Claude Code 在输入框前闲了约 60 秒时发出的通知。原本打算用它纠正上一条，实测它只在正常答完一轮（`Stop`）之后出现，打断以后不出现，所以纠正不了。正常答完时卡片已经是“完成了”，也不该改成空闲，因为卡片的用处就是让人回来时还能看到“完成了”。
 - **为什么不读会话记录文件**：打断时，Claude Code 的会话记录文件（`transcript_path` 指向的 JSONL 文件，每行一个 JSON）里会出现 `[Request interrupted by user for tool use]`。这个格式不在官方文档里，升级后可能改变，所以没有用。
 
@@ -94,10 +97,10 @@
 
 ## hook 模式的规矩
 
-- **从不挡住 Claude Code**：桥接程序没在运行、套接字连不上、输入不是 JSON，都直接退出，退出码是 0。连接和读写都有 1 秒上限。hook 命令本身的参数写错时（比如 `--socket` 后面没有路径），退出码是 64；按官方文档，退出码不是 0 也不是 2 的 hook 算“不挡事的出错”，操作照常进行，会话记录里会多一条 `hook error` 提示。
+- **从不挡住 Claude Code**：桥接程序没在运行、套接字连不上、输入不是 JSON，都直接退出，退出码是 0。连接和读写都有 1 秒上限；`PermissionRequest` 不同，桥接程序确认收到请求最多等 2 秒，之后一直等回答，见 [approval.md](approval.md) 的“hook 模式的变化”。hook 命令本身的参数写错时（比如 `--socket` 后面没有路径），退出码是 64；按官方文档，退出码不是 0 也不是 2 的 hook 算“不挡事的出错”，操作照常进行，会话记录里会多一条 `hook error` 提示。
 - **不往标准输出写任何东西**：`SessionStart` 和 `UserPromptSubmit` 的 hook 往标准输出写的内容，会被 Claude Code 当成上下文交给 Claude。
-- **不给批准决定**：`PermissionRequest` 的 hook 什么都不答，终端里的批准弹窗照常等人回答（[claude-code.md](claude-code.md) 实测过这种情况）。
-- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），以及“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同）。不传工具参数本身、命令内容、文件内容、工作目录或用户的指令。桥接程序的记录里也就只有这些。
+- **批准请求要等卡片**：FM-14 起，`PermissionRequest` 的 hook 不马上退出，而是等卡片上的回答，规则见 [approval.md](approval.md)。终端里的批准弹窗照常显示，哪边先答算哪边。其他事件仍然马上退出。
+- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），以及“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同）。不传工具参数本身、命令内容、文件内容、工作目录或用户的指令。唯一的例外是 `PermissionRequest` 多传一段要显示在卡片上的 `summary`，它不写进桥接程序的记录（见 [approval.md](approval.md)）。
 
 ## 怎么配置
 
@@ -107,7 +110,7 @@
    sh mac/bridge/build.sh
    ```
 
-2. **启动常驻程序**：`-g` 表示在后台打开，不抢走当前窗口。不加 `--socket` 时，套接字在 `~/Library/Application Support/FunMedal/bridge.sock`。想留记录就加 `--log <文件路径>`，收到的事件、蓝牙连接和每次写入都会记成一行 JSON。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。开发中重新编译过多次，授权一直保持“允许”；换一台 Mac 或换签名后会不会再问，没有测过。
+2. **启动常驻程序**：`-g` 表示在后台打开，不抢走当前窗口。不加 `--socket` 时，套接字在 `~/Library/Application Support/FunMedal/bridge.sock`。想留记录就加 `--log <文件路径>`，收到的事件、蓝牙连接和每次写入都会记成一行 JSON。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。**每次改了代码重新编译后，macOS 都会再问一次**：临时签名没有固定的身份，macOS 按程序内容的指纹记住授权，内容变了就当成新程序。2026-10-16 到 17 日系统授权日志（`tccd` 进程的日志）里有 6 次这样的询问，每次都是用户点的允许；询问没人回答时，桥接程序一直连不上卡片，`status` 里 `authorization` 是 `notDetermined`。
 
    ```bash
    open -g mac/bridge/build/FunMedalBridge.app --args serve
@@ -119,7 +122,7 @@
    mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
    ```
 
-4. **接上 Claude Code**：在 `~/.claude/settings.json` 的 `hooks` 里，给 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 这 9 个事件各加一条同样的命令。下面是其中一个事件的写法，`<仓库路径>` 换成 FunMedal 仓库的绝对路径：
+4. **接上 Claude Code**：在 `~/.claude/settings.json` 的 `hooks` 里，给 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 这 9 个事件各加一条同样的命令。`PermissionRequest` 那一条的 `timeout` 写 600，其他写 5。下面是其中一个事件的写法，`<仓库路径>` 换成 FunMedal 仓库的绝对路径：
 
    ```json
    {
@@ -142,7 +145,7 @@
 | --- | --- | --- | --- |
 | 1 | 真实会话走一遍：发指令、要批准、在终端批准、答完、退出 | 卡片依次显示干活中、等你批准、干活中、完成了、空闲 | 真实 Claude Code 会话 |
 | 2 | 要批准时卡片慢了 | 从桥接程序收到 hook 送来的 `PermissionRequest` 到卡片报 `STATE waiting` 不超过 1 秒；测试在卡片显示“等你批准”之后才在终端批准 | 同上，记录两边的时间 |
-| 3 | 用户在终端拒绝 | 卡片停在等你批准，直到用户发出下一条指令；之后照常显示干活中、完成了、空闲 | 真实会话，按 Esc 和选“3. No”各测一次，拒绝后等 15 秒再发下一条指令 |
+| 3 | 用户在终端拒绝 | FM-14 起改为：卡片 0.5 秒内撤掉提示、变回空闲，测试移到 [approval.md](approval.md) 的第 4 条 | 见 approval.md |
 | 4 | 卡片重启丢了状态 | 桥接程序重新连上，卡片恢复成应有的状态 | 模拟 hook 事件 + 让卡片重启 |
 | 5 | 桥接程序启动时卡片显示着别的状态 | 连上后卡片改成应有的状态 | 同上 |
 | 6 | 几个会话同时在跑 | 按上面的顺序显示；会话结束后不再算它 | 模拟 hook 事件 |
@@ -155,6 +158,25 @@
 | 13 | 蓝牙让卡片上的任务栈不够用 | 跑完其余蓝牙测试后，每个任务的栈至少还剩 1024 字节 | 卡片的 `stacks` 命令；这一项排在卡片重启测试前面，因为重启会让记录从头算 |
 
 “模拟 hook 事件”是把和 Claude Code 格式相同的 JSON 交给真实的 `hook` 命令，经过真实的套接字、蓝牙和卡片，只是不启动 Claude Code。这样能稳定地重现几个会话、几个操作同时等批准这类真实会话里难以控制的情况。
+
+## status 和记录里的批准信息
+
+FM-14 起，`status` 打印的 JSON 多了几项：
+
+- `prompt`：卡片确认收到的、正在显示的请求编号；没有时是 `null`。
+- `approvals`：还在等回答的请求，每个有 `id`（编号）、`session`、`tool`（工具名），最早的排在最前，卡片显示的就是它。
+- `sessions` 里每个会话的 `pending`：这个会话还有几个操作在等批准。
+
+`--log` 记录里多了几种行，`kind` 是：
+
+| `kind` | 什么时候记 | 字段 |
+| --- | --- | --- |
+| `approval` | hook 送来一个批准请求 | `id`、`session`、`tool` |
+| `prompt` | 卡片该显示的请求变了 | `id`（没有时是 `null`）、`count`（一共几个） |
+| `answer` | 桥接程序回答了一个 hook | `id`；`decision` 是 `allow`、`deny`，或 `released`（不回答，让 hook 退出）；`why` 是 `card`（卡片上答的），或 `post_tool_use`、`prompt`、`stop`、`stop_failure`、`session_end`（因为这些事件放走的） |
+| `approval_closed` | 和 hook 的连接结束 | `id`；`how` 是 `answered`（已回答）、`gave_up`（hook 等到自己的上限）或 `hung_up`（hook 被结束，也就是终端里拒绝了） |
+
+写给卡片的请求只记编号，不记内容。
 
 ## 实测结果
 
@@ -170,10 +192,8 @@
 
 ## 还没做的
 
-- **终端拒绝和打断后卡片显示过时的状态**：见上文“桥接程序怎么算状态”，项目负责人已确认这样处理。FM-14 让 `PermissionRequest` hook 等卡片按键时，这个 hook 进程在终端先答后不会被结束（[claude-code.md](claude-code.md) 的结论第 3 条），到时候要另想办法撤掉卡片上的提示。
-
+- **打断后卡片显示过时的状态**：见上文“桥接程序怎么算状态”，项目负责人已确认这样处理。
 - **卡片和 Mac 断开时屏幕上看不出来**：卡片会一直显示最后收到的状态。要显示成什么样，需要另外定。
-- **配对加密**：连接没有加密，附近任何设备都能连上卡片改它显示的状态。只显示状态时影响有限；FM-14 要用按键批准操作，必须先解决。
 - **认准自己的卡片**：桥接程序连第一张搜到的卡片。附近有两张卡片时会连错。没在连的那张卡片迟到的连接、断开消息会被忽略，不会打断已经连好的那张，但这一点只按代码检查过，手上只有一张卡片，没有实测。
 - **Mac 蓝牙关掉再打开**：按 Apple 文档，蓝牙重置时原来拿到的卡片对象会失效，所以桥接程序在蓝牙不可用时丢掉它，恢复后重新搜索。测试不能去动系统的蓝牙开关，这一点没有实测。
 - **一个会话答完后一直显示“完成了”**：“完成了”要等那个会话收到下一条指令或结束才会消失，而且排在“干活中”前面。所以开着一个答完的会话时，另一个会话在干活，卡片也显示“完成了”。

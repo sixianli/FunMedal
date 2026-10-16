@@ -41,16 +41,24 @@ static void print_info(void)
     uint32_t draw_errors;
     int shown_frame;
     app_get_draw_stats(&draws, &draw_errors, &shown_frame);
+    char prompt[12];
+    char security[40];
+    if (scene.prompt.active) {
+        snprintf(prompt, sizeof(prompt), "%lu", (unsigned long)scene.prompt.id);
+    } else {
+        snprintf(prompt, sizeof(prompt), "none");
+    }
+    ble_link_security(security, sizeof(security));
     console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
-                   "ble=%s ble_writes=%lu uptime_s=%lld\n",
+                   "ble=%s ble_writes=%lu prompt=%s sec=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
                    frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
                    (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
-                   (unsigned long)ble_link_writes(), (long long)(esp_timer_get_time() / 1000000));
+                   (unsigned long)ble_link_writes(), prompt, security, (long long)(esp_timer_get_time() / 1000000));
 }
 
 static bool write_all(const char *data, size_t size, int64_t *waited_us, int *timeouts)
@@ -200,6 +208,62 @@ static void lcd_command(char *args)
                    config.mirror_y, config.gap_x, config.gap_y);
 }
 
+static void key_command(char *args)
+{
+    char *which = strtok(args, " ");
+    char *how = strtok(NULL, " ");
+    key_id_t key = KEY_UNKNOWN;
+    if (which != NULL) {
+        for (key_id_t k = KEY_OK; k < KEY_COUNT; k++) {
+            if (strcmp(which, keys_name(k)) == 0) {
+                key = k;
+            }
+        }
+    }
+    char *ms = strtok(NULL, " ");
+    key_inject_kind_t kind = KEY_INJECT_TAP;
+    unsigned long hold_ms = 0;
+    bool valid_how = false;
+    if (how != NULL && strcmp(how, "press") == 0 && ms == NULL) {
+        valid_how = true;
+    } else if (how != NULL && strcmp(how, "long") == 0 && ms == NULL) {
+        kind = KEY_INJECT_LONG;
+        valid_how = true;
+    } else if (how != NULL && strcmp(how, "hold") == 0 && ms != NULL) {
+        char *end = NULL;
+        hold_ms = strtoul(ms, &end, 10);
+        kind = KEY_INJECT_HOLD;
+        valid_how = end != ms && *end == '\0' && hold_ms >= 1 && hold_ms <= KEY_INJECT_HOLD_MAX_MS;
+    }
+    if (key == KEY_UNKNOWN || !valid_how || strtok(NULL, " ") != NULL) {
+        console_printf("ERR key usage: key ok|up|down press|long|hold <1-%d>\n", KEY_INJECT_HOLD_MAX_MS);
+        return;
+    }
+    if (!key_input_inject(key, kind, (uint32_t)hold_ms)) {
+        console_printf("ERR key queue full\n");
+        return;
+    }
+    if (kind == KEY_INJECT_HOLD) {
+        console_printf("OK key %s hold %lu\n", which, hold_ms);
+    } else {
+        console_printf("OK key %s %s\n", which, how);
+    }
+}
+
+static void ble_command(char *args)
+{
+    if (strcmp(args, "unpair") != 0) {
+        console_printf("ERR ble usage: ble unpair\n");
+        return;
+    }
+    int rc = ble_link_unpair();
+    if (rc != 0) {
+        console_printf("ERR ble unpair rc=%d\n", rc);
+        return;
+    }
+    console_printf("OK ble unpair\n");
+}
+
 static void handle(char *line)
 {
     char *space = strchr(line, ' ');
@@ -251,6 +315,10 @@ static void handle(char *line)
         }
         console_printf("OK adc %d\n", seconds);
         key_input_stream(seconds);
+    } else if (strcmp(line, "key") == 0) {
+        key_command(args);
+    } else if (strcmp(line, "ble") == 0) {
+        ble_command(args);
     } else if (strcmp(line, "stacks") == 0) {
         print_stacks();
     } else if (strcmp(line, "reboot") == 0) {

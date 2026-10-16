@@ -1,5 +1,6 @@
 import argparse
 import glob
+import re
 import sys
 import time
 import zlib
@@ -73,24 +74,45 @@ class Card:
         return self.read_snapshot(timeout)
 
     def read_snapshot(self, timeout: float = 30.0) -> tuple[dict, int, int, bytes]:
-        header = self.wait_for(lambda l: l.startswith("SNAP BEGIN"), timeout)
-        parts = header.split()
-        width, height = int(parts[2]), int(parts[3])
-        meta = dict(p.split("=", 1) for p in parts[4:])
-        rows: dict[int, bytes] = {}
-        while True:
-            line = self.wait_for(lambda l: l.startswith("SNAP "), timeout)
-            if line.startswith("SNAP END"):
-                meta.update(p.split("=", 1) for p in line.split()[2:])
-                break
-            try:
-                _, y, data = line.split(" ", 2)
-                rows[int(y)] = bytes.fromhex(data)
-            except ValueError as error:
-                raise RuntimeError(f"corrupted snapshot line: {line[:24]}... ({len(line)} characters)") from error
-        if sorted(rows) != list(range(height)) or any(len(r) != width * 2 for r in rows.values()):
-            raise RuntimeError("incomplete snapshot")
-        return meta, width, height, b"".join(rows[y] for y in range(height))
+        lines = [self.wait_for(lambda l: l.startswith("SNAP BEGIN"), timeout)]
+        while not lines[-1].startswith("SNAP END"):
+            lines.append(self.wait_for(lambda l: l.startswith("SNAP "), timeout))
+        return parse_snapshot(lines)
+
+
+SNAP_ROW = re.compile(r"SNAP \d+ [0-9a-f]{960}$")
+
+
+def parse_snapshot(lines: list[str]) -> tuple[dict, int, int, bytes]:
+    parts = lines[0].split()
+    width, height = int(parts[2]), int(parts[3])
+    meta = dict(p.split("=", 1) for p in parts[4:])
+    rows: dict[int, bytes] = {}
+    for line in lines[1:-1]:
+        try:
+            _, y, data = line.split(" ", 2)
+            rows[int(y)] = bytes.fromhex(data)
+        except ValueError as error:
+            raise RuntimeError(f"corrupted snapshot line: {line[:24]}... ({len(line)} characters)") from error
+    meta.update(p.split("=", 1) for p in lines[-1].split()[2:])
+    if sorted(rows) != list(range(height)) or any(len(r) != width * 2 for r in rows.values()):
+        raise RuntimeError("incomplete snapshot")
+    return meta, width, height, b"".join(rows[y] for y in range(height))
+
+
+def compact_log(lines: list[str]) -> list[str]:
+    out, run = [], 0
+    for line in lines:
+        if SNAP_ROW.search(line):
+            run += 1
+            continue
+        if run:
+            out.append(f"# {run} SNAP rows omitted; pixels are in the PNG files")
+            run = 0
+        out.append(line)
+    if run:
+        out.append(f"# {run} SNAP rows omitted; pixels are in the PNG files")
+    return out
 
 
 def is_reply(line: str, verb: str) -> bool:

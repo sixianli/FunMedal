@@ -11,3 +11,5 @@ void app_set_frame_mode(int frame);
 int app_frame_mode(void);
 void app_get_scene(scene_t *scene);
 void app_get_draw_stats(uint32_t *draws, uint32_t *errors, int *shown_frame);
+void app_set_prompt(const prompt_t *prompt);
+void app_set_pairing(scene_pairing_t pairing, uint32_t code);

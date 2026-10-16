@@ -1,8 +1,12 @@
 import CoreBluetooth
+import Darwin
 import Foundation
 
 let serviceUUID = CBUUID(string: "6D2F1001-6B0E-4A8E-9A4B-46756E4D6564")
 let stateUUID = CBUUID(string: "6D2F1002-6B0E-4A8E-9A4B-46756E4D6564")
+let promptUUID = CBUUID(string: "6D2F1003-6B0E-4A8E-9A4B-46756E4D6564")
+let decisionUUID = CBUUID(string: "6D2F1004-6B0E-4A8E-9A4B-46756E4D6564")
+let cardCharacteristics = [stateUUID, promptUUID, decisionUUID]
 
 final class EventLog {
     private let handle: FileHandle?
@@ -33,21 +37,55 @@ final class EventLog {
     }
 }
 
+final class Approval {
+    let id: Int
+    let session: String
+    let toolKey: String?
+    let tool: String
+    let summary: String
+    let fd: Int32
+    var outcome: String?
+
+    init(id: Int, session: String, toolKey: String?, tool: String, summary: String, fd: Int32) {
+        self.id = id
+        self.session = session
+        self.toolKey = toolKey
+        self.tool = tool
+        self.summary = summary
+        self.fd = fd
+    }
+}
+
+struct Handled {
+    let reply: [String: Any]?
+    let approval: Approval?
+    let quit: Bool
+}
+
 final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let writeRetrySeconds = 1.0
+    static let toolLimit = 31
+    static let summaryLimit = 240
+    static let countLimit = 999
+    static let releasingEvents = ["UserPromptSubmit": "prompt", "Stop": "stop", "StopFailure": "stop_failure",
+                                  "SessionEnd": "session_end"]
 
     let queue = DispatchQueue(label: "funmedal.bridge")
     let socketPath: String
     let log: EventLog
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
-    private var stateCharacteristic: CBCharacteristic?
+    private var characteristics: [CBUUID: CBCharacteristic] = [:]
     private var link = "starting"
     private var bluetooth = "unknown"
     private var sessions = Sessions()
     private var desired = "idle"
     private var cardState: String?
-    private var inFlight: String?
+    private var approvals: [Approval] = []
+    private var nextApprovalID = 1
+    private var desiredPrompt = ""
+    private var cardPrompt: String?
+    private var inFlight: (uuid: CBUUID, value: String)?
     private var counts: [String: Int] = [:]
 
     init(socketPath: String, log: EventLog) {
@@ -61,50 +99,147 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    func handle(_ data: Data?) -> (reply: [String: Any], quit: Bool) {
+    func handle(_ data: Data?, client: Int32) -> Handled {
         queue.sync {
-            guard let data else { return reject("message too long") }
+            guard let data else { return Handled(reply: reject("message too long"), approval: nil, quit: false) }
             guard let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let op = message["op"] as? String else { return reject("not a JSON object with an op") }
+                  let op = message["op"] as? String else {
+                return Handled(reply: reject("not a JSON object with an op"), approval: nil, quit: false)
+            }
             switch op {
             case "event":
-                return receive(message)
+                return Handled(reply: receive(message), approval: nil, quit: false)
+            case "approve":
+                return approve(message, client: client)
             case "status":
-                return (status(), false)
+                return Handled(reply: status(), approval: nil, quit: false)
             case "quit":
                 log.write("quit")
-                return (["ok": true], true)
+                return Handled(reply: ["ok": true], approval: nil, quit: true)
             default:
-                return reject("unknown op")
+                return Handled(reply: reject("unknown op"), approval: nil, quit: false)
             }
         }
     }
 
-    private func reject(_ reason: String) -> (reply: [String: Any], quit: Bool) {
-        counts["rejected", default: 0] += 1
-        log.write("reject", ["reason": reason])
-        return (["ok": false, "error": reason], false)
+    func gaveUp(_ approval: Approval) {
+        queue.sync {
+            guard approval.outcome == nil else { return }
+            approval.outcome = "gave_up"
+            approvals.removeAll { $0 === approval }
+            refresh()
+        }
     }
 
-    private func receive(_ message: [String: Any]) -> (reply: [String: Any], quit: Bool) {
-        guard let name = message["event"] as? String, !name.isEmpty,
-              let session = message["session"] as? String, !session.isEmpty else {
-            return reject("event needs event and session")
+    func ended(_ approval: Approval) {
+        queue.sync {
+            if approval.outcome == nil {
+                approval.outcome = "hung_up"
+                approvals.removeAll { $0 === approval }
+                sessions.rejectedInTerminal(session: approval.session, toolKey: approval.toolKey)
+                refresh()
+            }
+            log.write("approval_closed", ["id": approval.id, "how": approval.outcome ?? "hung_up"])
         }
+    }
+
+    private func reject(_ reason: String) -> [String: Any] {
+        counts["rejected", default: 0] += 1
+        log.write("reject", ["reason": reason])
+        return ["ok": false, "error": reason]
+    }
+
+    private static func eventIdentity(_ message: [String: Any]) -> (name: String, session: String)? {
+        guard let name = message["event"] as? String, !name.isEmpty,
+              let session = message["session"] as? String, !session.isEmpty else { return nil }
+        return (name, session)
+    }
+
+    private static func clean(_ text: String, limit: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\t", with: " ")
+        return Hook.truncated(flat, bytes: limit)
+    }
+
+    private func record(_ message: [String: Any], name: String, session: String) {
         counts["events", default: 0] += 1
         var fields: [String: Any] = ["event": name, "session": session]
         for key in ["tool_name", "tool_key", "source", "reason", "error"] {
             if let value = message[key] as? String { fields[key] = value }
         }
         log.write("event", fields)
-        sessions.apply(HookEvent(name: name, session: session, toolKey: message["tool_key"] as? String))
+        let toolKey = message["tool_key"] as? String
+        sessions.apply(HookEvent(name: name, session: session, toolKey: toolKey))
+        if name == "PostToolUse" || name == "PostToolUseFailure",
+           let approval = approvals.first(where: { $0.session == session && $0.toolKey == toolKey }) {
+            answer(approval, nil, why: "post_tool_use")
+        }
+        if let why = Bridge.releasingEvents[name] {
+            for approval in approvals.filter({ $0.session == session }) {
+                answer(approval, nil, why: why)
+            }
+        }
+    }
+
+    private func receive(_ message: [String: Any]) -> [String: Any] {
+        guard let event = Bridge.eventIdentity(message) else { return reject("event needs event and session") }
+        record(message, name: event.name, session: event.session)
+        refresh()
+        return ["ok": true]
+    }
+
+    private func approve(_ message: [String: Any], client: Int32) -> Handled {
+        guard let event = Bridge.eventIdentity(message), event.name == "PermissionRequest" else {
+            return Handled(reply: reject("approve needs a PermissionRequest with a session"), approval: nil,
+                           quit: false)
+        }
+        record(message, name: event.name, session: event.session)
+        let tool = Bridge.clean(message["tool_name"] as? String ?? "", limit: Bridge.toolLimit)
+            .replacingOccurrences(of: "\n", with: " ")
+        let approval = Approval(id: nextApprovalID, session: event.session, toolKey: message["tool_key"] as? String,
+                                tool: tool.isEmpty ? "?" : tool,
+                                summary: Bridge.clean(message["summary"] as? String ?? "", limit: Bridge.summaryLimit),
+                                fd: client)
+        nextApprovalID += 1
+        approvals.append(approval)
+        log.write("approval", ["id": approval.id, "session": approval.session, "tool": approval.tool])
+        send(approval, ["ok": true, "id": approval.id])
+        refresh()
+        return Handled(reply: nil, approval: approval, quit: false)
+    }
+
+    private func send(_ approval: Approval, _ object: [String: Any]) {
+        if let data = Hook.line(object) { _ = UnixSocket.writeAll(approval.fd, data) }
+    }
+
+    private func answer(_ approval: Approval, _ decision: String?, why: String) {
+        guard approval.outcome == nil else { return }
+        approval.outcome = "answered"
+        approvals.removeAll { $0 === approval }
+        send(approval, ["decision": decision ?? NSNull()])
+        shutdown(approval.fd, SHUT_WR)
+        log.write("answer", ["id": approval.id, "decision": decision ?? "released", "why": why])
+    }
+
+    private var cardPromptID: Int? {
+        guard let cardPrompt, let first = cardPrompt.split(separator: "\t").first else { return nil }
+        return Int(first)
+    }
+
+    private func refresh() {
         let shown = sessions.shown
         if shown != desired {
             desired = shown
             log.write("state", ["desired": shown])
         }
+        var prompt = ""
+        if let head = approvals.first {
+            prompt = "\(head.id)\t1\t\(min(approvals.count, Bridge.countLimit))\t\(head.tool)\t\(head.summary)"
+        }
+        if prompt != desiredPrompt {
+            desiredPrompt = prompt
+            log.write("prompt", ["id": approvals.first?.id ?? NSNull(), "count": approvals.count])
+        }
         push()
-        return (["ok": true], false)
     }
 
     private func status() -> [String: Any] {
@@ -117,7 +252,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "card": link,
             "desired": desired,
             "card_state": cardState ?? NSNull(),
-            "sessions": sessions.table.mapValues { ["state": $0.shown, "pending": $0.pending.count] },
+            "prompt": cardPromptID ?? NSNull(),
+            "approvals": approvals.map { ["id": $0.id, "session": $0.session, "tool": $0.tool] },
+            "sessions": sessions.table.mapValues { ["state": $0.shown, "pending": $0.pendingCount] },
             "events": counts["events", default: 0],
             "rejected": counts["rejected", default: 0],
             "writes": counts["writes", default: 0],
@@ -127,12 +264,31 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     private func push() {
-        guard link == "connected", let peripheral, let characteristic = stateCharacteristic,
-              inFlight == nil, cardState != desired else { return }
-        inFlight = desired
+        guard link == "connected", let peripheral, inFlight == nil else { return }
+        if cardState != desired, let characteristic = characteristics[stateUUID] {
+            write(desired, to: characteristic, of: peripheral)
+        } else if cardPrompt != desiredPrompt, let characteristic = characteristics[promptUUID] {
+            write(desiredPrompt, to: characteristic, of: peripheral)
+        }
+    }
+
+    private func describe(_ uuid: CBUUID, _ value: String) -> [String: Any] {
+        uuid == stateUUID ? ["what": "state", "value": value]
+            : ["what": "prompt", "id": value.split(separator: "\t").first.map(String.init) ?? "none"]
+    }
+
+    private func write(_ value: String, to characteristic: CBCharacteristic, of peripheral: CBPeripheral) {
+        inFlight = (characteristic.uuid, value)
         counts["writes", default: 0] += 1
-        log.write("write", ["value": desired])
-        peripheral.writeValue(Data(desired.utf8), for: characteristic, type: .withResponse)
+        log.write("write", describe(characteristic.uuid, value))
+        peripheral.writeValue(Data(value.utf8), for: characteristic, type: .withResponse)
+    }
+
+    private func forgetCard() {
+        characteristics = [:]
+        cardState = nil
+        cardPrompt = nil
+        inFlight = nil
     }
 
     private func isCurrent(_ candidate: CBPeripheral) -> Bool {
@@ -145,9 +301,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         link = "connecting"
-        stateCharacteristic = nil
-        cardState = nil
-        inFlight = nil
+        forgetCard()
         log.write(what, ["error": error.map { String(describing: $0) } ?? NSNull()])
         guard let central, central.state == .poweredOn else { return }
         if let peripheral { central.connect(peripheral) }
@@ -160,9 +314,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard central.state == .poweredOn else {
             link = "off"
             peripheral = nil
-            stateCharacteristic = nil
-            cardState = nil
-            inFlight = nil
+            forgetCard()
             return
         }
         link = "scanning"
@@ -210,38 +362,68 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             central?.cancelPeripheralConnection(peripheral)
             return
         }
-        peripheral.discoverCharacteristics([stateUUID], for: service)
+        peripheral.discoverCharacteristics(cardCharacteristics, for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard isCurrent(peripheral) else { return }
-        guard let characteristic = service.characteristics?.first(where: { $0.uuid == stateUUID }) else {
-            log.write("characteristic_missing", ["error": error.map { String(describing: $0) } ?? NSNull()])
+        var found: [CBUUID: CBCharacteristic] = [:]
+        for characteristic in service.characteristics ?? [] where cardCharacteristics.contains(characteristic.uuid) {
+            found[characteristic.uuid] = characteristic
+        }
+        guard found.count == cardCharacteristics.count, let decision = found[decisionUUID] else {
+            log.write("characteristic_missing", ["found": found.keys.map(\.uuidString).sorted(),
+                                                 "error": error.map { String(describing: $0) } ?? NSNull()])
             central?.cancelPeripheralConnection(peripheral)
             return
         }
-        stateCharacteristic = characteristic
-        cardState = nil
-        inFlight = nil
+        forgetCard()
+        characteristics = found
         link = "connected"
         log.write("ready")
+        peripheral.setNotifyValue(true, for: decision)
         push()
     }
 
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                    error: Error?) {
+        guard isCurrent(peripheral) else { return }
+        log.write("subscribed", ["notifying": characteristic.isNotifying,
+                                 "error": error.map { String(describing: $0) } ?? NSNull()])
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard isCurrent(peripheral), characteristic.uuid == stateUUID else { return }
-        let value = inFlight
+        guard isCurrent(peripheral), let flight = inFlight, characteristic.uuid == flight.uuid else { return }
         inFlight = nil
         if let error {
-            cardState = nil
-            log.write("write_error", ["value": value ?? NSNull(), "error": String(describing: error)])
+            if flight.uuid == stateUUID { cardState = nil } else { cardPrompt = nil }
+            var fields = describe(flight.uuid, flight.value)
+            fields["error"] = String(describing: error)
+            log.write("write_error", fields)
             queue.asyncAfter(deadline: .now() + Bridge.writeRetrySeconds) { self.push() }
             return
         }
-        cardState = value
+        if flight.uuid == stateUUID { cardState = flight.value } else { cardPrompt = flight.value }
         counts["acks", default: 0] += 1
-        log.write("ack", ["value": value ?? NSNull()])
+        log.write("ack", describe(flight.uuid, flight.value))
         push()
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard isCurrent(peripheral), characteristic.uuid == decisionUUID, error == nil,
+              let data = characteristic.value, let text = String(data: data, encoding: .utf8) else { return }
+        let parts = text.split(separator: " ").map(String.init)
+        guard parts.count == 2, let id = Int(parts[0]), parts[1] == "allow" || parts[1] == "deny" else {
+            log.write("decision_bad", ["bytes": data.count])
+            return
+        }
+        guard let head = approvals.first, head.id == id, cardPromptID == id else {
+            log.write("decision_ignored", ["id": id])
+            return
+        }
+        sessions.answeredOnCard(session: head.session, toolKey: head.toolKey, allowed: parts[1] == "allow")
+        answer(head, parts[1], why: "card")
+        refresh()
     }
 
     static func name(_ state: CBManagerState) -> String {

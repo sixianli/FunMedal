@@ -124,8 +124,113 @@ static void display_task(void *arg)
     }
 }
 
+void app_set_prompt(const prompt_t *prompt)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool changed = !prompt_equal(&scene.prompt, prompt);
+    if (changed) {
+        scene.prompt = *prompt;
+        scene.decision = SCENE_DECISION_NONE;
+    }
+    xSemaphoreGive(lock);
+    if (!changed) {
+        return;
+    }
+    xTaskNotifyGive(display_task_handle);
+    if (prompt->active) {
+        console_event("PROMPT %lu %u/%u %s\n", (unsigned long)prompt->id, (unsigned)prompt->index,
+                      (unsigned)prompt->count, prompt->tool);
+    } else {
+        console_event("PROMPT none\n");
+    }
+}
+
+void app_set_pairing(scene_pairing_t pairing, uint32_t code)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    scene.pairing = pairing;
+    scene.pair_code = code;
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+}
+
+static bool mark_decision(uint32_t id, scene_decision_t decision)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool open = scene.prompt.active && scene.prompt.id == id && scene.decision == SCENE_DECISION_NONE;
+    if (open) {
+        scene.decision = decision;
+    }
+    xSemaphoreGive(lock);
+    return open;
+}
+
+static void unmark_decision(uint32_t id)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (scene.prompt.active && scene.prompt.id == id) {
+        scene.decision = SCENE_DECISION_NONE;
+    }
+    xSemaphoreGive(lock);
+}
+
+static void decide(uint32_t id, bool allow)
+{
+    if (!mark_decision(id, allow ? SCENE_DECISION_ALLOW : SCENE_DECISION_DENY)) {
+        return;
+    }
+    const char *word = allow ? "allow" : "deny";
+    if (!ble_link_send_decision(id, allow)) {
+        unmark_decision(id);
+        console_event("DECISION %lu %s unsent\n", (unsigned long)id, word);
+        return;
+    }
+    xTaskNotifyGive(display_task_handle);
+    console_event("DECISION %lu %s\n", (unsigned long)id, word);
+}
+
+typedef struct {
+    bool armed;
+    uint32_t id;
+} held_approval_t;
+
+static held_approval_t held_approval;
+
+static void on_pairing_key(const scene_t *now, const key_event_t *event)
+{
+    if (now->pairing == SCENE_PAIRING_NUMCMP && event->type == KEY_EVENT_PRESS
+        && (event->key == KEY_OK || event->key == KEY_DOWN)) {
+        ble_link_confirm_pairing(event->key == KEY_OK);
+    }
+}
+
+static void on_ok_key(const scene_t *now, bool open, key_event_type_t type)
+{
+    if (type == KEY_EVENT_PRESS) {
+        held_approval = (held_approval_t){open, now->prompt.id};
+        return;
+    }
+    if (type == KEY_EVENT_LONG && held_approval.armed && open && now->prompt.id == held_approval.id) {
+        decide(held_approval.id, true);
+    }
+    held_approval.armed = false;
+}
+
 static void on_key(const key_event_t *event)
 {
+    scene_t now;
+    app_get_scene(&now);
+    if (now.pairing != SCENE_PAIRING_NONE) {
+        held_approval.armed = false;
+        on_pairing_key(&now, event);
+        return;
+    }
+    bool open = now.prompt.active && now.decision == SCENE_DECISION_NONE;
+    if (event->key == KEY_OK) {
+        on_ok_key(&now, open, event->type);
+    } else if (event->key == KEY_DOWN && event->type == KEY_EVENT_PRESS && open) {
+        decide(now.prompt.id, false);
+    }
 }
 
 void app_main(void)

@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -7,8 +8,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
 KEY_SOURCES = [FIRMWARE_MAIN / "keys.c", FIRMWARE_MAIN / "key_levels.c"]
 KEY_CAPTURE = ROOT / "notes" / "data" / "key-adc-2026-10-16.txt"
-SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_data.c",
-                 FIRMWARE_MAIN / "pet_art.c"]
+FONT_SOURCES = [FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_large.c", FIRMWARE_MAIN / "font_text.c"]
+PROMPT_SOURCES = [FIRMWARE_MAIN / "prompt.c", *FONT_SOURCES]
+SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "pet_art.c", *PROMPT_SOURCES]
+C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+GLYPH_ENTRY = re.compile(r"\{0x([0-9a-f]+), \d+, \d+\}")
 
 
 def build(source, binary, sources=KEY_SOURCES):
@@ -51,3 +55,32 @@ def test_state_value_parsing_on_host(case, tmp_path):
     print(result.stdout)
     assert result.returncode == 0, result.stdout
     assert "ALL PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("case", ["[FM-14] prompt value parsing and layout on host"])
+def test_prompt_parsing_and_layout_on_host(case, tmp_path):
+    binary = tmp_path / "test_prompt"
+    build(ROOT / "tests" / "host" / "test_prompt.c", binary, PROMPT_SOURCES)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+def glyphs_in(path):
+    return {chr(int(code, 16)) for code in GLYPH_ENTRY.findall(path.read_text(encoding="utf-8"))}
+
+
+@pytest.mark.parametrize("case", ["[FM-14] both fonts hold every character the screens draw"])
+def test_fonts_cover_screen_text(case):
+    texts = C_STRING.findall((FIRMWARE_MAIN / "scene.c").read_text(encoding="utf-8"))
+    wide = {c for text in texts for c in text if ord(c) > 0x7e}
+    large = glyphs_in(FIRMWARE_MAIN / "font_large.c")
+    small = glyphs_in(FIRMWARE_MAIN / "font_text.c")
+    printable = {chr(c) for c in range(0x20, 0x7f)}
+    assert len(wide) >= 20, sorted(wide)
+    assert wide - large == set(), sorted(wide - large)
+    assert wide - small == set(), sorted(wide - small)
+    assert set("0123456789/") - large == set()
+    missing_text = (printable | {"\u2026"}) - small
+    assert missing_text == set(), sorted(missing_text)

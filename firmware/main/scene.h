@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "pet_art.h"
+#include "prompt.h"
 
 #define SCENE_W 240
 #define SCENE_H 320
@@ -12,6 +13,20 @@
 #define SCENE_PET_X 24
 #define SCENE_PET_Y 36
 #define SCENE_LABEL_Y 250
+#define SCENE_MARGIN 10
+#define SCENE_TEXT_WIDTH (SCENE_W - 2 * SCENE_MARGIN)
+
+typedef enum {
+    SCENE_PAIRING_NONE,
+    SCENE_PAIRING_NUMCMP,
+    SCENE_PAIRING_PASSKEY,
+} scene_pairing_t;
+
+typedef enum {
+    SCENE_DECISION_NONE,
+    SCENE_DECISION_ALLOW,
+    SCENE_DECISION_DENY,
+} scene_decision_t;
 
 typedef struct {
     pet_state_t state;
@@ -19,6 +34,10 @@ typedef struct {
     bool test_pattern;
     bool fill;
     uint32_t fill_rgb;
+    prompt_t prompt;
+    scene_decision_t decision;
+    scene_pairing_t pairing;
+    uint32_t pair_code;
 } scene_t;
 
 void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out);

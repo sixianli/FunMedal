@@ -38,25 +38,51 @@ func serve(socket: String, logPath: String?) -> Never {
         while true {
             let client = accept(listener, nil, nil)
             if client < 0 { continue }
-            DispatchQueue.global().async {
-                UnixSocket.configure(client, timeoutSeconds: clientTimeoutSeconds)
-                let (reply, quit) = bridge.handle(UnixSocket.readLine(client, limit: messageLimit))
-                if var data = try? JSONSerialization.data(withJSONObject: reply, options: [.sortedKeys]) {
-                    data.append(UInt8(ascii: "\n"))
-                    _ = UnixSocket.writeAll(client, data)
-                }
-                close(client)
-                if quit {
-                    unlink(socket)
-                    unlink(lockPath)
-                    exit(0)
-                }
-            }
+            Thread { serveClient(client, bridge: bridge, socket: socket, lockPath: lockPath) }.start()
         }
     }
     acceptor.start()
     bridge.start()
     dispatchMain()
+}
+
+func serveClient(_ client: Int32, bridge: Bridge, socket: String, lockPath: String) {
+    UnixSocket.configure(client, timeoutSeconds: clientTimeoutSeconds)
+    let reader = LineReader(fd: client, limit: messageLimit)
+    let first: Data?
+    switch reader.next(until: Date().addingTimeInterval(Double(clientTimeoutSeconds))) {
+    case .line(let data), .closed(let data): first = data
+    case .tooLong: first = nil
+    case .timeout: first = Data()
+    }
+    let handled = bridge.handle(first, client: client)
+    if let reply = handled.reply, let data = Hook.line(reply) {
+        _ = UnixSocket.writeAll(client, data)
+    }
+    if let approval = handled.approval {
+        follow(approval, reader: reader, bridge: bridge)
+    }
+    close(client)
+    if handled.quit {
+        unlink(socket)
+        unlink(lockPath)
+        exit(0)
+    }
+}
+
+func follow(_ approval: Approval, reader: LineReader, bridge: Bridge) {
+    while true {
+        switch reader.next(until: .distantFuture) {
+        case .line(let data):
+            let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if message?["op"] as? String == "give_up" { bridge.gaveUp(approval) }
+        case .closed, .tooLong:
+            bridge.ended(approval)
+            return
+        case .timeout:
+            continue
+        }
+    }
 }
 
 func ask(socket: String, op: String) -> Int32 {
@@ -73,16 +99,23 @@ func ask(socket: String, op: String) -> Int32 {
 
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
-guard !arguments.isEmpty else { fail("usage: funmedal-bridge serve|hook|status|quit [--socket PATH] [--log PATH]", usageExit) }
+let usage = "usage: funmedal-bridge serve|hook|status|quit [--socket PATH] [--log PATH] [--wait-limit SECONDS]"
+guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
 var logPath: String?
+var waitLimit = Hook.defaultWaitLimit
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
     guard !arguments.isEmpty else { fail("\(option) needs a value", usageExit) }
     switch option {
     case "--socket": socketPath = arguments.removeFirst()
     case "--log": logPath = arguments.removeFirst()
+    case "--wait-limit":
+        guard let seconds = Double(arguments.removeFirst()), seconds >= 0, seconds.isFinite else {
+            fail("--wait-limit needs a number of seconds", usageExit)
+        }
+        waitLimit = seconds
     default: fail("unknown option \(option)", usageExit)
     }
 }
@@ -91,7 +124,7 @@ switch mode {
 case "serve":
     serve(socket: socketPath, logPath: logPath)
 case "hook":
-    Hook.run(socket: socketPath)
+    Hook.run(socket: socketPath, waitLimit: waitLimit)
     exit(0)
 case "status", "quit":
     exit(ask(socket: socketPath, op: mode))

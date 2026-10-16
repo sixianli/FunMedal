@@ -4,7 +4,7 @@ import time
 
 import serial
 
-from cardlink import is_reply
+from cardlink import is_reply, parse_snapshot
 
 
 class CardWatcher:
@@ -120,3 +120,15 @@ class CardWatcher:
     def since(self, start: int) -> list[tuple[float, str]]:
         with self._cond:
             return list(self.lines[start:])
+
+    def snapshot(self, timeout: float = 30.0) -> tuple[dict, int, int, bytes]:
+        start = self.mark()
+        self.send("snap")
+        begin, _, _ = self.wait_for(lambda line: line.startswith("SNAP BEGIN"), timeout, start)
+        end, _, _ = self.wait_for(lambda line: line.startswith("SNAP END") or line == "ERR snap write timed out",
+                                  timeout, begin)
+        with self._cond:
+            lines = [line for _, line in self.lines[begin:end + 1] if line.startswith("SNAP ")]
+        if not lines[-1].startswith("SNAP END"):
+            raise RuntimeError("card gave up writing the snapshot")
+        return parse_snapshot(lines)

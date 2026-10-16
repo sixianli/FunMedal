@@ -1,15 +1,24 @@
 import CoreText
 import Foundation
 
-let args = CommandLine.arguments
-guard args.count == 5, let size = Double(args[3]) else {
-    FileHandle.standardError.write("usage: gen_font <font name> <characters> <pixel size> <output.c>\n".data(using: .utf8)!)
-    exit(64)
+func fail(_ message: String, _ code: Int32) -> Never {
+    FileHandle.standardError.write(Data("gen_font: \(message)\n".utf8))
+    exit(code)
 }
-let fontName = args[1]
-let characters = Array(Set(args[2].unicodeScalars)).sorted { $0.value < $1.value }
-let output = args[4]
-let font = CTFontCreateWithName(fontName as CFString, size, nil)
+
+let args = CommandLine.arguments
+guard args.count == 6, let size = Double(args[4]) else {
+    fail("usage: gen_font <font file> <name> <characters> <pixel size> <output.c>", 64)
+}
+let fontURL = URL(fileURLWithPath: args[1])
+let name = args[2]
+let characters = Array(Set(args[3].unicodeScalars)).sorted { $0.value < $1.value }
+let output = args[5]
+guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(fontURL as CFURL) as? [CTFontDescriptor],
+      let descriptor = descriptors.first else {
+    fail("cannot load \(fontURL.path)", 66)
+}
+let font = CTFontCreateWithFontDescriptor(descriptor, size, nil)
 let ascent = Int(ceil(CTFontGetAscent(font)))
 let descent = Int(ceil(CTFontGetDescent(font)))
 let lineHeight = ascent + descent
@@ -20,17 +29,15 @@ for scalar in characters {
     var utf16 = Array(String(scalar).utf16)
     var glyphs = [CGGlyph](repeating: 0, count: utf16.count)
     guard CTFontGetGlyphsForCharacters(font, &utf16, &glyphs, utf16.count) else {
-        FileHandle.standardError.write("missing glyph U+\(String(scalar.value, radix: 16))\n".data(using: .utf8)!)
-        exit(65)
+        fail("missing glyph U+\(String(scalar.value, radix: 16))", 65)
     }
     var advance = CGSize.zero
     CTFontGetAdvancesForGlyphs(font, .horizontal, &glyphs, &advance, 1)
     let width = max(1, Int(ceil(advance.width)))
-    let height = lineHeight
-    var pixels = [UInt8](repeating: 0, count: width * height)
+    var pixels = [UInt8](repeating: 0, count: width * lineHeight)
     let space = CGColorSpaceCreateDeviceGray()
     pixels.withUnsafeMutableBytes { buffer in
-        let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+        let context = CGContext(data: buffer.baseAddress, width: width, height: lineHeight, bitsPerComponent: 8,
                                 bytesPerRow: width, space: space, bitmapInfo: CGImageAlphaInfo.none.rawValue)!
         context.setFillColor(gray: 1, alpha: 1)
         context.setAllowsFontSmoothing(false)
@@ -38,7 +45,7 @@ for scalar in characters {
         CTFontDrawGlyphs(font, &glyphs, &position, 1, context)
     }
     let offset = bitmapBytes.count
-    for row in 0..<height {
+    for row in 0..<lineHeight {
         for col in stride(from: 0, to: width, by: 2) {
             let a = pixels[row * width + col] >> 4
             let b = col + 1 < width ? pixels[row * width + col + 1] >> 4 : 0
@@ -49,13 +56,21 @@ for scalar in characters {
 }
 
 var text = "#include \"font.h\"\n\n"
-text += "const uint8_t font_line_height = \(lineHeight);\n"
-text += "const uint16_t font_glyph_count = \(entries.count);\n\n"
-text += "const font_glyph_t font_glyphs[] = {\n" + entries.joined(separator: "\n") + "\n};\n\n"
-text += "const uint8_t font_bitmaps[] = {\n"
+text += "static const font_glyph_t glyphs[] = {\n" + entries.joined(separator: "\n") + "\n};\n\n"
+text += "static const uint8_t bitmaps[] = {\n"
 for chunkStart in stride(from: 0, to: bitmapBytes.count, by: 16) {
     let chunk = bitmapBytes[chunkStart..<min(chunkStart + 16, bitmapBytes.count)]
     text += "    " + chunk.map { String(format: "0x%02x,", $0) }.joined(separator: " ") + "\n"
 }
+text += "};\n\n"
+text += "const font_t font_\(name) = {\n"
+text += "    .line_height = \(lineHeight),\n"
+text += "    .glyph_count = \(entries.count),\n"
+text += "    .glyphs = glyphs,\n"
+text += "    .bitmaps = bitmaps,\n"
 text += "};\n"
-try! text.write(toFile: output, atomically: true, encoding: .utf8)
+do {
+    try text.write(toFile: output, atomically: false, encoding: .utf8)
+} catch {
+    fail("cannot write \(output): \(error)", 73)
+}

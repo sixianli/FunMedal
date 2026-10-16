@@ -2,7 +2,6 @@ import glob
 import hashlib
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime
@@ -26,24 +25,8 @@ STYLES = {
     "done": {"label": "完成了", "background": (0x2A9D8F, 0x2A9D8F), "text": 0xFFFFFF},
     "error": {"label": "出错了", "background": (0x9B2226, 0x9B2226), "text": 0xFFFFFF},
 }
-VALID_ROW = re.compile(r"SNAP \d+ [0-9a-f]{%d}" % (W * 4))
 KEY_SEQUENCE = [(t, k) for k in ("ok", "up", "down") for t in ("press", "long", "release")]
 ADC_STREAM_SECONDS = 120
-
-
-def compact_log(lines):
-    out, run = [], 0
-    for line in lines:
-        if VALID_ROW.fullmatch(line):
-            run += 1
-            continue
-        if run:
-            out.append(f"# {run} valid SNAP rows omitted; pixels are in the PNG files")
-            run = 0
-        out.append(line)
-    if run:
-        out.append(f"# {run} valid SNAP rows omitted; pixels are in the PNG files")
-    return out
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +48,7 @@ def card(artifacts):
         link.command("frame auto")
         link.command("state idle")
     finally:
-        (artifacts / "serial.log").write_text("\n".join(compact_log(link.log)) + "\n", encoding="utf-8")
+        (artifacts / "serial.log").write_text("\n".join(cardlink.compact_log(link.log)) + "\n", encoding="utf-8")
         link.close()
 
 
