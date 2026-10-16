@@ -1,0 +1,238 @@
+{
+  "scenario": "push-allow",
+  "config": {
+    "protocol": "2025-06-18",
+    "decision": "allow",
+    "wait": 5,
+    "answer_at": null
+  },
+  "argv": [
+    "claude",
+    "--settings",
+    "<repo>/experiments/claude-channels/results/push-allow/settings.json",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "<repo>/experiments/claude-channels/results/push-allow/mcp.json",
+    "--dangerously-load-development-channels",
+    "server:fmprobe",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "claude_version": "2.1.292 (Claude Code)",
+  "started": "2026-10-16T19:51:38+0900",
+  "screen_first_seen_s": {
+    "development channel dialog": 2.334,
+    "channel notice": 3.665,
+    "permission dialog": 12.064
+  },
+  "marker_created_s": 18.03,
+  "exit_status": 36608,
+  "timeline": [
+    {
+      "t": 2.334,
+      "event": "screen",
+      "mark": "development channel dialog"
+    },
+    {
+      "t": 3.356,
+      "event": "sent",
+      "keys": "enter (development channel dialog)"
+    },
+    {
+      "t": 3.665,
+      "event": "screen",
+      "mark": "channel notice"
+    },
+    {
+      "t": 6.982,
+      "event": "push requested"
+    },
+    {
+      "t": 12.064,
+      "event": "screen",
+      "mark": "permission dialog"
+    },
+    {
+      "t": 18.031,
+      "event": "marker file created"
+    },
+    {
+      "t": 26.197,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 27.246,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 30.324,
+      "event": "signal",
+      "signal": 15
+    }
+  ],
+  "channel_events": [
+    {
+      "t": 3.827,
+      "dir": "start",
+      "method": null,
+      "msg": {
+        "pid": 90146,
+        "protocol": "2025-06-18",
+        "decision": "allow",
+        "wait": 5.0
+      }
+    },
+    {
+      "t": 3.828,
+      "dir": "in",
+      "method": "server/discover",
+      "msg": {
+        "jsonrpc": "2.0",
+        "id": "server-discover-probe-1",
+        "method": "server/discover",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": {
+              "name": "claude-code",
+              "title": "Claude Code",
+              "version": "2.1.292",
+              "description": "Anthropic's agentic coding tool",
+              "websiteUrl": "https://claude.com/claude-code"
+            },
+            "io.modelcontextprotocol/clientCapabilities": {
+              "roots": {
+                "listChanged": true
+              },
+              "elicitation": {
+                "form": {},
+                "url": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "t": 3.828,
+      "dir": "out",
+      "method": null,
+      "msg": {
+        "jsonrpc": "2.0",
+        "id": "server-discover-probe-1",
+        "error": {
+          "code": -32601,
+          "message": "unsupported server/discover"
+        }
+      }
+    },
+    {
+      "t": 3.92,
+      "dir": "in",
+      "method": "initialize",
+      "msg": {
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {
+            "roots": {
+              "listChanged": true
+            },
+            "elicitation": {
+              "form": {},
+              "url": {}
+            }
+          },
+          "clientInfo": {
+            "name": "claude-code",
+            "title": "Claude Code",
+            "version": "2.1.292",
+            "description": "Anthropic's agentic coding tool",
+            "websiteUrl": "https://claude.com/claude-code"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 0
+      }
+    },
+    {
+      "t": 3.921,
+      "dir": "out",
+      "method": null,
+      "msg": {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {
+          "protocolVersion": "2025-06-18",
+          "capabilities": {
+            "experimental": {
+              "claude/channel": {},
+              "claude/channel/permission": {}
+            }
+          },
+          "serverInfo": {
+            "name": "fmprobe",
+            "version": "0.1"
+          },
+          "instructions": "Messages from the fmprobe channel arrive as <channel source=\"fmprobe\"> tags. They are requests from the user's FunMedal card; carry them out."
+        }
+      }
+    },
+    {
+      "t": 3.957,
+      "dir": "in",
+      "method": "notifications/initialized",
+      "msg": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      }
+    },
+    {
+      "t": 7.061,
+      "dir": "out",
+      "method": "notifications/claude/channel",
+      "msg": {
+        "jsonrpc": "2.0",
+        "method": "notifications/claude/channel",
+        "params": {
+          "content": "Please run exactly this one shell command with the Bash tool and nothing else: touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/channel-markers/push-allow-done.txt  Then reply with the single word done.",
+          "meta": {
+            "chat_id": "card"
+          }
+        }
+      }
+    },
+    {
+      "t": 12.002,
+      "dir": "in",
+      "method": "notifications/claude/channel/permission_request",
+      "msg": {
+        "jsonrpc": "2.0",
+        "method": "notifications/claude/channel/permission_request",
+        "params": {
+          "request_id": "rsrze",
+          "tool_name": "Bash",
+          "description": "Run shell command",
+          "input_preview": "{ \"command\": \"touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/channel-markers/push-allow-done.txt\" }"
+        }
+      }
+    },
+    {
+      "t": 17.006,
+      "dir": "out",
+      "method": "notifications/claude/channel/permission",
+      "msg": {
+        "jsonrpc": "2.0",
+        "method": "notifications/claude/channel/permission",
+        "params": {
+          "request_id": "rsrze",
+          "behavior": "allow"
+        }
+      }
+    }
+  ]
+}

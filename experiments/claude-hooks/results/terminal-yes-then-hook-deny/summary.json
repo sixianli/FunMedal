@@ -1,0 +1,136 @@
+{
+  "scenario": "terminal-yes-then-hook-deny",
+  "config": {
+    "wait": 12,
+    "decision": "deny",
+    "answer_at": 3,
+    "linger": 20
+  },
+  "argv": [
+    "claude",
+    "--settings",
+    "<repo>/experiments/claude-hooks/results/terminal-yes-then-hook-deny/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "claude_version": "2.1.292 (Claude Code)",
+  "started": "2026-10-16T19:08:24+0900",
+  "permission_dialog_first_seen_s": null,
+  "marker_created_s": 15.038,
+  "exit_status": 9,
+  "timeline": [
+    {
+      "t": 6.687,
+      "event": "sent",
+      "keys": "enter (prompt)"
+    },
+    {
+      "t": 6.687,
+      "event": "prompt sent"
+    },
+    {
+      "t": 14.717,
+      "event": "sent",
+      "keys": "1 (yes in terminal)"
+    },
+    {
+      "t": 15.019,
+      "event": "sent",
+      "keys": "enter (confirm)"
+    },
+    {
+      "t": 15.038,
+      "event": "marker file created"
+    },
+    {
+      "t": 33.961,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 35.039,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 38.137,
+      "event": "signal",
+      "signal": 15
+    },
+    {
+      "t": 40.198,
+      "event": "signal",
+      "signal": 9
+    }
+  ],
+  "hook_events": [
+    {
+      "t": 1792145316.0048158,
+      "pid": 81925,
+      "event": "start",
+      "kind": "pretooluse",
+      "input": {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/terminal-yes-then-hook-deny-done.txt",
+          "description": "Create marker file as requested"
+        }
+      },
+      "t_rel": 11.594
+    },
+    {
+      "t": 1792145316.087546,
+      "pid": 81926,
+      "event": "start",
+      "kind": "permission",
+      "input": {
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/terminal-yes-then-hook-deny-done.txt",
+          "description": "Create marker file as requested"
+        },
+        "permission_suggestions": [
+          {
+            "type": "addDirectories",
+            "directories": [
+              "/private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers"
+            ],
+            "destination": "session"
+          },
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ]
+      },
+      "t_rel": 11.677
+    },
+    {
+      "t": 1792145319.4743521,
+      "pid": 81967,
+      "event": "start",
+      "kind": "posttooluse",
+      "input": {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/terminal-yes-then-hook-deny-done.txt",
+          "description": "Create marker file as requested"
+        }
+      },
+      "t_rel": 15.064
+    },
+    {
+      "t": 1792145328.272331,
+      "pid": 81926,
+      "event": "end",
+      "decision": "deny",
+      "t_rel": 23.862
+    }
+  ]
+}

@@ -7,11 +7,11 @@
 | 需求 | 推荐做法 | 要求 | 把握 |
 | --- | --- | --- | --- |
 | 显示任务状态 | hooks（Claude Code 在特定事件发生时自动运行你配置的命令）把事件发给桥 | 所有版本都有 hooks，但各版本支持的事件不同 | 确定 |
-| 卡片上批准 / 拒绝 | 方案 A：`PermissionRequest` hook 先停住，等桥拿到卡片按键结果再回答 allow 或 deny。方案 B：Channels（官方“频道”功能：一个 MCP 服务器往运行中的会话推消息）的权限转发，终端和卡片同时能答，先到先生效 | A：版本要支持 `PermissionRequest`；B：v2.1.81 以上、研究预览阶段 | A 的“等待时终端弹窗是否也显示”未确认；B 确定 |
+| 卡片上批准 / 拒绝 | 方案 A：`PermissionRequest` hook 先停住，等桥拿到卡片按键结果再回答 allow 或 deny。方案 B：Channels（官方“频道”功能：一个 MCP 服务器往运行中的会话推消息）的权限转发，终端和卡片同时能答，先到先生效 | A：版本要支持 `PermissionRequest`；B：v2.1.81 以上、研究预览阶段 | A 和 B 都在本机终端版 2.1.292 上实测过，见“本机实测结果” |
 | 语音变成新指令 | Channels：桥作为频道服务器，把语音转出来的文字推进正在运行的会话 | v2.1.80 以上；研究预览；要用 claude.ai 登录或 API key；自定义频道要带 `--dangerously-load-development-channels` 启动；Team / Enterprise 需管理员开启 | 确定 |
 | 区分多个会话 | 每个 hook 都带 `session_id`、`cwd`（工作目录），桥自己记账；新版本还可以用 `claude agents --json` | `claude agents --json` 只在新版本有 | 确定 |
 
-**本机现状**：终端里的 `claude` 是 Homebrew 装的 **2.1.116**，运行 `claude agents --json` 报 `unknown option '--json'`。文档里最新的是 2.1.301（2026-10-15）。目标用户的版本会各不相同，所以第一版要以 hooks 为主。Channels 只在版本够新、而且用户愿意带开发参数启动时才可用。
+**本机现状**：终端里的 `claude` 原来是 Homebrew 装的 2.1.116，运行 `claude agents --json` 报 `unknown option '--json'`；2026-10-16 用户把它升级到了 **2.1.292**（升级后没再试 `claude agents --json`）。Claude 桌面 App 自带的 Claude Code 是 **2.1.295**（装在 `~/Library/Application Support/Claude/claude-code/2.1.295/`），它也会运行 `~/.claude/settings.json` 里配置的 hooks：本项目的会话在桌面 App 里开始时，用户在这个文件里配置的 `SessionStart` hook 照常运行了。文档里最新的是 2.1.301（2026-10-15）。目标用户的版本会各不相同，所以第一版要以 hooks 为主。Channels 只在版本够新、而且用户愿意带开发参数启动时才可用。
 
 ## 状态从哪里来
 
@@ -30,7 +30,7 @@
 
 - `PermissionRequest` hook 的回答格式是 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`，拒绝时把 `allow` 换成 `deny`，还可以附一段 `message`。
 - 命令类 hook 是同步运行的，所以桥可以一直等到卡片按键再回答。默认超时 600 秒；文档没写上限。
-- 未确认：hook 等待期间，终端里的批准弹窗会不会同时出现。要在本机实测。
+- hook 等待期间，终端里的批准弹窗会同时出现，哪边先答算哪边，见“本机实测结果”。
 - Channels 权限转发：Claude Code 发出 `notifications/claude/channel/permission_request`，里面带 5 个字母的 `request_id`、工具名、说明和输入预览；桥回 `notifications/claude/channel/permission`，带 `request_id` 和 allow/deny。终端弹窗同时保留，哪边先答算哪边。只覆盖运行命令、写文件这类工具，不覆盖“信任项目”这类对话框。
 
 ## 语音怎么变成指令
@@ -39,9 +39,100 @@
 - 其他办法都不合适：Remote Control 只认 claude.ai 网页和手机 App，不是给第三方设备用的接口；`claude -p` 和 Agent SDK 只能控制桥自己启动的会话；`claude --resume <会话> "指令"` 会把终端接管过去，不适合脚本调用。
 - 新版本还有跨会话消息接口（`CLAUDE_CODE_MESSAGING_SOCKET`，v2.1.224 以上），但文档没写清楚消息格式，暂不采用。
 
+## 本机实测结果
+
+2026-10-16 在本机终端版 Claude Code 2.1.292 上实测了两件事：`PermissionRequest` hook（测试程序和原始记录在 [experiments/claude-hooks/](../experiments/claude-hooks/)），以及 Channels 推消息和权限转发（在 [experiments/claude-channels/](../experiments/claude-channels/)，见下面“Channels”一节）。
+
+### PermissionRequest hook 怎么测的
+
+- [drive.py](../experiments/claude-hooks/drive.py) 在一个伪终端（程序模拟出来的终端窗口，`claude` 以为有人在用）里启动 `claude`，用 Haiku 模型，权限模式是 `default`（每次运行命令都要用户批准）。它让 Claude 运行一条 `touch <标记文件>` 命令：标记文件出现，就说明命令真的运行了。它还能在批准弹窗里替用户按 `1`（是）和回车。
+- 它给这次运行单独配了 4 个 hook：`PermissionRequest`（只管 Bash 命令，超时 60 秒）、`Notification`、`PreToolUse`、`PostToolUse`。每个 hook 都运行 [hook_probe.py](../experiments/claude-hooks/hook_probe.py)，记下触发时间和收到的内容；`PermissionRequest` hook 按场景先等若干秒，再回答 allow（允许）、deny（拒绝），或者什么都不答直接退出。
+- 测试时关掉了沙箱（sandbox，限制命令能读写哪些文件、连哪些网络的隔离环境）。用户的全局设置开着沙箱，并允许沙箱里的命令自动运行；开着它时，测试命令不弹窗就直接运行了，测不到批准流程。测试程序还去掉了从当前会话继承来的 `CLAUDE*`、`ANTHROPIC*` 等环境变量，否则被测的 `claude` 会把自己当成别的会话的子会话。
+- [analyze.py](../experiments/claude-hooks/analyze.py) 从终端录屏里找出各段文字第一次出现的时间，结果在 [results/analysis.json](../experiments/claude-hooks/results/analysis.json)。
+
+### PermissionRequest hook 的 5 个场景
+
+时间都是从 `claude` 启动算起的秒数。
+
+| 场景 | hook 怎么答 | 终端里怎么答 | 实测经过 |
+| --- | --- | --- | --- |
+| `wait-allow` | 等 20 秒后答 allow | 不答 | 11.2 秒弹窗出现，hook 同时开始；17.2 秒触发 `Notification`（`permission_prompt`）；31.4 秒 hook 答 allow，32.2 秒命令运行，屏幕显示 `Allowed by PermissionRequest hook`，弹窗消失 |
+| `wait-deny` | 等 10 秒后答 deny | 不答 | 17.3 秒弹窗和 hook 同时开始；23.4 秒触发 `Notification`；27.5 秒 hook 答 deny，屏幕显示 `Denied by PermissionRequest hook`，命令没有运行 |
+| `no-decision` | 什么都不答，马上退出 | 4 秒后答“是” | 11.7 秒弹窗和 hook 同时开始，hook 马上结束，弹窗继续等；15.8 秒终端答“是”，16.1 秒命令运行 |
+| `wait-then-terminal-yes` | 等 20 秒后答 allow | 6 秒后答“是” | 16.4 秒弹窗和 hook 同时开始；22.4 秒触发 `Notification`；22.5 秒终端答“是”，22.8 秒命令运行并触发 `PostToolUse`；hook 进程没有被结束，一直到 35.3 秒测试程序关掉会话时才收到结束信号 |
+| `terminal-yes-then-hook-deny` | 等 12 秒后答 deny | 3 秒后答“是” | 11.7 秒弹窗和 hook 同时开始；14.7 秒终端答“是”，15.0 秒命令运行；23.9 秒 hook 才答 deny，屏幕上没有任何拒绝提示，这个迟到的回答不起作用 |
+
+### PermissionRequest hook 的结论
+
+1. **弹窗和 hook 同时出现**：5 个场景里两者开始的时间都相差不到 0.1 秒。hook 在等的时候，终端照样能批准。
+2. **哪边先答算哪边**：hook 先答，终端弹窗自动消失，屏幕上写明是 hook 允许或拒绝的；终端先答，命令马上运行，hook 之后再答会被忽略。
+3. **终端先答时，hook 进程不会被结束**：它会一直跑到自己回答、超时或会话结束。所以桥要自己发现“终端已经答了”，比如收到同一条命令的 `PostToolUse`，就把卡片上的“等你批准”撤掉。
+4. **hook 不给答案就退出时**，弹窗照常等终端回答。
+5. **`Notification` 的 `permission_prompt` 在弹窗挂了约 6 秒后才触发**（触发过的 3 次都在 6.0–6.1 秒之间）；6 秒内有人答了就不会触发。卡片要即时显示“等你批准”，应该用 `PermissionRequest`。
+6. **开着沙箱并允许自动运行时，沙箱里的命令不会弹窗**，卡片上也就不会出现要批准的事。
+
+**对卡片设计的影响（需要用户决定）**：第一版计划里有一个“离开开关”，打开时才让 hook 等卡片回答，原因是担心 hook 等待时会挡住终端。实测说明不会挡住：hook 一直等着，人在电脑前就在终端答，不在就在卡片上答，哪边先答算哪边。所以“离开开关”可能不需要。代价是终端先答时，桥要按第 3 条自己撤掉卡片上的提示。
+
+### PermissionRequest hook 怎么重跑
+
+在自己的终端里运行（会真的启动 `claude` 并消耗少量 Haiku 用量）；`<场景>` 是上表第一列之一，结果写进 `--out` 指定的目录：
+
+```bash
+python3 experiments/claude-hooks/drive.py <场景> --workdir "$TMPDIR/hookrun" --out experiments/claude-hooks/results/<场景>
+```
+
+```bash
+python3 experiments/claude-hooks/analyze.py experiments/claude-hooks/results/* > experiments/claude-hooks/results/analysis.json
+```
+
+终端录屏里有 `claude` 的启动画面，上面显示了模型名和账户的订阅类型；记录里的路径带有本机的用户名。没有邮箱、密钥或登录凭据。
+
+### Channels
+
+**怎么测的**：[channel_probe.py](../experiments/claude-channels/channel_probe.py) 是一个最小的频道服务器（用标准输入输出和 Claude Code 交换 JSON 消息的 MCP 服务器），声明自己支持 `claude/channel`（推消息）和 `claude/channel/permission`（权限转发），把收发的每条消息都记下来。[run_channel.py](../experiments/claude-channels/run_channel.py) 在伪终端里用下面的参数启动 `claude`，只加载这一个服务器：
+
+```bash
+claude --settings <关掉沙箱的设置文件> --strict-mcp-config --mcp-config <只含这个服务器的配置> --dangerously-load-development-channels server:fmprobe --model haiku --permission-mode default
+```
+
+等会话空闲后，服务器推一条消息，内容是“请用 Bash 运行 `touch <标记文件>`，然后回复 done”。Claude 照做时会弹出批准请求，这个请求会转发给服务器，服务器按场景回答。
+
+**启动时的三道关**：
+
+1. “信任这个文件夹吗”：2.1.292 默认选中的是“No, exit”，直接回车会退出。
+2. 开发频道警告：`WARNING: Loading development channels`，默认选中“1. I am using this for local development”，回车继续。
+3. 之后屏幕提示频道消息会直接进入这个会话（`inject directly in this session`）。
+
+**连接过程**：2.1.292 先发 `server/discover`，带新协议版本 2026-07-28。服务器回“不支持这个方法”后，它改用旧的 `initialize`，请求版本 2025-11-25。服务器回 2025-06-18 并声明两个能力后，频道就注册上了。文档说用 2026-07-28 协议连接的服务器不会被当成频道，所以频道服务器不要实现 `server/discover`。
+
+**3 个场景**（时间从 `claude` 启动算起）：
+
+| 场景 | 经过 |
+| --- | --- |
+| `push-allow` | 7.1 秒服务器推消息；12.0 秒服务器收到批准请求 `notifications/claude/channel/permission_request`，终端弹窗在 0.1 秒内同时出现；17.0 秒服务器回 allow，18.0 秒命令运行 |
+| `push-deny` | 8.9 秒推消息；13.1 秒收到批准请求；18.1 秒回 deny，屏幕显示 `Tool use rejected`，命令没有运行 |
+| `push-terminal-first` | 6.5 秒推消息；9.7 秒收到批准请求；12.8 秒终端答“是”，13.5 秒命令运行；24.7 秒服务器才回 allow，没有任何作用 |
+
+批准请求里有 5 个小写字母的 `request_id`、工具名 `Bash`、一句说明（有时是固定的 `Run shell command`，有时是 Claude 自己写的，比如 `Create marker file as requested`），以及 `input_preview`（命令内容的预览，卡片上可以显示）。
+
+**结论**：
+
+1. 推送的消息能让正在运行、正在等输入的会话接着干活，从推送到 Claude 发起命令约 3–5 秒。语音转成文字后用这条路送进会话可行。
+2. 权限转发和 `PermissionRequest` hook 一样：弹窗同时出现，哪边先答算哪边，迟到的回答没有作用。
+3. 终端先答时，Claude Code 不会通知服务器“这个请求已经处理了”。卡片上的提示同样要靠别的信号撤掉，比如 `PostToolUse` hook。
+4. 用 Channels 必须每次带 `--dangerously-load-development-channels` 启动，并在警告里确认一次。`--channels` 只能加载 Anthropic 认可列表里的插件。所以批准操作用 `PermissionRequest` hook 更省事（只要配置一次 hooks，不用改启动方式），Channels 只在需要往会话里送语音指令时用。这是建议，用不用由 FM-14、FM-15 设计时定。
+
+**怎么重跑**：在自己的终端里运行（会真的启动 `claude`，消耗少量 Haiku 用量）；`<场景>` 是上表第一列之一：
+
+```bash
+python3 experiments/claude-channels/run_channel.py <场景> --workdir "$TMPDIR/chanrun" --out experiments/claude-channels/results/<场景>
+```
+
+每个场景的结果目录里有 `summary.json`（时间线和服务器收发的全部消息）、`channel.jsonl`（服务器的原始记录）、`terminal.raw` 和 `terminal.txt`（终端录屏）、`settings.json` 和 `mcp.json`（这次用的设置）。终端录屏的启动画面上有模型名和账户的订阅类型，记录里的路径带本机用户名；没有邮箱、密钥或登录凭据。
+
 ## 还要实测的
 
-1. `PermissionRequest` hook 在本机 2.1.116 上的实际行为。静态证据：程序文件里能找到 `"PermissionRequest"`、`"Notification"`、`"Stop"` 等事件名，但没有实际运行过。
-2. `PermissionRequest` hook 等待期间，终端弹窗的表现。
-3. Channels 和权限转发在 2.1.116 上能不能用。静态证据：程序文件里能找到 `claude/channel/permission` 和 `dangerously-load-development-channels`，但没有实际运行过。
-4. 桌面 App 里的 Claude Code 是不是另一个版本，hooks 配置和终端是否共用。
+1. 桌面 App 里批准弹窗和 `PermissionRequest` hook 同时出现时的表现。桌面 App 不是终端界面，要用户在 App 里操作才能测。
+2. 用户在终端里选“拒绝”时，桥怎么知道：命令没运行，不会触发 `PostToolUse`。
+3. 同一个会话里接连有几条命令等批准时，hook 和弹窗的顺序。
+4. 桌面 App 里能不能加载开发频道。

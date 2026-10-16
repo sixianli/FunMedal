@@ -1,0 +1,130 @@
+{
+  "scenario": "no-decision",
+  "config": {
+    "wait": 0,
+    "decision": "none",
+    "answer_at": 4
+  },
+  "argv": [
+    "claude",
+    "--settings",
+    "<repo>/experiments/claude-hooks/results/no-decision/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "claude_version": "2.1.292 (Claude Code)",
+  "started": "2026-10-16T19:00:37+0900",
+  "permission_dialog_first_seen_s": null,
+  "marker_created_s": 16.125,
+  "exit_status": 36608,
+  "timeline": [
+    {
+      "t": 6.563,
+      "event": "sent",
+      "keys": "enter (prompt)"
+    },
+    {
+      "t": 6.563,
+      "event": "prompt sent"
+    },
+    {
+      "t": 15.82,
+      "event": "sent",
+      "keys": "1 (yes in terminal)"
+    },
+    {
+      "t": 16.125,
+      "event": "sent",
+      "keys": "enter (confirm)"
+    },
+    {
+      "t": 16.125,
+      "event": "marker file created"
+    },
+    {
+      "t": 24.292,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 25.326,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 28.417,
+      "event": "signal",
+      "signal": 15
+    }
+  ],
+  "hook_events": [
+    {
+      "t": 1792144848.9827578,
+      "pid": 80930,
+      "event": "start",
+      "kind": "pretooluse",
+      "input": {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/no-decision-done.txt",
+          "description": "Create marker file"
+        }
+      },
+      "t_rel": 11.682
+    },
+    {
+      "t": 1792144849.044481,
+      "pid": 80931,
+      "event": "start",
+      "kind": "permission",
+      "input": {
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/no-decision-done.txt",
+          "description": "Create marker file"
+        },
+        "permission_suggestions": [
+          {
+            "type": "addDirectories",
+            "directories": [
+              "/private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers"
+            ],
+            "destination": "session"
+          },
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ]
+      },
+      "t_rel": 11.744
+    },
+    {
+      "t": 1792144849.04463,
+      "pid": 80931,
+      "event": "end",
+      "decision": "none",
+      "t_rel": 11.744
+    },
+    {
+      "t": 1792144853.382293,
+      "pid": 80964,
+      "event": "start",
+      "kind": "posttooluse",
+      "input": {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/no-decision-done.txt",
+          "description": "Create marker file"
+        }
+      },
+      "t_rel": 16.081
+    }
+  ]
+}

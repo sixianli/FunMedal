@@ -1,0 +1,320 @@
+{
+  "no-decision": {
+    "claude_version": "2.1.292 (Claude Code)",
+    "screen_first_seen_s": {
+      "permission dialog": 11.726
+    },
+    "keys_sent": [
+      {
+        "t": 6.563,
+        "event": "sent",
+        "keys": "enter (prompt)"
+      },
+      {
+        "t": 15.82,
+        "event": "sent",
+        "keys": "1 (yes in terminal)"
+      },
+      {
+        "t": 16.125,
+        "event": "sent",
+        "keys": "enter (confirm)"
+      },
+      {
+        "t": 24.292,
+        "event": "sent",
+        "keys": "ctrl-c"
+      },
+      {
+        "t": 25.326,
+        "event": "sent",
+        "keys": "ctrl-c"
+      }
+    ],
+    "marker_created_s": 16.125,
+    "hooks": [
+      {
+        "t": 11.682,
+        "event": "start",
+        "kind": "pretooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 11.744,
+        "event": "start",
+        "kind": "permission",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 11.744,
+        "event": "end",
+        "kind": null,
+        "decision": "none",
+        "notification_type": null
+      },
+      {
+        "t": 16.081,
+        "event": "start",
+        "kind": "posttooluse",
+        "decision": null,
+        "notification_type": null
+      }
+    ]
+  },
+  "terminal-yes-then-hook-deny": {
+    "claude_version": "2.1.292 (Claude Code)",
+    "screen_first_seen_s": {
+      "permission dialog": 11.642,
+      "running PermissionRequest hook": 15.019
+    },
+    "keys_sent": [
+      {
+        "t": 6.687,
+        "event": "sent",
+        "keys": "enter (prompt)"
+      },
+      {
+        "t": 14.717,
+        "event": "sent",
+        "keys": "1 (yes in terminal)"
+      },
+      {
+        "t": 15.019,
+        "event": "sent",
+        "keys": "enter (confirm)"
+      },
+      {
+        "t": 33.961,
+        "event": "sent",
+        "keys": "ctrl-c"
+      },
+      {
+        "t": 35.039,
+        "event": "sent",
+        "keys": "ctrl-c"
+      }
+    ],
+    "marker_created_s": 15.038,
+    "hooks": [
+      {
+        "t": 11.594,
+        "event": "start",
+        "kind": "pretooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 11.677,
+        "event": "start",
+        "kind": "permission",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 15.064,
+        "event": "start",
+        "kind": "posttooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 23.862,
+        "event": "end",
+        "kind": null,
+        "decision": "deny",
+        "notification_type": null
+      }
+    ]
+  },
+  "wait-allow": {
+    "claude_version": "2.1.292 (Claude Code)",
+    "screen_first_seen_s": {
+      "permission dialog": 11.196,
+      "allowed by hook": 32.45
+    },
+    "keys_sent": [
+      {
+        "t": 6.651,
+        "event": "sent",
+        "keys": "enter (prompt)"
+      },
+      {
+        "t": 40.247,
+        "event": "sent",
+        "keys": "ctrl-c"
+      },
+      {
+        "t": 41.269,
+        "event": "sent",
+        "keys": "ctrl-c"
+      }
+    ],
+    "marker_created_s": 32.211,
+    "hooks": [
+      {
+        "t": 11.157,
+        "event": "start",
+        "kind": "pretooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 11.221,
+        "event": "start",
+        "kind": "permission",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 17.231,
+        "event": "start",
+        "kind": "notification",
+        "decision": null,
+        "notification_type": "permission_prompt"
+      },
+      {
+        "t": 31.392,
+        "event": "end",
+        "kind": null,
+        "decision": "allow",
+        "notification_type": null
+      },
+      {
+        "t": 32.258,
+        "event": "start",
+        "kind": "posttooluse",
+        "decision": null,
+        "notification_type": null
+      }
+    ]
+  },
+  "wait-deny": {
+    "claude_version": "2.1.292 (Claude Code)",
+    "screen_first_seen_s": {
+      "permission dialog": 17.332,
+      "denied by hook": 27.612
+    },
+    "keys_sent": [
+      {
+        "t": 6.517,
+        "event": "sent",
+        "keys": "enter (prompt)"
+      },
+      {
+        "t": 37.541,
+        "event": "sent",
+        "keys": "ctrl-c"
+      },
+      {
+        "t": 38.578,
+        "event": "sent",
+        "keys": "ctrl-c"
+      }
+    ],
+    "marker_created_s": null,
+    "hooks": [
+      {
+        "t": 17.277,
+        "event": "start",
+        "kind": "pretooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 17.345,
+        "event": "start",
+        "kind": "permission",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 23.404,
+        "event": "start",
+        "kind": "notification",
+        "decision": null,
+        "notification_type": "permission_prompt"
+      },
+      {
+        "t": 27.527,
+        "event": "end",
+        "kind": null,
+        "decision": "deny",
+        "notification_type": null
+      }
+    ]
+  },
+  "wait-then-terminal-yes": {
+    "claude_version": "2.1.292 (Claude Code)",
+    "screen_first_seen_s": {
+      "permission dialog": 16.35,
+      "running PermissionRequest hook": 22.791
+    },
+    "keys_sent": [
+      {
+        "t": 6.576,
+        "event": "sent",
+        "keys": "enter (prompt)"
+      },
+      {
+        "t": 22.486,
+        "event": "sent",
+        "keys": "1 (yes in terminal)"
+      },
+      {
+        "t": 22.79,
+        "event": "sent",
+        "keys": "enter (confirm)"
+      },
+      {
+        "t": 30.843,
+        "event": "sent",
+        "keys": "ctrl-c"
+      },
+      {
+        "t": 31.868,
+        "event": "sent",
+        "keys": "ctrl-c"
+      }
+    ],
+    "marker_created_s": 22.791,
+    "hooks": [
+      {
+        "t": 16.284,
+        "event": "start",
+        "kind": "pretooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 16.36,
+        "event": "start",
+        "kind": "permission",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 22.406,
+        "event": "start",
+        "kind": "notification",
+        "decision": null,
+        "notification_type": "permission_prompt"
+      },
+      {
+        "t": 22.808,
+        "event": "start",
+        "kind": "posttooluse",
+        "decision": null,
+        "notification_type": null
+      },
+      {
+        "t": 35.284,
+        "event": "signal",
+        "kind": null,
+        "decision": null,
+        "notification_type": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "fmprobe": {
+      "command": "python3",
+      "args": [
+        "<repo>/experiments/claude-channels/channel_probe.py"
+      ],
+      "env": {
+        "FM_CHANNEL_LOG": "<repo>/experiments/claude-channels/results/push-allow/channel.jsonl",
+        "FM_CHANNEL_CONTROL": "/private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/channel-control/push-allow",
+        "FM_CHANNEL_PROTOCOL": "2025-06-18",
+        "FM_CHANNEL_PERMISSION_WAIT": "5",
+        "FM_CHANNEL_PERMISSION_DECISION": "allow"
+      }
+    }
+  }
+}

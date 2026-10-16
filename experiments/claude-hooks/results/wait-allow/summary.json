@@ -1,0 +1,132 @@
+{
+  "scenario": "wait-allow",
+  "config": {
+    "wait": 20,
+    "decision": "allow",
+    "answer_at": null
+  },
+  "argv": [
+    "claude",
+    "--settings",
+    "<repo>/experiments/claude-hooks/results/wait-allow/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "claude_version": "2.1.292 (Claude Code)",
+  "started": "2026-10-16T18:57:14+0900",
+  "permission_dialog_first_seen_s": null,
+  "marker_created_s": 32.211,
+  "exit_status": 36608,
+  "timeline": [
+    {
+      "t": 6.651,
+      "event": "sent",
+      "keys": "enter (prompt)"
+    },
+    {
+      "t": 6.651,
+      "event": "prompt sent"
+    },
+    {
+      "t": 32.211,
+      "event": "marker file created"
+    },
+    {
+      "t": 40.247,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 41.269,
+      "event": "sent",
+      "keys": "ctrl-c"
+    },
+    {
+      "t": 44.363,
+      "event": "signal",
+      "signal": 15
+    }
+  ],
+  "hook_events": [
+    {
+      "t": 1792144645.906036,
+      "pid": 74297,
+      "event": "start",
+      "kind": "pretooluse",
+      "input": {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/wait-allow-done.txt",
+          "description": "Create marker file"
+        }
+      },
+      "t_rel": 11.157
+    },
+    {
+      "t": 1792144645.970277,
+      "pid": 74298,
+      "event": "start",
+      "kind": "permission",
+      "input": {
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/wait-allow-done.txt",
+          "description": "Create marker file"
+        },
+        "permission_suggestions": [
+          {
+            "type": "addDirectories",
+            "directories": [
+              "/private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers"
+            ],
+            "destination": "session"
+          },
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ]
+      },
+      "t_rel": 11.221
+    },
+    {
+      "t": 1792144651.980356,
+      "pid": 74304,
+      "event": "start",
+      "kind": "notification",
+      "input": {
+        "hook_event_name": "Notification",
+        "notification_type": "permission_prompt",
+        "message": "Claude needs your permission"
+      },
+      "t_rel": 17.231
+    },
+    {
+      "t": 1792144666.1410902,
+      "pid": 74298,
+      "event": "end",
+      "decision": "allow",
+      "t_rel": 31.392
+    },
+    {
+      "t": 1792144667.006772,
+      "pid": 74379,
+      "event": "start",
+      "kind": "posttooluse",
+      "input": {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "touch /private/tmp/claude-501/-Users-<user>-Library-Application-Support-Claude-scratch-workspaces-1fa0211f-33a1-4c62-84e8-efa8641bbab9-cd747d04-5e77-47ec-ba21-6e15129051b7-scratch-2026-10-16-9ee3bd/0a4e48e4-2f1e-4ef6-ab9a-46d4e25b6f78/scratchpad/hook-markers/wait-allow-done.txt",
+          "description": "Create marker file"
+        }
+      },
+      "t_rel": 32.258
+    }
+  ]
+}
