@@ -7,14 +7,14 @@
 
 ## 当前批次
 
-- FM-11：写一个只做测速的卡片固件（NimBLE 外设，单向持续推送和接收）和一个 Swift 写的 Mac 端测速程序，分别测卡片到 Mac、Mac 到卡片的持续速度，记下连接参数；证据：notes/ble-link.md 的“实测结果”一节，原始输出存进 experiments/
-- FM-8：用临时 settings 文件挂 PermissionRequest hook，交互式启动 Claude Code，观察 hook 等待期间终端是否弹窗；不改用户全局配置；证据：notes/claude-code.md 的“本机实测结果”一节
+- FM-12：在 firmware/ 新建正式卡片固件（ESP-IDF v5.5.5）：点亮 ST7789，确认分辨率和 D/C 引脚；读 GPIO0 的 ADC 值区分 3 个功能键，电压区间由用户依次按键测一次并写进 notes/hardware.md；像素小人显示 空闲、干活、等批准、完成、出错 5 种状态；保留 FM-11 的蓝牙外设；串口提供切状态和导出屏幕画面的测试指令；证据：带 [FM-12] 的测试经串口切换 5 种状态并导出画面，核对每种状态画面不同且不是空屏；按键电压区间的换算用主机上的单元测试覆盖（实体按键无法自动按下）；加 claude 审核
+- FM-13：Mac 端常驻 App（Swift，独立 .app，见 notes/ble-link.md 第 4 条影响）连卡片；Claude Code 的 hooks 把会话状态写给它，它经蓝牙转给卡片；证据：带 [FM-13] 的端到端测试，用临时 settings 文件挂 hooks 跑一个真实 Claude Code 会话，从卡片串口读回收到的状态序列；加 claude 审核
+- FM-8：同上一批；在等用户给终端里的 Claude Code 重新登录（是否先升级到最新版也由用户定），登录前不能测
 
 ## 之后
 
-- FM-12、FM-13（依赖 FM-11 的连接参数）
 - FM-14（依赖 FM-8 的结果）
-- FM-15（依赖 FM-11 决定语音走哪条无线）
+- FM-15（FM-11 已定语音走蓝牙；排在 FM-12、FM-13 之后）
 - FM-10（等用户回答通知汇总算不算使命范围）
 - FM-9（使命范围确认后再排）
 
@@ -28,6 +28,7 @@
 - 2026-10-16 18:40 FM-5 的用户决定指向 G7（选方案 A）。新增 FM-7、FM-8、FM-9；FM-2 标题去掉“引脚”，引脚改由 FM-7 验证。当前批次改为 FM-7、FM-8、FM-6。原因：status 显示 FM-2、FM-3、FM-4 的笔记都已写好，FM-5 用户已选定，剩下的未确认项都要实测。
 - 2026-10-16 19:00 FM-6 的用户决定指向 G9（能刷回原厂就够）；当前批次去掉 FM-6。原因：用户回答了原厂功能、下载授权和按键布局（G8–G11）。
 - 2026-10-16 19:40 新增 FM-10 到 FM-15；当前批次改为 FM-11、FM-8。原因：用户要求建立使命文档（G14），同意第一版方案并要求语音进第一阶段（G15）；status 显示准备阶段 7 项已验证。
+- 2026-10-16 18:45 FM-11 测完，status 显示 FM-11 当前版本已验证（共 15 项：8 已验证、6 未完成、1 等你决定）。当前批次改为 FM-12、FM-13、FM-8：FM-12 和 FM-13 需要的连接参数已经测到；FM-8 等用户登录。另：之前几条记录里的钟点是估的，不准；从这条起用 date 命令取时间。
 
 ## 意外和发现
 
@@ -35,6 +36,11 @@
 - 2026-10-16 备份时 esptool verify-flash 报告 “Verification successful (digest matched)”，SHA-256 为 03d6dfc6…29db。
 - 2026-10-16 本机终端的 claude 是 Homebrew 装的 2.1.116，没有 claude agents --json；文档最新是 2.1.301。
 - 2026-10-16 打开卡片的 USB 串口会让它重启一次。
+- 2026-10-16 ESP-IDF 在 macOS 上不自带 cmake 和 ninja，用 idf_tools.py 补装到 ~/esp/.espressif（约 240 MB）。
+- 2026-10-16 从 Claude 里直接运行用蓝牙的命令行程序会被 macOS 结束：系统把它算在负责进程 claude 名下，而 claude 没有声明蓝牙用途（崩溃报告 namespace TCC）。测速程序改成独立 .app，由用户用 open 启动。Mac 端常驻程序也必须是独立 App。
+- 2026-10-16 桌面 App 里的 Claude Code 是 2.1.295（~/Library/Application Support/Claude/claude-code/2.1.295/），终端是 Homebrew 的 2.1.116；桌面 App 会运行 ~/.claude/settings.json 里的 hooks（本会话压缩后触发了其中的 SessionStart hook）。
+- 2026-10-16 终端 claude 2.1.116 登录已失效：测试会话发消息后报 401 “OAuth access token is invalid”，FM-8 需要用户先在终端登录。
+- 2026-10-16 FM-11 实测：卡片到 Mac 最慢 309 kbps、Mac 到卡片最慢 253 kbps，5,934 个包没有丢失，来回一趟中位数 22 ms；macOS 默认连接间隔就是 15 ms（详见 notes/ble-link.md）。
 
 ## 决定
 
@@ -46,3 +52,4 @@
 - 2026-10-16 麦克风由用户确认存在（G8）。
 - 2026-10-16 语音进入第一阶段（G15），因此 Channels 也在第一阶段接入。
 - 2026-10-16 Mac 端程序用 Swift：蓝牙、离线语音转文字、辅助功能接口都是 macOS 原生接口，编译后无需另装运行环境。
+- 2026-10-16 语音压成 ADPCM（64 kbps）走蓝牙，不用 Wi-Fi；按键也走蓝牙。依据是 FM-11 实测卡片到 Mac 最慢 309 kbps。

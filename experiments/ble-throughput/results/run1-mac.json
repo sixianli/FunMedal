@@ -1,0 +1,284 @@
+{
+  "configs" : [
+    {
+      "downlink" : [
+        {
+          "card" : {
+            "tx_bytes" : 250318,
+            "tx_packets" : 487,
+            "tx_payload" : 514,
+            "tx_retries" : 5000,
+            "tx_us" : 5000856
+          },
+          "mac_bytes" : 250318,
+          "mac_kbps" : 390.79607580707187,
+          "mac_packets" : 487,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.113746334
+        },
+        {
+          "card" : {
+            "tx_bytes" : 264710,
+            "tx_packets" : 515,
+            "tx_payload" : 514,
+            "tx_retries" : 4999,
+            "tx_us" : 5000061
+          },
+          "mac_bytes" : 264710,
+          "mac_kbps" : 402.73727413662579,
+          "mac_packets" : 515,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.2480069159999996
+        },
+        {
+          "card" : {
+            "tx_bytes" : 271392,
+            "tx_packets" : 528,
+            "tx_payload" : 514,
+            "tx_retries" : 4999,
+            "tx_us" : 5000490
+          },
+          "mac_bytes" : 271392,
+          "mac_kbps" : 421.36401090484361,
+          "mac_packets" : 528,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.1428787079999996
+        }
+      ],
+      "echo" : {
+        "lost" : 0,
+        "max_ms" : 52.816375000000001,
+        "median_ms" : 22.123540999999999,
+        "min_ms" : 21.390582999999999,
+        "p90_ms" : 34.327500000000001,
+        "samples" : 30
+      },
+      "link" : {
+        "encrypted" : 0,
+        "itvl_1250us" : 12,
+        "latency" : 0,
+        "ll_rx_octets" : 251,
+        "ll_rx_time" : 2120,
+        "ll_tx_octets" : 251,
+        "ll_tx_time" : 2120,
+        "mtu" : 517,
+        "rx_bytes" : 0,
+        "rx_first_len" : 0,
+        "rx_gaps" : 0,
+        "rx_packets" : 0,
+        "rx_phy" : 2,
+        "rx_span_us" : 0,
+        "timeout_10ms" : 36,
+        "tx_phy" : 2
+      },
+      "link_after" : {
+        "encrypted" : 0,
+        "itvl_1250us" : 12,
+        "latency" : 0,
+        "ll_rx_octets" : 251,
+        "ll_rx_time" : 2120,
+        "ll_tx_octets" : 251,
+        "ll_tx_time" : 2120,
+        "mtu" : 517,
+        "rx_bytes" : 289792,
+        "rx_first_len" : 512,
+        "rx_gaps" : 0,
+        "rx_packets" : 566,
+        "rx_phy" : 2,
+        "rx_span_us" : 5218884,
+        "timeout_10ms" : 36,
+        "tx_phy" : 2
+      },
+      "requested_itvl_1250us" : [
+        0,
+        0
+      ],
+      "uplink" : [
+        {
+          "card_kbps" : 425.45477870578924,
+          "card_rx_bytes" : 274944,
+          "card_rx_packets" : 537,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 274944,
+          "mac_sent_packets" : 537,
+          "mac_span_s" : 5.0016937080000003
+        },
+        {
+          "card_kbps" : 411.68912514096917,
+          "card_rx_bytes" : 267776,
+          "card_rx_packets" : 523,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 267776,
+          "mac_sent_packets" : 523,
+          "mac_span_s" : 5.0112187090000004
+        },
+        {
+          "card_kbps" : 443.43579968437695,
+          "card_rx_bytes" : 289792,
+          "card_rx_packets" : 566,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 289792,
+          "mac_sent_packets" : 566,
+          "mac_span_s" : 5.0014087089999997
+        }
+      ]
+    },
+    {
+      "downlink" : [
+        {
+          "card" : {
+            "tx_bytes" : 247234,
+            "tx_packets" : 481,
+            "tx_payload" : 514,
+            "tx_retries" : 4999,
+            "tx_us" : 5000052
+          },
+          "mac_bytes" : 247234,
+          "mac_kbps" : 384.829979962935,
+          "mac_packets" : 481,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.128914333
+        },
+        {
+          "card" : {
+            "tx_bytes" : 247748,
+            "tx_packets" : 482,
+            "tx_payload" : 514,
+            "tx_retries" : 4999,
+            "tx_us" : 5000581
+          },
+          "mac_bytes" : 247748,
+          "mac_kbps" : 387.65535698474775,
+          "mac_packets" : 482,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.1021402499999997
+        },
+        {
+          "card" : {
+            "tx_bytes" : 204058,
+            "tx_packets" : 397,
+            "tx_payload" : 514,
+            "tx_retries" : 4999,
+            "tx_us" : 5000500
+          },
+          "mac_bytes" : 204058,
+          "mac_kbps" : 309.30455472645264,
+          "mac_packets" : 397,
+          "mac_seq_gaps" : 0,
+          "mac_span_s" : 5.26455875
+        }
+      ],
+      "echo" : {
+        "lost" : 0,
+        "max_ms" : 39.416167000000002,
+        "median_ms" : 22.225332999999999,
+        "min_ms" : 20.378540999999998,
+        "p90_ms" : 36.368124999999999,
+        "samples" : 30
+      },
+      "link" : {
+        "encrypted" : 0,
+        "itvl_1250us" : 12,
+        "latency" : 0,
+        "ll_rx_octets" : 251,
+        "ll_rx_time" : 2120,
+        "ll_tx_octets" : 251,
+        "ll_tx_time" : 2120,
+        "mtu" : 517,
+        "rx_bytes" : 289792,
+        "rx_first_len" : 512,
+        "rx_gaps" : 0,
+        "rx_packets" : 566,
+        "rx_phy" : 2,
+        "rx_span_us" : 5218884,
+        "timeout_10ms" : 400,
+        "tx_phy" : 2
+      },
+      "link_after" : {
+        "encrypted" : 0,
+        "itvl_1250us" : 12,
+        "latency" : 0,
+        "ll_rx_octets" : 251,
+        "ll_rx_time" : 2120,
+        "ll_tx_octets" : 251,
+        "ll_tx_time" : 2120,
+        "mtu" : 517,
+        "rx_bytes" : 169472,
+        "rx_first_len" : 512,
+        "rx_gaps" : 0,
+        "rx_packets" : 331,
+        "rx_phy" : 2,
+        "rx_span_us" : 5340653,
+        "timeout_10ms" : 400,
+        "tx_phy" : 2
+      },
+      "request_ok" : true,
+      "requested_itvl_1250us" : [
+        12,
+        12
+      ],
+      "uplink" : [
+        {
+          "card_kbps" : 406.3671324690506,
+          "card_rx_bytes" : 264192,
+          "card_rx_packets" : 516,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 264192,
+          "mac_sent_packets" : 516,
+          "mac_span_s" : 5.0113599170000001
+        },
+        {
+          "card_kbps" : 452.40295471029276,
+          "card_rx_bytes" : 292352,
+          "card_rx_packets" : 571,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 292352,
+          "mac_sent_packets" : 571,
+          "mac_span_s" : 5.0097887910000001
+        },
+        {
+          "card_kbps" : 253.09264616143383,
+          "card_rx_bytes" : 169472,
+          "card_rx_packets" : 331,
+          "card_seq_gaps" : 0,
+          "chunk" : 512,
+          "mac_sent_bytes" : 169472,
+          "mac_sent_packets" : 331,
+          "mac_span_s" : 5.0125573750000001
+        }
+      ]
+    }
+  ],
+  "disconnected_during_run" : false,
+  "host" : "li-macair.local",
+  "link_initial" : {
+    "encrypted" : 0,
+    "itvl_1250us" : 12,
+    "latency" : 0,
+    "ll_rx_octets" : 251,
+    "ll_rx_time" : 2120,
+    "ll_tx_octets" : 251,
+    "ll_tx_time" : 2120,
+    "mtu" : 517,
+    "rx_bytes" : 0,
+    "rx_first_len" : 0,
+    "rx_gaps" : 0,
+    "rx_packets" : 0,
+    "rx_phy" : 2,
+    "rx_span_us" : 0,
+    "timeout_10ms" : 36,
+    "tx_phy" : 2
+  },
+  "max_write_without_response" : 512,
+  "os" : "Version 27.2 (Build 26B5086k)",
+  "rssi" : -43,
+  "started" : "2026-10-16T09:40:07Z",
+  "write_errors" : [
+
+  ]
+}

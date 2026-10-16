@@ -1,0 +1,16 @@
+scanning
+connected rssi -43
+config 0-0: echo
+config 0-0: downlink round 1
+config 0-0: uplink round 1
+config 0-0: downlink round 2
+config 0-0: uplink round 2
+config 0-0: downlink round 3
+config 0-0: uplink round 3
+config 12-12: echo
+config 12-12: downlink round 1
+config 12-12: uplink round 1
+config 12-12: downlink round 2
+config 12-12: uplink round 2
+config 12-12: downlink round 3
+config 12-12: uplink round 3

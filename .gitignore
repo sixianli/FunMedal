@@ -1,3 +1,6 @@
 .claude/
 firmware-backup/
 .DS_Store
+experiments/*/firmware/build/
+experiments/*/firmware/sdkconfig.old
+experiments/*/mac/build/

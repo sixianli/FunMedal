@@ -1,0 +1,21 @@
+18:40:13 I (104) esp_image: segment 4: paddr=00083654 vaddr=4038d328 sizeI (373303) blebench: connect status=0
+18:40:13 I (373304) blebench: connected itvl=12 latency=0 timeout=36 encrypted=0
+18:40:13 I (373304) blebench: data len request rc=0
+18:40:13 I (373304) blebench: phy 2M request rc=0
+18:40:13 I (373348) blebench: data len tx=251/2120us rx=251/2120us
+18:40:13 I (373467) blebench: phy update status=0 tx=2 rx=2
+18:40:13 I (373467) blebench: phy update status=0 tx=2 rx=2
+18:40:13 I (373484) blebench: mtu=517
+18:40:14 I (373873) blebench: tx subscribed=1
+18:40:23 I (382835) blebench: stream done bytes=250318 packets=487 payload=514 us=5000856 retries=5000
+18:40:34 I (394340) blebench: stream done bytes=264710 packets=515 payload=514 us=5000061 retries=4999
+18:40:46 I (405996) blebench: stream done bytes=271392 packets=528 payload=514 us=5000490 retries=4999
+18:40:53 I (412561) blebench: conn update request min=12 max=12 rc=0
+18:40:53 I (412718) blebench: conn update status=0
+18:40:53 I (412718) blebench: updated itvl=12 latency=0 timeout=400 encrypted=0
+18:41:03 I (423501) blebench: stream done bytes=247234 packets=481 payload=514 us=5000052 retries=4999
+18:41:15 I (435050) blebench: stream done bytes=247748 packets=482 payload=514 us=5000581 retries=4999
+18:41:27 I (446603) blebench: stream done bytes=204058 packets=397 payload=514 us=5000500 retries=4999
+18:41:33 I (453347) blebench: tx subscribed=0
+18:41:33 I (453348) blebench: disconnect reason=0x213
+18:41:33 I (453349) blebench: advertising rc=0
