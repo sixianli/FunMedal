@@ -28,6 +28,7 @@ STYLES = {
 }
 VALID_ROW = re.compile(r"SNAP \d+ [0-9a-f]{%d}" % (W * 4))
 KEY_SEQUENCE = [(t, k) for k in ("ok", "up", "down") for t in ("press", "long", "release")]
+ADC_STREAM_SECONDS = 120
 
 
 def compact_log(lines):
@@ -224,6 +225,7 @@ def test_key_sampling_survives_unread_backlog(case, card, artifacts):
     assert int(after["events_dropped"]) - int(before["events_dropped"]) > 0, (before, after)
     unanswered = int(after["replies_dropped"]) - int(before["replies_dropped"])
     assert len(ends) + unanswered == snaps, (len(ends), unanswered)
+    assert after["adc_errors"] == before["adc_errors"], (before, after)
 
 
 @pytest.mark.parametrize("case", ["[FM-12] console rejects malformed commands"])
@@ -238,12 +240,29 @@ def test_console_rejects_malformed_commands(case, command, card):
 @pytest.mark.parametrize("case", ["[FM-12] person presses top, middle, bottom key"])
 def test_physical_key_presses(case, card, artifacts):
     seconds = float(os.environ["FM_KEY_PRESS_SECONDS"])
+    before = info_fields(card.command("info"))
+    card.command(f"adc {ADC_STREAM_SECONDS}")
     (artifacts / "key-press-ready.txt").write_text(f"{time.time():.3f}\n", encoding="utf-8")
     deadline = time.monotonic() + seconds
-    events = []
+    events, pressed_samples, idle_samples = [], [], 0
     while time.monotonic() < deadline and len(events) < len(KEY_SEQUENCE):
         line = card.read_line(deadline)
-        if line is not None and line.startswith("KEY "):
+        if line is None:
+            continue
+        if line.startswith("KEY "):
             events.append(tuple(line.split()[1:3]))
+        elif line == "ADC END":
+            card.send(f"adc {ADC_STREAM_SECONDS}")
+        elif line.startswith("ADC "):
+            if line.split()[3] == "none":
+                idle_samples += 1
+            else:
+                pressed_samples.append(line)
+    card.command("adc 1")
+    after = info_fields(card.command("info"))
+    read_until_quiet(card, quiet_s=1.5, limit_s=5.0)
     (artifacts / "key-events.txt").write_text("\n".join(" ".join(e) for e in events) + "\n", encoding="utf-8")
+    record = {"before": before, "after": after, "idle_samples": idle_samples, "pressed_samples": pressed_samples}
+    (artifacts / "key-adc.json").write_text(json.dumps(record), encoding="utf-8")
     assert events == KEY_SEQUENCE
+    assert after["adc_errors"] == before["adc_errors"], (before, after)

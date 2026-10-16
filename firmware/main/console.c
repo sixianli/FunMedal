@@ -18,7 +18,7 @@
 
 #define FIRMWARE_VERSION "funmedal-0.1"
 #define LINE_MAX_LEN 96
-#define LINE_OUT_MAX 256
+#define LINE_OUT_MAX 320
 #define WRITE_TRY_MS 20
 #define WRITE_LIMIT_US (2000 * 1000LL)
 #define EVENT_WAIT_MS 5
@@ -39,12 +39,13 @@ static void print_info(void)
     int shown_frame;
     app_get_draw_stats(&draws, &draw_errors, &shown_frame);
     console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
-                   "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu\n",
+                   "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu\n",
                    FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
                    frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
-                   (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped);
+                   (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
+                   (unsigned long)key_input_adc_errors());
 }
 
 static bool write_all(const char *data, size_t size, int64_t *waited_us, int *timeouts)

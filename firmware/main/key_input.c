@@ -19,10 +19,16 @@ static adc_cali_handle_t cali;
 static key_input_handler_t on_event;
 static volatile int64_t stream_until_us;
 static _Atomic uint32_t max_gap_us;
+static _Atomic uint32_t adc_errors;
 
 void key_input_stream(int seconds)
 {
     stream_until_us = esp_timer_get_time() + (int64_t)seconds * 1000000;
+}
+
+uint32_t key_input_adc_errors(void)
+{
+    return atomic_load(&adc_errors);
 }
 
 int key_input_take_max_gap_ms(void)
@@ -50,6 +56,7 @@ static void key_task(void *arg)
         int mv = 0;
         if (adc_oneshot_read(adc, BOARD_KEY_ADC_CHANNEL, &raw) != ESP_OK ||
             adc_cali_raw_to_voltage(cali, raw, &mv) != ESP_OK) {
+            atomic_fetch_add(&adc_errors, 1);
             continue;
         }
         key_id_t key = keys_classify(mv, keys_board_levels, keys_board_level_count, keys_board_tolerance_mv);
