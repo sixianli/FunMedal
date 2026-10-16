@@ -1,0 +1,36 @@
+GPIO  output-signal          OE  IE  PU  MCU_SEL  IN  OUT
+   0  GPIO(simple)            0   0   0        1   0    0
+   1  FSPICS0                 1   1   0        1   1    0
+   2  I2SO_SD                 1   1   0        1   0    0
+   3  I2SO_WS                 1   1   0        1   0    0
+   4  GPIO(simple)            0   1   0        1   0    0
+   5  I2SO_BCK                1   1   0        1   0    0
+   6  I2S_MCLK                1   1   0        1   1    0
+   7  I2CEXT0_SCL             1   1   1        1   1    1
+   8  FSPICLK                 1   1   0        1   0    0
+   9  FSPID                   1   1   1        1   0    0
+  10  I2CEXT0_SDA             1   1   1        1   1    1
+  11  GPIO(simple)            0   0   0        0   0    0
+  12  GPIO(simple)            0   1   1        1   1    0
+  13  GPIO(simple)            0   1   1        1   1    0
+  14  GPIO(simple)            0   1   1        0   1    0
+  15  GPIO(simple)            0   1   1        0   0    0
+  16  GPIO(simple)            0   1   1        0   1    0
+  17  GPIO(simple)            0   1   1        0   1    0
+  18  GPIO(simple)            0   0   0        0   0    0
+  19  GPIO(simple)            0   0   0        0   0    0
+  20  GPIO(simple)            0   1   1        1   1    1
+  21  LEDC_LS_SIG_OUT0        1   1   1        1   1    0
+
+input signals routed through the GPIO matrix:
+    6 U0RXD                <- const-high
+   15 I2SI_SD              <- GPIO4
+   16 I2SI_BCK             <- GPIO5
+   17 I2SI_WS              <- GPIO3
+   53 I2CEXT0_SCL          <- GPIO7
+   54 I2CEXT0_SDA          <- GPIO10
+   63 FSPICLK              <- GPIO8
+   65 FSPID                <- GPIO9
+   68 FSPICS0              <- GPIO1
+
+last one-shot ADC sample: channel 0, atten 3
