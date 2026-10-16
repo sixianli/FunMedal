@@ -1,0 +1,55 @@
+{
+  "task": "funmedal",
+  "prefix": "FM",
+  "items": [
+    {
+      "id": "FM-1",
+      "title": "原厂固件完整备份，能校验、能恢复",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {"type": "command", "run": "shasum -a 256 -c firmware-backup/trae_card_<id>_fw1.0.3_full8MB_2026-10-16.bin.sha256"}
+      ],
+      "added": {"by": "claude", "on": "2026-10-16", "why": "用户要保留原厂功能，改固件前必须能恢复"}
+    },
+    {
+      "id": "FM-2",
+      "title": "查清硬件：麦克风、按键数量、屏幕型号和分辨率、各部件引脚",
+      "goal_ref": ["G1", "G5"],
+      "done_when": [{"type": "doc", "path": "notes/hardware.md", "heading": "结论"}],
+      "added": {"by": "claude", "on": "2026-10-16", "why": "语音功能取决于有没有麦克风；三个功能都要驱动屏幕和按键"}
+    },
+    {
+      "id": "FM-3",
+      "title": "调研 Claude Code 状态输出和外部操作的官方方式",
+      "goal_ref": ["G1", "G2"],
+      "done_when": [{"type": "doc", "path": "notes/claude-code.md", "heading": "结论"}],
+      "added": {"by": "claude", "on": "2026-10-16", "why": "功能 1、2 的可行性"}
+    },
+    {
+      "id": "FM-4",
+      "title": "调研 iPhone 和 Mac 通知汇聚到卡片的方式",
+      "goal_ref": ["G1"],
+      "done_when": [{"type": "doc", "path": "notes/notifications.md", "heading": "结论"}],
+      "added": {"by": "claude", "on": "2026-10-16", "why": "功能 3 的可行性"}
+    },
+    {
+      "id": "FM-5",
+      "title": "有趣的交互方案，供用户挑选",
+      "goal_ref": ["G4"],
+      "done_when": [
+        {"type": "doc", "path": "notes/interaction-options.md", "heading": "方案"},
+        {"type": "user", "ref": null, "question": "交互方案选哪个（可多选、可混搭）？"}
+      ],
+      "added": {"by": "claude", "on": "2026-10-16"}
+    },
+    {
+      "id": "FM-6",
+      "title": "原厂名片功能的保留方式",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {"type": "user", "ref": null, "question": "原厂功能是“随时能刷回去”就够，还是要和新功能并存、在卡片上切换？"}
+      ],
+      "added": {"by": "claude", "on": "2026-10-16", "why": "G3 只说“还要”，没说是可恢复还是并存，两者工作量差很多"}
+    }
+  ]
+}

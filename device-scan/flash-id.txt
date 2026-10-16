@@ -1,0 +1,22 @@
+esptool v5.6.0
+Serial port /dev/cu.usbmodem11301:
+Connecting...
+Detecting chip type... ESP32-C3
+Connected to ESP32-C3 on /dev/cu.usbmodem11301:
+Chip type:          ESP32-C3 (QFN32) (revision v1.1)
+Features:           Wi-Fi, BT 5 (LE), Single Core, 160MHz, Embedded Flash 8MB (XMC)
+Crystal frequency:  40MHz
+USB mode:           USB-Serial/JTAG
+MAC:                xx:xx:xx:xx:xx:xx
+
+Uploading stub flasher...
+Running stub flasher...
+Stub flasher running.
+
+Flash Memory Information:
+=========================
+Manufacturer: 20
+Device: 4017
+Detected flash size: 8MB
+
+Hard resetting via RTS pin...
