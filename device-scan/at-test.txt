@@ -1,0 +1,54 @@
+>>> AT+TEST=INFO
+I (614) LVGL: Starting LVGL task
+I (919) app: [HEAP] 10-display+lvgl  free=166848  min=166848  max_blk=114688  lv_peak=32044/46828  music_st=    0
+I (920) disp_bl: set_backlight 100% (ready=1 duty=1023/1023)
+I (921) lvgl_boot: 首帧完整写入，面板和背光已开启
+I (926) identity: 身份载入: SN=<id> hw=v1.0.0 provisioned=1
+I (926) app: 身份自检通过 SN=<id>
+I (930) app: token 广播接收 已启用
+I (931) app: [HEAP] 20-ble-controller free=164044  min=163912  max_blk=114688  lv_peak=32044/46828  music_st=    0
++TEST:INFO,ver=1.0.3,sn=<id>,heap=158544,rst=11,PASS
+I (932) prov: 产线指令就绪: AT+CARDID=/? / AT+TEST? / at+config=? / at+command=? / at+reboot
+I (934) BLE_INIT: BT controller compile version [1bb2f50]
+I (935) BLE_INIT: Using main XTAL as clock source
+I (935) BLE_INIT: Feature Config, ADV:1, BLE_50:1, DTM:1, SCAN:1, CCA:0, SMP:1, CONNECT:1
+I (936) BLE_INIT: Bluetooth MAC: xx:xx:xx:xx:xx:xx
+I (937) phy_init: phy_version 1232,d493f299,Aug 25 2025,19:01:20
+I (998) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+I (1008) app: 截图调度 queue=0x3fcc76cc ack=0x3fcc7744 task=OK state=580B
+I (1012) avatar_store: AVA1 ready: 8 avatars, 129288 bytes
+I (1037) app: 用户内容判定 avatar=0 name=0 intro=0 audio=0 photo=0
+I (1038) app: 用户头像/姓名/简介/音频/照片均为默认,显示扫码绑定页
+I (1038) app: [HEAP] 30-ble-gatt+img  free= 86656  min= 86608  max_blk= 77824  lv_peak=32044/46824  music_st=    0
+I (1047) ES8311: Work in Slave mode
+I (1051) audio_es8311: ES8311 初始化完成
+I (1052) app: 音频模式=乐谱播放; sig=0x3fcccdbc task=OK cap=1024 空闲堆=67040
+I (1052) app: [HEAP] 40-audio         free= 67040  min= 67040  max_blk= 57344  lv_peak=32044/46824  music_st= 3788
+I (1053) app: 空闲深睡:5 分钟(任意功能键唤醒;0=永不)。at+config=common,standby_time 可改
+I (1054) cw2017: 检测到 CW2017 VERSION=0x0F
+I (1055) cw2017: ID 引脚电压 = 1276 mV(诊断用)
+I (1093) cw2017: profile '4.2v_520mah' 已在芯片中(UPDATE_FLAG 置位),保留已学习状态
+I (1094) cw2017: SOC 就绪: 82%
+I (1111) app: 电量检测已启用(每 3000ms 采样,EMA 平滑防突变)
+I (1112) app: [HEAP] 99-ready         free= 66916  min= 66916  max_blk= 57344  lv_peak=32044/46824  music_st= 3788
+
+>>> AT+TEST=I2C
+I (2546) I2S_IF: STD: TX, data_bit: 16, slot_bit: 16, ws_width: 16, slot_mode: MONO, slot_mask: 0x1
+I (2547) I2S_IF: STD: TX, sample_rate_hz: 16000, mclk_multiple: 256, clk_src: 6
+I (2547) I2S_IF: STD: RX, data_bit: 16, slot_bit: 16, ws_width: 16, slot_mode: MONO, slot_mask: 0x1
+I (2548) I2S_IF: STD: RX, sample_rate_hz: 16000, mclk_multiple: 256, clk_src: 6
+I (2565) Adev_Codec: Open codec device OK
++TEST:I2C,es8311=1,cw2017=1,PASS
+
+>>> AT+TEST=BATT
++TEST:BATT,present=1,soc=82,mv=4035,PASS
+
+>>> AT+TEST=AUDIO
+I (6633) I2S_IF: STD: TX, data_bit: 16, slot_bit: 16, ws_width: 16, slot_mode: MONO, slot_mask: 0x1
+I (6634) I2S_IF: STD: TX, sample_rate_hz: 8000, mclk_multiple: 256, clk_src: 6
+I (6634) I2S_IF: STD: RX, data_bit: 16, slot_bit: 16, ws_width: 16, slot_mode: MONO, slot_mask: 0x1
+I (6634) I2S_IF: STD: RX, sample_rate_hz: 8000, mclk_multiple: 256, clk_src: 6
+I (6651) Adev_Codec: Open codec device OK
+[audio] 回环 1000Hz | 音开: tone_mag=1556 peak=2863 rms=1278 dc=21 n=2560 | 静音基线: mag=8 peak=486 n=1536 | 音开/基线≈194
++TEST:AUDIO,ret=0,tone_mag=1556,peak=2863,PASS
+
