@@ -1,0 +1,5 @@
+{
+  "name": "funmedal-check",
+  "version": "0.1.0",
+  "description": "Check before building: an installed plugin with hooks and a mod"
+}

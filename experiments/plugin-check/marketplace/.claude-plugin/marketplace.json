@@ -1,0 +1,11 @@
+{
+  "name": "funmedal-check",
+  "owner": { "name": "FunMedal" },
+  "plugins": [
+    {
+      "name": "funmedal-check",
+      "source": "./funmedal-check",
+      "description": "Check before building: an installed plugin with hooks and a mod"
+    }
+  ]
+}

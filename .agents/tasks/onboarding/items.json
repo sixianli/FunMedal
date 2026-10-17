@@ -146,6 +146,34 @@
         "on": "2026-10-17",
         "why": "OB-3 发现按过 Stop 之后 mod 送的话都被丢掉，G11 用户选择再在桌面 App 测一次"
       }
+    },
+    {
+      "id": "OB-6",
+      "title": "开工前检查：从本机目录正式安装的插件，在终端和桌面 App 里能否加载 mod 和 hooks、由 mod 自动启动桥接程序、用短命令把结果交给桥接程序；桌面 App 里能否用卡片按键批准",
+      "goal_ref": [
+        "G19"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G19",
+          "question": "是否允许在你真正使用的 Claude Code 里临时装一个测试插件做开工前检查？"
+        },
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "开工前检查"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G19 负责人要求开工前确认方案真的可行，免得做到一半发现不行"
+      }
     }
   ]
 }

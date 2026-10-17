@@ -1,0 +1,107 @@
+{
+  "description": "FunMedal plugin check",
+  "modules": [
+    "./register.js"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 600,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
