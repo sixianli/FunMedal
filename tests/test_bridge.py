@@ -18,6 +18,7 @@ ARTIFACTS_SUBDIR = "bridge"
 HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "source", "reason", "error", "claude_pid"}
 MIN_STACK_FREE_BYTES = 1024
 ALREADY_RUNNING_EXIT = 3
+FIXED_CHANGED_HANDLE = 3
 
 
 @pytest.mark.parametrize("case", ["[FM-13] real session shows working, waiting, working, done, idle"])
@@ -292,29 +293,42 @@ def test_card_reboot_restores_state(case, card, bridge, run_dir):
     assert summary["states_after_reboot"] == ["working", "done"], summary
     assert summary["status"]["connects"] >= 2, summary
 
+def reboot_and_read_layout(card):
+    mark = card.mark()
+    assert card.request("reboot") == "OK reboot"
+    ready, _, _ = card.wait_for(lambda line: line.startswith("READY "), 20.0, mark)
+    _, _, layout = card.wait_for(lambda line: line.startswith("GATT layout "), 10.0, mark)
+    return {"mark": mark, "ready": ready, "layout": layout}
 
-@pytest.mark.parametrize("case", ["[FM-13] a changed bluetooth layout is announced once so the Mac rereads it"])
+
+@pytest.mark.parametrize("case", ["[FM-13] the layout-change notice sits first, where no other service can move it"])
+def test_changed_notice_position_fixed(case, card, run_dir):
+    info = info_fields(card.request("info"))
+    write_summary(run_dir, {"info": info})
+    assert info.get("gatt_changed") == str(FIXED_CHANGED_HANDLE), info
+
+
+@pytest.mark.parametrize("case", ["[FM-13] a changed bluetooth layout is announced until the Mac confirms it, then not again"])
 def test_layout_change_announced_once(case, card, bridge, run_dir):
     assert card.request("ble layout forget") == "OK ble layout forget"
-    first = card.mark()
-    assert card.request("reboot") == "OK reboot"
-    ready, _, _ = card.wait_for(lambda line: line.startswith("READY "), 20.0, first)
-    _, _, changed = card.wait_for(lambda line: line.startswith("GATT layout "), 10.0, first)
+    first = reboot_and_read_layout(card)
+    second = reboot_and_read_layout(card)
     status = bridge.start()
-    card.wait_for(lambda line: line == "GATT changed acked", 30.0, ready)
-    second = card.mark()
-    assert card.request("reboot") == "OK reboot"
-    ready_again, _, _ = card.wait_for(lambda line: line.startswith("READY "), 20.0, second)
-    _, _, same = card.wait_for(lambda line: line.startswith("GATT layout "), 10.0, second)
-    card.wait_for(lambda line: line == f"BLE state {status['desired']}", 30.0, ready_again)
-    summary = {"first_boot": changed, "second_boot": same,
-               "announced": card_lines(card, first, "GATT changed"),
-               "announced_after_second_boot": card_lines(card, second, "GATT changed"),
-               "subscriptions": card_lines(card, first, "BLE subscribe changed"),
+    _, _, sent = card.wait_for(lambda line: line.startswith("GATT changed sent"), 30.0, second["mark"])
+    card.wait_for(lambda line: line == "GATT layout saved", 30.0, second["mark"])
+    third = reboot_and_read_layout(card)
+    card.wait_for(lambda line: line == f"BLE state {status['desired']}", 30.0, third["ready"])
+    summary = {"first_boot": first["layout"], "second_boot": second["layout"], "third_boot": third["layout"],
+               "sent": sent, "announced": card_lines(card, first["mark"], "GATT changed"),
+               "announced_after_third_boot": card_lines(card, third["mark"], "GATT changed"),
+               "subscriptions": card_lines(card, first["mark"], "BLE subscribe changed"),
                "bridge_kinds": sorted({entry["kind"] for entry in bridge.log_entries()}),
                "status": bridge.status()}
     write_summary(run_dir, summary)
-    assert re.fullmatch(r"GATT layout changed subscribers=[1-9][0-9]*", changed), summary
-    assert same == "GATT layout same", summary
-    assert summary["announced_after_second_boot"] == [], summary
+    assert re.fullmatch(r"GATT layout changed subscribers=[1-9][0-9]*", first["layout"]), summary
+    assert second["layout"] == first["layout"], summary
+    assert sent == "GATT changed sent range=0001-ffff", summary
+    assert "GATT changed acked" in summary["announced"], summary
+    assert third["layout"] == "GATT layout same", summary
+    assert summary["announced_after_third_boot"] == [], summary
     assert summary["status"]["card"] == "connected", summary

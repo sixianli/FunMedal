@@ -16,3 +16,4 @@ void ble_link_confirm_pairing(bool accept);
 void ble_link_security(char *out, size_t size);
 int ble_link_unpair(void);
 esp_err_t ble_link_forget_layout(void);
+uint16_t ble_link_changed_handle(void);

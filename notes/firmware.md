@@ -74,7 +74,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent`，Mac 确认收到时报 `GATT changed acked`，见下文“换固件后 Mac 还用旧的功能表”。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。
 
 两类输出的发送规则不同：
 
@@ -83,7 +83,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`prompt`（正在显示的批准请求编号，没有时是 `none`）、`sec`（蓝牙连接的加密状态）、`uptime_s`（开机多少秒） |
+| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`prompt`（正在显示的批准请求编号，没有时是 `none`）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`uptime_s`（开机多少秒）。语音加的两项见 [voice.md](voice.md) |
 | `state <idle\|working\|waiting\|done\|error>` | 切换状态 |
 | `frame <0\|1\|auto>` | 固定显示某一帧，或恢复自动换帧 |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
@@ -168,16 +168,32 @@ GATT 是蓝牙设备对外公布的功能表：卡片有哪些可以读写的项
 
 **原因**：macOS 把配对过的蓝牙设备的功能表记在本机，下次连接直接用记下的，不再问设备。设备的功能表变了，要由设备发一个 `Service Changed` 通知（蓝牙标准里“我的功能表变了，请重新读”的通知），Mac 收到后才会重新读。卡片用的 NimBLE 蓝牙库带这个通知，但旧固件从没发过。
 
-**改法**：卡片开机时把自己的功能表（每一项的编号和读写方式）算成一个指纹，和上次存在 NVS（芯片上存设置的一小块存储）里的比较。
+**改法**：卡片开机时把自己的功能表算成一个指纹，和上次存在 NVS（芯片上存设置的一小块存储）里的比较。指纹包括每一项的编号（UUID，蓝牙用来认项的标识）、读写方式和句柄（handle，Mac 读写某一项时用的位置编号），也包括 NimBLE 自带的 GAP 服务（设备名一类的基本信息）和 GATT 服务（放 `Service Changed` 的那一组）。
 
 - 一样：报 `GATT layout same`，什么也不发。
-- 不一样或者没存过：调用 NimBLE 的 `ble_svc_gatt_changed` 发通知，存下新指纹，报 `GATT layout changed subscribers=<数>`。`subscribers` 是订阅了这个通知的已配对设备数，本机的 Mac 是 1。
+- 不一样或者没存过：调用 NimBLE 的 `ble_svc_gatt_changed` 发通知，报 `GATT layout changed subscribers=<数>`。`subscribers` 是订阅了这个通知、还等着收的已配对设备数，本机的 Mac 是 1。
 
-Mac 当时没连着也不要紧：NimBLE 把“还欠这台设备一个通知”存起来，等它连上、恢复加密后再发，收到确认才清掉。从 FM-14 的固件升级上来时没存过指纹，所以第一次开机就会发。
+新指纹不是马上存，而是等每个订阅的设备都确认收到才存，存好时报 `GATT layout saved`，存失败时报 `GATT layout unsaved err=<错误码>`。没有设备订阅时马上存。如果卡片还和一台再也不连的设备配对着、它也订阅过这个通知，新指纹就一直存不下，卡片每次开机都会再发一次；按代码推断，连着的 Mac 只是每次多读一遍功能表，没有实测过。通知真的发出去时报 `GATT changed sent range=<起>-<止>`，范围是 `0001-ffff`，意思是“全部重新读”；Mac 确认时报 `GATT changed acked`。
 
-**结果**：修好后，桥接程序第一次连接就找到全部 6 项，没再报缺项；第二次开机报 `GATT layout same`，不再发通知。测试是 [test_bridge.py](../tests/test_bridge.py) 的 `test_layout_change_announced_once`：先用 `ble layout forget` 让卡片忘掉指纹，重启，要求卡片报 `changed` 且订阅数至少 1、Mac 确认收到、桥接程序连上；再重启一次，要求报 `same` 并且不再发通知。记录在 `artifacts/fm13-layout-after-20261017-102133/`。
+**为什么要等确认再存**：第一版改法是开机发现变了就马上存新指纹，以为 NimBLE 会替没连着的 Mac 记下“还欠一个通知”。读 ESP-IDF v5.5.5 的代码后发现，这个“还欠”的标记只在内存里：`ble_store_config_persist_cccds`（`ble_store_nvs.c`）只在订阅记录的条数变了时才写 NVS，标记变了不写。所以 Mac 确认之前卡片重启一次，标记就没了，新指纹却已经存下，下次开机报 `same`，Mac 永远收不到通知。用旧固件复现过：忘掉指纹后连着重启两次，第二次就报 `same`，测试等不到 `GATT changed sent`（`artifacts/fm13-unconfirmed-before-20261017-110935/`）。
 
-**以后改功能表**：只要固件里的功能表变了，指纹就会变，不用另外做什么。如果以后某次换固件后配对还没生效，或者 `subscribers=0`，说明 Mac 没订阅这个通知，只能在 Mac 的蓝牙设置里删掉卡片再重新配对。
+**为什么 GATT 服务要排在最前**：Mac 记的订阅是按句柄记的。各组服务按注册的先后分句柄，旧固件先注册 GAP 服务，GAP 服务里多一项，后面所有句柄都往后挪，`Service Changed` 自己的句柄也跟着挪。Mac 订阅的还是旧位置，卡片找不到这个订阅，于是 `subscribers=0`，通知发不出去。实验在 `artifacts/fm13-handle-shift-20261017-111512/`，都是用 ESP-IDF 的 `CONFIG_BT_NIMBLE_SVC_GAP_CAR_SUPP=y`（让 GAP 服务多一项“中心设备地址解析”）把句柄挪动。重跑：把 `firmware/` 复制一份、在副本里打开这个配置，再运行 `.venv/bin/python artifacts/fm13-handle-shift-20261017-111512/experiment.py <阶段名> <副本目录>`，结果会写进脚本所在目录下以阶段名命名的子目录。各阶段的结果：
+
+| 阶段 | 固件 | 结果 |
+| --- | --- | --- |
+| b | 旧固件 | 报 `same`，不发通知；桥接程序 32 次写入全部出错，卡片状态没变 |
+| c、c2 | 指纹不含句柄 | 报 `same`；忘掉指纹再重启，报 `changed subscribers=0`，还是发不出去 |
+| e | GATT 服务排在最前，指纹含句柄 | 报 `changed subscribers=1`，发出并收到确认；桥接程序 2 次写入都成功，卡片变成空闲 |
+| f | 同 e，换回平常的配置 | 同 e |
+
+现在 `ble_link_start` 先注册 GATT 服务、再注册 GAP 服务，`Service Changed` 的句柄固定是 3，不管 GAP 服务或我们自己的服务怎么变。`info` 里的 `gatt_changed` 报这个句柄。这次挪动本身也让 Mac 记的订阅失效，所以 2026-10-17 用户决定固定这个句柄（任务目标记录 `goal.md` 的 G33），并重新配对了一次（`artifacts/fm13-repair-20261017-112321/`）。
+
+**结果**：
+
+- [test_bridge.py](../tests/test_bridge.py) 的 `test_layout_change_announced_once`：先用 `ble layout forget` 忘掉指纹，再在 Mac 确认前连着重启两次，两次都要报 `changed` 且订阅数至少 1；然后启动桥接程序，要求报 `GATT changed sent range=0001-ffff`、`GATT changed acked`、`GATT layout saved`；第三次重启要报 `same`，之后不再发通知，桥接程序连上。记录在 `artifacts/fm13-unconfirmed-after-20261017-112018/`。
+- 同一文件的 `test_changed_notice_position_fixed`：要求 `info` 的 `gatt_changed` 是 3。改之前 `info` 里没有这一项（`artifacts/fm13-fixed-position-before-20261017-112244/`），改之后通过（`artifacts/fm13-fixed-position-after-20261017-112501/`）。
+
+**以后改功能表**：只要固件里的功能表变了，指纹就会变，不用另外做什么。如果某次换固件后开机报 `subscribers=0`，说明 Mac 没订阅这个通知或者订阅的位置不对，只能在卡片上运行 `ble unpair`、在 Mac 的“系统设置 → 蓝牙”里忽略卡片，再照 README 第 4 步重新配对。用本项目 2026-10-17 之前的固件配对过的 Mac，换到现在的固件时都要这样重新配对一次。
 
 ## 测试
 

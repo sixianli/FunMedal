@@ -54,6 +54,8 @@ static uint8_t own_addr_type;
 static uint16_t decision_handle;
 static uint16_t audio_handle;
 static uint16_t changed_handle;
+static uint32_t unconfirmed_layout;
+static bool layout_unconfirmed;
 static voice_image_t incoming_image;
 static _Atomic uint32_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static _Atomic uint32_t state_writes;
@@ -228,29 +230,86 @@ static uint32_t hash_uuid(uint32_t hash, const ble_uuid_t *uuid)
     return fnv1a(hash, text, strlen(text));
 }
 
+static uint32_t hash_handle(uint32_t hash, uint16_t handle)
+{
+    return fnv1a(hash, &handle, sizeof handle);
+}
+
+static uint32_t hash_service(uint32_t hash, const ble_uuid_t *uuid)
+{
+    uint16_t handle = 0;
+    ble_gatts_find_svc(uuid, &handle);
+    return hash_handle(hash_uuid(hash, uuid), handle);
+}
+
 static uint32_t layout_fingerprint(void)
 {
-    uint32_t hash = FNV_OFFSET;
+    uint32_t hash = hash_service(FNV_OFFSET, BLE_UUID16_DECLARE(BLE_SVC_GAP_UUID16));
+    hash = hash_handle(hash_service(hash, BLE_UUID16_DECLARE(BLE_GATT_SVC_UUID16)), changed_handle);
     for (const struct ble_gatt_svc_def *svc = services; svc->type != BLE_GATT_SVC_TYPE_END; svc++) {
-        hash = hash_uuid(hash, svc->uuid);
+        hash = hash_service(hash, svc->uuid);
         for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr->uuid != NULL; chr++) {
+            uint16_t definition = 0;
+            uint16_t value = 0;
+            ble_gatts_find_chr(svc->uuid, chr->uuid, &definition, &value);
             hash = hash_uuid(hash, chr->uuid);
             hash = fnv1a(hash, &chr->flags, sizeof chr->flags);
+            hash = hash_handle(hash_handle(hash, definition), value);
         }
     }
     return hash;
 }
 
-static int changed_subscribers(void)
+static int changed_subscribers(bool unconfirmed_only)
 {
     struct ble_store_key_cccd key = {.peer_addr = *BLE_ADDR_ANY, .chr_val_handle = changed_handle};
     struct ble_store_value_cccd value;
     int count = 0;
     while (ble_store_read_cccd(&key, &value) == 0) {
-        count += value.flags != 0;
+        count += value.flags != 0 && (!unconfirmed_only || value.value_changed);
         key.idx++;
     }
     return count;
+}
+
+static bool read_saved_layout(uint32_t *out)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(LAYOUT_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
+        return false;
+    }
+    bool found = nvs_get_u32(nvs, LAYOUT_KEY, out) == ESP_OK;
+    nvs_close(nvs);
+    return found;
+}
+
+static esp_err_t save_layout(uint32_t fingerprint)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(LAYOUT_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_u32(nvs, LAYOUT_KEY, fingerprint);
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    return err;
+}
+
+static void save_layout_once_confirmed(void)
+{
+    if (!layout_unconfirmed || changed_subscribers(true) > 0) {
+        return;
+    }
+    layout_unconfirmed = false;
+    esp_err_t err = save_layout(unconfirmed_layout);
+    if (err == ESP_OK) {
+        console_event("GATT layout saved\n");
+    } else {
+        console_event("GATT layout unsaved err=0x%x\n", err);
+    }
 }
 
 static void announce_layout(void)
@@ -261,36 +320,31 @@ static void announce_layout(void)
         return;
     }
     uint32_t current = layout_fingerprint();
-    uint32_t stored = 0;
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open(LAYOUT_NAMESPACE, NVS_READWRITE, &nvs);
-    if (err != ESP_OK) {
-        console_event("GATT layout unknown err=0x%x\n", err);
-        return;
-    }
-    if (nvs_get_u32(nvs, LAYOUT_KEY, &stored) == ESP_OK && stored == current) {
-        nvs_close(nvs);
+    uint32_t saved = 0;
+    if (read_saved_layout(&saved) && saved == current) {
         console_event("GATT layout same\n");
         return;
     }
     ble_svc_gatt_changed(0x0001, 0xffff);
-    err = nvs_set_u32(nvs, LAYOUT_KEY, current);
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
-    console_event("GATT layout changed subscribers=%d\n", changed_subscribers());
-    if (err != ESP_OK) {
-        console_event("GATT layout unsaved err=0x%x\n", err);
-    }
+    unconfirmed_layout = current;
+    layout_unconfirmed = true;
+    console_event("GATT layout changed subscribers=%d\n", changed_subscribers(false));
+    save_layout_once_confirmed();
 }
 
 static void report_changed(int status)
 {
     if (status == 0) {
-        console_event("GATT changed sent\n");
+        struct os_mbuf *om = NULL;
+        uint8_t range[4] = {0};
+        if (ble_att_svr_read_local(changed_handle, &om) == 0) {
+            os_mbuf_copydata(om, 0, sizeof range, range);
+            os_mbuf_free_chain(om);
+        }
+        console_event("GATT changed sent range=%04x-%04x\n", range[0] | range[1] << 8, range[2] | range[3] << 8);
     } else if (status == BLE_HS_EDONE) {
         console_event("GATT changed acked\n");
+        save_layout_once_confirmed();
     } else {
         console_event("GATT changed failed status=%d\n", status);
     }
@@ -539,6 +593,11 @@ int ble_link_unpair(void)
     return ble_store_clear();
 }
 
+uint16_t ble_link_changed_handle(void)
+{
+    return changed_handle;
+}
+
 esp_err_t ble_link_forget_layout(void)
 {
     nvs_handle_t nvs;
@@ -566,8 +625,8 @@ esp_err_t ble_link_start(void)
     ble_hs_cfg.sm_sc = 1;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
-    ble_svc_gap_init();
     ble_svc_gatt_init();
+    ble_svc_gap_init();
     ESP_RETURN_ON_FALSE(ble_gatts_count_cfg(services) == 0, ESP_FAIL, TAG, "gatt count");
     ESP_RETURN_ON_FALSE(ble_gatts_add_svcs(services) == 0, ESP_FAIL, TAG, "gatt add");
     ESP_RETURN_ON_FALSE(ble_svc_gap_device_name_set(DEVICE_NAME) == 0, ESP_FAIL, TAG, "device name");
