@@ -110,7 +110,7 @@
    sh mac/bridge/build.sh
    ```
 
-2. **启动常驻程序**：`-g` 表示在后台打开，不抢走当前窗口。不加 `--socket` 时，套接字在 `~/Library/Application Support/FunMedal/bridge.sock`。想留记录就加 `--log <文件路径>`，收到的事件、蓝牙连接和每次写入都会记成一行 JSON。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。**每次改了代码重新编译后，macOS 都会再问一次**：临时签名没有固定的身份，macOS 按程序内容的指纹记住授权，内容变了就当成新程序。2026-10-16 到 17 日系统授权日志（`tccd` 进程的日志）里有 6 次这样的询问，每次都是用户点的允许；询问没人回答时，桥接程序一直连不上卡片，`status` 里 `authorization` 是 `notDetermined`。
+2. **启动常驻程序**：`-g` 表示在后台打开，不抢走当前窗口。不加 `--socket` 时，套接字在 `~/Library/Application Support/FunMedal/bridge.sock`。套接字旁边还有一个 `bridge.activity.json`，记每个 `claude` 进程最近一次需要你的时间（只有进程号和时间，只有你自己能读），用来决定按住说话的话送进哪个会话，见 [voice.md](voice.md) 的“送进哪个会话”。想留记录就加 `--log <文件路径>`，收到的事件、蓝牙连接和每次写入都会记成一行 JSON。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。**每次改了代码重新编译后，macOS 都会再问一次**：临时签名没有固定的身份，macOS 按程序内容的指纹记住授权，内容变了就当成新程序。2026-10-16 到 17 日系统授权日志（`tccd` 进程的日志）里有 6 次这样的询问，每次都是用户点的允许；询问没人回答时，桥接程序一直连不上卡片，`status` 里 `authorization` 是 `notDetermined`。
 
    ```bash
    open -g mac/bridge/build/FunMedalBridge.app --args serve

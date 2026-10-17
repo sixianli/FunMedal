@@ -92,6 +92,7 @@ class HookRun:
 class Bridge:
     def __init__(self, workdir: Path):
         self.socket = os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}{uuid.uuid4().hex[:8]}.sock")
+        self.activity = Path(self.socket).with_suffix(".activity.json")
         self.log = workdir / "bridge.jsonl"
         self.started = False
         self.runs: list[HookRun] = []
@@ -149,6 +150,8 @@ class Bridge:
 def stop_leftover_bridges():
     for path in glob.glob(os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}*.sock")):
         bridge_cli("quit", "--socket", path)
+    for path in glob.glob(os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}*.activity.json")):
+        os.unlink(path)
 
 
 def event(name, session, **fields):
@@ -300,6 +303,7 @@ def bridge(card, run_dir):
     instance = Bridge(run_dir)
     yield instance
     instance.quit()
+    instance.activity.unlink(missing_ok=True)
 
 
 def write_settings(path: Path, bridge: Bridge):

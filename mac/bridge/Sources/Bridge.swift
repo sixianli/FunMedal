@@ -94,9 +94,11 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                                   "SessionEnd": "session_end"]
     static let attentionEvents: Set<String> = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop",
                                                "StopFailure"]
+    static let activityLimit = 32
 
     let queue = DispatchQueue(label: "funmedal.bridge")
     let socketPath: String
+    let activityPath: String
     let log: EventLog
     let locale: String
     private var central: CBCentralManager?
@@ -128,8 +130,42 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     init(socketPath: String, log: EventLog, locale: String) {
         self.socketPath = socketPath
+        activityPath = Bridge.activityPath(for: socketPath)
         self.log = log
         self.locale = locale
+        lastActive = Bridge.loadActivity(activityPath, log: log)
+    }
+
+    static func activityPath(for socket: String) -> String {
+        (socket as NSString).deletingPathExtension + ".activity.json"
+    }
+
+    private static func loadActivity(_ path: String, log: EventLog) -> [Int: Date] {
+        guard let data = FileManager.default.contents(atPath: path) else { return [:] }
+        guard let table = (try? JSONSerialization.jsonObject(with: data)) as? [String: Double] else {
+            log.write("activity_unreadable")
+            return [:]
+        }
+        var activity: [Int: Date] = [:]
+        for (pid, time) in table {
+            if let pid = Int(pid) { activity[pid] = Date(timeIntervalSince1970: time) }
+        }
+        log.write("activity_loaded", ["processes": activity.count])
+        return activity
+    }
+
+    private func noteActivity(_ pid: Int) {
+        lastActive[pid] = Date()
+        if lastActive.count > Bridge.activityLimit, let oldest = lastActive.min(by: { $0.value < $1.value })?.key {
+            lastActive.removeValue(forKey: oldest)
+        }
+        var table: [String: Double] = [:]
+        for (pid, time) in lastActive { table[String(pid)] = time.timeIntervalSince1970 }
+        let data = try? JSONSerialization.data(withJSONObject: table, options: [.sortedKeys])
+        if data == nil || !FileManager.default.createFile(atPath: activityPath, contents: data,
+                                                          attributes: [.posixPermissions: 0o600]) {
+            log.write("activity_unsaved")
+        }
     }
 
     func start() {
@@ -214,7 +250,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if let value = message[key] as? String { fields[key] = value }
         }
         log.write("event", fields)
-        if Bridge.attentionEvents.contains(name), let pid = message["claude_pid"] as? Int { lastActive[pid] = Date() }
+        if Bridge.attentionEvents.contains(name), let pid = message["claude_pid"] as? Int { noteActivity(pid) }
         let toolKey = message["tool_key"] as? String
         let followsCardAllow = sessions.apply(HookEvent(name: name, session: session, toolKey: toolKey))
         if !followsCardAllow, name == "PostToolUse" || name == "PostToolUseFailure",
@@ -261,7 +297,6 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         let listener = Listener(pid: pid, fd: client)
         listeners.append(listener)
-        lastActive[pid] = Date()
         log.write("listen", ["pid": pid])
         if let data = Hook.line(["ok": true]) { _ = UnixSocket.writeAll(client, data) }
         return Handled(reply: nil, listener: listener)

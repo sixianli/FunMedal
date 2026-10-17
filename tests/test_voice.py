@@ -523,3 +523,35 @@ def test_voice_spoken(case, card, bridge, run_dir):
     assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
     assert results[0]["chars"] == len(heard) and image_ink == results[0]["ink"] > 0, (results, image_ink)
     assert heard not in log_text and SPOKEN not in log_text
+
+
+@pytest.mark.parametrize("case", ["[FM-15] after the bridge restarts, words still go to the session that last needed the user"])
+def test_voice_after_restart(case, card, bridge, run_dir):
+    start_and_mark(bridge, card)
+    before = [FakeChannel(bridge.socket, 2222), FakeChannel(bridge.socket, 1111)]
+    try:
+        hook_as(bridge, 2222, event("SessionStart", "a", source="startup"))
+        hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
+        hook_as(bridge, 1111, event("Stop", "b", stop_hook_active=False))
+    finally:
+        for channel in before:
+            channel.close()
+    bridge.quit()
+    start = start_and_mark(bridge, card)
+    needed, reconnected_last = FakeChannel(bridge.socket, 1111), FakeChannel(bridge.socket, 2222)
+    try:
+        status = bridge.status()
+        got = talk(card, run_dir, 4000, start, speak=SPOKEN)
+        said = {"needed": needed.collect(), "reconnected_last": reconnected_last.collect()}
+    finally:
+        reconnected_last.close()
+        needed.close()
+    results = voice_log(bridge, "voice_result")
+    write_summary(run_dir, {"status": status, "talk": {k: v for k, v in got.items() if k != "shot"},
+                            "said": said, "results": results, "lines": voice_lines(card, start),
+                            "starts": voice_log(bridge, "start"), "listens": voice_log(bridge, "listen")})
+    assert len(voice_log(bridge, "start")) == 2, results
+    assert status["channels"] == [1111, 2222], status
+    assert got["result"] == "sent", got
+    assert [m["clip"] for m in said["needed"]] == [got["clip"]] and said["reconnected_last"] == [], said
+    assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
