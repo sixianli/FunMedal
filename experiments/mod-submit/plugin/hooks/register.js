@@ -11,7 +11,7 @@ async function submit($, dir, text) {
   await record($, dir, { event: "submit.called", text })
   try {
     const result = await $.prompt.submit({ text, asUser: true })
-    await record($, dir, { event: "submit.resolved", text, dropped: Boolean(result.drop) })
+    await record($, dir, { event: "submit.resolved", text, dropped: Boolean(result.drop), drop_reason: result.drop ?? null })
   } catch (err) {
     await record($, dir, { event: "submit.rejected", text, error: String(err) })
   }

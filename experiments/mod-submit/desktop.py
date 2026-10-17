@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from run import PLUGIN, PLUGIN_NAME, REPO, alive, first, mod_events, read_jsonl
@@ -14,6 +15,9 @@ TEXTS = {
     "idle": "桌面实验一：会话空闲时送入。请只回复：收到一",
     "busy": "桌面实验二：Claude 在干活时送入。请只回复：收到二",
     "approval": "桌面实验三：批准框挂着时送入。请只回复：收到三",
+    "approval_retry": "桌面实验六：批准框先弹出、再送入。请只回复：收到六",
+    "approval_third": "桌面实验七：切回默认模式后，批准框先弹出、再送入。请只回复：收到七",
+    "after_reply": "桌面实验八：按过 Stop、又正常发过一句话之后送入。请只回复：收到八",
     "clear": "桌面实验四：清空对话之后送入。请只回复：收到四",
     "hold": "桌面实验五：会话开了 5 分钟之后送入。请只回复：收到五",
 }
@@ -122,8 +126,15 @@ def report(args: argparse.Namespace) -> int:
     def rel(t):
         return None if t is None else round(t - base, 2)
 
-    checks["mod_loads_in_desktop"] = bool(len(starts) == 1 and "desktop" in (start.get("surfaces") or [])
-                                          and listener_pid)
+    def entered(label: str) -> bool:
+        r = resolution(events, label)
+        return bool(r and r["event"] == "submit.resolved" and not r.get("dropped")
+                    and first(events, event="turn.start", text=TEXTS[label]))
+
+    desktop = json.loads(notes["desktop_session"]["detail"]) if "desktop_session" in notes else {}
+    checks["mod_loads_in_desktop"] = bool(len(starts) == 1 and listener_pid and desktop.get("cwd")
+                                          and start.get("cwd") == desktop["cwd"])
+    observed["desktop_session"] = desktop
     observed["mod_start"] = {k: start.get(k) for k in ("session_id", "cwd", "surfaces")}
     observed["mod_start_count"] = len(starts)
     observed["other_sessions_skipped"] = [{k: e.get(k) for k in ("session_id", "cwd", "surfaces")} for e in skipped]
@@ -144,43 +155,62 @@ def report(args: argparse.Namespace) -> int:
         sent_t = sent["busy"]["t"]
         checks["busy_submit_waits_for_turn_end"] = bool(
             tool and tool.get("decision") == "allow" and busy_end and tool["t"] < sent_t < busy_end["t"]
-            and r and r["event"] == "submit.resolved" and r["t"] >= busy_end["t"] - 0.5)
+            and entered("busy") and r["t"] >= busy_end["t"] - 0.5)
         observed["busy"] = {"tool_decision": tool and tool.get("decision"),
                             "busy_turn_ended_after_s": busy_end and round(busy_end["t"] - sent_t, 2),
                             "resolved_after_s": r and round(r["t"] - sent_t, 2)}
 
-    if "approval" in sent and "approval_prompt" in notes and "dialog_closed" in notes:
-        asked = first(events, after=notes["approval_prompt"]["t"], event="tool.check", decision="ask")
-        r = resolution(events, "approval")
-        sent_t, closed_t = sent["approval"]["t"], notes["dialog_closed"]["t"]
+    def approval(label: str, prompt: str, closed: str, closed_t: float):
+        asked = first(events, after=notes[prompt]["t"], event="tool.check", decision="ask")
+        asked = asked if asked and asked["t"] < closed_t else None
+        r = resolution(events, label)
+        sent_t = sent[label]["t"]
         watched = closed_t - sent_t
-        checks["approval_submit_waits_for_dialog"] = bool(
-            asked and asked["t"] < sent_t and watched >= DIALOG_WATCH_SECONDS and r
-            and r["event"] == "submit.resolved" and r["t"] >= closed_t)
-        observed["approval"] = {"mod_saw_ask": bool(asked), "watched_dialog_s": round(watched, 1),
-                                "how_closed": notes["dialog_closed"].get("detail"),
-                                "resolved_after_send_s": r and round(r["t"] - sent_t, 2),
-                                "resolved_after_dialog_closed_s": r and round(r["t"] - closed_t, 2)}
+        waited = bool(asked and asked["t"] < sent_t and watched >= DIALOG_WATCH_SECONDS and r and r["t"] >= closed_t)
+        seen = {"mod_saw_ask": bool(asked), "ask_after_send_s": asked and round(asked["t"] - sent_t, 2),
+                "watched_dialog_s": round(watched, 1), "how_closed": notes[closed].get("detail"),
+                "resolved_after_send_s": r and round(r["t"] - sent_t, 2),
+                "resolved_after_dialog_closed_s": r and round(r["t"] - closed_t, 2),
+                "dropped": r and r.get("dropped"), "drop_reason": r and r.get("drop_reason"),
+                "entered": entered(label)}
+        return (waited, entered(label)), seen
+
+    if "approval" in sent and "approval_prompt" in notes and "first_try_closed" in notes:
+        closed = json.loads(notes["first_try_closed"]["detail"])["approved_at_utc"].replace("Z", "+00:00")
+        observed["approval_first_try"] = approval("approval", "approval_prompt", "first_try_closed",
+                                                  datetime.fromisoformat(closed).timestamp())[1]
+    if "approval_retry" in sent and "approval_retry_prompt" in notes and "second_try_result" in notes:
+        observed["approval_second_try"] = approval("approval_retry", "approval_retry_prompt", "dialog_closed",
+                                                   notes["dialog_closed"]["t"])[1]
+        observed["approval_second_try"]["how_closed"] = notes["second_try_result"].get("detail")
+    if "approval_third" in sent and "approval_third_prompt" in notes and "third_dialog_closed" in notes:
+        (waited, came_in), observed["approval"] = approval(
+            "approval_third", "approval_third_prompt", "third_dialog_closed", notes["third_dialog_closed"]["t"])
+        checks["approval_submit_waits_for_dialog"] = waited
+        checks["approval_submit_enters_after_stop"] = came_in
+
+    after_stop = [label for label in ("hold", "after_reply") if label in sent]
+    if after_stop:
+        checks["submit_after_stop_enters"] = all(entered(label) for label in after_stop)
+        observed["after_stop"] = {label: {"sent_after_mod_start_s": rel(sent[label]["t"]),
+                                          "dropped": (resolution(events, label) or {}).get("dropped"),
+                                          "drop_reason": (resolution(events, label) or {}).get("drop_reason"),
+                                          "entered": entered(label)} for label in after_stop}
 
     if "clear" in sent:
         r = resolution(events, "clear")
-        observed["after_clear"] = {"clear_requested": "clear_requested" in notes,
-                                   "mod_start_count": len(starts),
-                                   "entered": bool(r and r["event"] == "submit.resolved"),
+        observed["after_clear"] = {"clear_requested": "clear_requested" in notes, "mod_start_count": len(starts),
+                                   "entered": entered("clear"),
                                    "resolved_after_s": r and round(r["t"] - sent["clear"]["t"], 2)}
-
-    if "hold" in sent:
-        r = resolution(events, "hold")
-        observed["after_hold"] = {"sent_after_mod_start_s": rel(sent["hold"]["t"]),
-                                  "entered": bool(r and r["event"] == "submit.resolved"),
-                                  "resolved_after_s": r and round(r["t"] - sent["hold"]["t"], 2)}
+    if "clear_refused" in notes:
+        observed["after_clear"] = {"not_run": notes["clear_refused"].get("detail")}
 
     observed["listener_alive_now"] = bool(listener_pid and alive(listener_pid))
     observed["transcript"] = transcript(start.get("session_id"))
     observed["notes"] = {k: {"t": rel(v["t"])} for k, v in notes.items()}
     observed["mod_events"] = [{**e, "t": rel(e["t"])} for e in events]
     expected = ("mod_loads_in_desktop", "idle_submit_starts_turn", "busy_submit_waits_for_turn_end",
-                "approval_submit_waits_for_dialog")
+                "approval_submit_waits_for_dialog", "approval_submit_enters_after_stop", "submit_after_stop_enters")
     summary = {"meta": json.loads((out / "meta.json").read_text(encoding="utf-8")),
                "reported": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "checks": checks,
                "passed": all(checks.get(name) for name in expected), "observed": observed}
