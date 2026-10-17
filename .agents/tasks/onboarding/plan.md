@@ -41,6 +41,7 @@
 - 2026-10-17 19:53 用桌面 App 自带的 Claude Code 2.1.299 以 `stream-json` 重现的脚本第一次运行（19:46）没测到中断：Write 没有向脚本发批准请求。之后读这次运行的输出被自动模式的安全检查拦下（`Safety Bypass Flag`），没有继续，脚本没有提交。
 - 2026-10-17 20:52 OB-5 复查（20:03–20:43）：丢话是 Claude Code 2.1.299 引擎自己的规则。按 Stop 时引擎删掉排队中的插件送话（理由 `the prompt was removed from the queue before it ran`），之后拒绝插件送话（`the session was stopped and nobody has sent input since`），直到用户亲手输入一句；从另一个会话发来的消息不算。规则在程序文件里，受开关 `tengu_plugin_input_refusal` 控制，接口说明没写；终端的 2.1.292 没有这条规则。
 - 2026-10-17 20:52 桌面 App 里的 `/clear` 由 App 处理：结束这个会话的整个 Claude Code 进程，mod 和小程序一起结束；只切到会话不启动新进程，下一条消息来了才启动，新进程里 mod 送的话能进去。终端里 `/clear` 不结束进程（OB-2），两边不同。
+- 2026-10-17 22:11 负责人问开工前方案是否真的可行。复核接口说明发现：`$.process.spawn` 的 `input` 只在启动时写一次，随后关掉小程序的标准输入（`experiments/mod-submit/plugin/.claude-plugin/types/claude-code/index.d.ts:8044-8047`），所以“mod 把结果经小程序传回桥接程序”做不到，第 5 步要改成 mod 另跑一条短命令（`$.process.run`）把结果交给桥接程序的套接字，这一做法没测过。另外三处没测过：桌面 App 里正式安装的插件（不是 `CLAUDE_CODE_PLUGIN_DIRS`）里 mod 和 hooks 会不会加载、要不要额外确认；桌面 App 里卡片按键批准（`notes/claude-code.md:137`）；mod 在会话开始时用 `open -g` 启动桥接程序。
 
 ## 决定
 - 2026-10-17 17:56 模型：G4 禁止的是付费按量的 `opencode/*` 模型。G7 要求多用几个免费模型，G8 用户框定了三个：opencode/deepseek-v4.1-flash-free、opencode/glm-5.3-flash-free、opencode/mimo-v2.6-flash-free。本条目只用这三个，其它模型不用。
