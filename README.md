@@ -85,10 +85,10 @@ mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
 
 ### 5. 允许语音识别
 
-运行下面的命令，macOS 会问是否允许 FunMedal Bridge 使用语音识别，选允许。和蓝牙一样，每次重新编译后要再允许一次。
+运行下面的命令，macOS 会问是否允许 FunMedal Bridge 使用语音识别，选允许。和蓝牙一样，每次重新编译后要再允许一次。`-n` 让 macOS 另开一个桥接程序来做这件事；不加它时，第 3 步启动的桥接程序还在运行，命令会一直等着，什么也不做。
 
 ```bash
-open -W mac/bridge/build/FunMedalBridge.app --args speech-access
+open -n -W mac/bridge/build/FunMedalBridge.app --args speech-access
 ```
 
 ### 6. 接上 Claude Code 的 hooks

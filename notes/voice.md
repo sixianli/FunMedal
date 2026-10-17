@@ -110,7 +110,7 @@ VOICE_IMAGE 特征值 `6d2f1007-…`，Mac 在写 `sent` 结果之前，分几�
 1. 让 macOS 允许语音识别（只需一次）：
 
    ```bash
-   open -W mac/bridge/build/FunMedalBridge.app --args speech-access
+   open -n -W mac/bridge/build/FunMedalBridge.app --args speech-access
    ```
 
 2. 把频道服务器写进一个单独的 MCP 配置文件，比如 `~/.config/funmedal/mcp.json`，`<仓库路径>` 换成 FunMedal 仓库的绝对路径：

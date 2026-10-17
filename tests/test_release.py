@@ -1,5 +1,7 @@
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -8,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from bridge_harness import ROOT, artifacts, run_dir, write_summary  # noqa: F401
+from bridge_harness import ROOT, artifacts, bridge, card, run_dir, write_summary  # noqa: F401
 
 ARTIFACTS_PREFIX = "fm16"
 ARTIFACTS_SUBDIR = "release"
@@ -29,6 +31,8 @@ if LOCAL_CARD_IDS:
     FINDINGS["local_card_id"] = re.compile(b"|".join(map(re.escape, LOCAL_CARD_IDS)), re.IGNORECASE)
 FLASH_IMAGE_BYTES = 4 * 1024 * 1024
 MARKDOWN_LINK = re.compile(r"\]\(([^)\s]+)\)")
+SPEECH_ACCESS = re.compile(r"^[ \t]*(open .*--args speech-access)$", re.MULTILINE)
+COMMAND_WAIT_S = 15
 
 
 def git(*args, cwd=ROOT):
@@ -115,6 +119,35 @@ def test_links_resolve(case, run_dir):
                 broken.append(f"{document}: {target}")
     write_summary(run_dir, {"documents": documents, "broken": broken})
     assert broken == [], broken
+
+
+def documented_commands(pattern):
+    documents = ["README.md"] + sorted(str(p.relative_to(ROOT)) for p in (ROOT / "notes").glob("*.md"))
+    return [(document, line) for document in documents
+            for line in pattern.findall((ROOT / document).read_text(encoding="utf-8"))]
+
+
+@pytest.mark.parametrize("case", ["[FM-16] the documented speech-access command runs while the bridge is serving"])
+def test_speech_access_while_serving(case, bridge, run_dir):
+    bridge.start()
+    commands = documented_commands(SPEECH_ACCESS)
+    runs = []
+    for index, (document, line) in enumerate(commands):
+        report = run_dir / f"speech-access-{index}.json"
+        process = subprocess.Popen(shlex.split(line) + ["--log", str(report)], cwd=ROOT)
+        try:
+            code = process.wait(timeout=COMMAND_WAIT_S)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            code = None
+        runs.append({"document": document, "command": line, "exit": code,
+                     "report": json.loads(report.read_text(encoding="utf-8")) if report.exists() else None})
+    serving = bridge.status()
+    write_summary(run_dir, {"runs": runs, "bridge_after": serving})
+    assert len(commands) >= 2, commands
+    assert all(run["exit"] == 0 and run["report"] is not None for run in runs), runs
+    assert serving is not None and serving["card"] == "connected", serving
 
 
 @pytest.mark.parametrize("case", ["[FM-16] a fresh clone builds the bridge and the firmware by the README steps"])
