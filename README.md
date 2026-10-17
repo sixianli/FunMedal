@@ -162,9 +162,10 @@ python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt
 FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tests -v
 ```
 
-有三个测试要你本人在卡片旁边按键或说话，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
+有四个测试要你本人在卡片旁边操作，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
 
 - `FM_KEY_PRESS_SECONDS=60`：依次长按右侧上、中、下三个键，检查卡片读到的按下、长按和松开。
+- `FM_BLUETOOTH_TOGGLE_SECONDS=300`：等 `FM_ARTIFACTS` 目录里出现 `ready-off.txt`（启动后约 5 秒），在控制中心把 Mac 的蓝牙关掉约 10 秒再打开，检查桥接程序自己重连、补上关着时变的状态。
 - `FM_PERSON_AT_CARD_SECONDS=90`：在真实会话里长按确认键批准一次、按下键拒绝一次；再按住中间的键说“把测试跑一遍”3 次，检查认出的文字。测试记录会存下认出的文字，所以只说这句测试话。
 
 每次运行的串口记录、截图和桥接程序记录存在 `FM_ARTIFACTS` 指定的目录里。默认目录 `artifacts/` 不进 git：串口记录里有卡片的蓝牙地址，结果里有本机路径。
@@ -183,7 +184,7 @@ FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tes
 - 按住说话依赖 Claude Code 的开发频道参数，每次启动都要带上。
 - 按住说话时，Mac 把结果写给卡片如果连续两次蓝牙出错（桥接程序只重写一次），文字其实已经送进会话，卡片却会显示“没发出去 / Mac 没有回音”。看到这句时先看终端里会话有没有收到，再决定要不要重说，见 [notes/voice.md](notes/voice.md) 的“还没做的”。
 - 卡片还不会睡眠省电，也不读电池电量；原厂的电子名片功能不保留，要用就写回原厂固件。
-- Mac 上的蓝牙关掉再打开、附近有两张卡片这两种情况没有实测，见 [notes/bridge.md](notes/bridge.md) 的“还没做的”。
+- 附近有两张卡片时，桥接程序会连第一张搜到的，这种情况没有实测，见 [notes/bridge.md](notes/bridge.md) 的“还没做的”。
 
 ## 许可
 

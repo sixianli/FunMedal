@@ -19,6 +19,8 @@ HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "source", "rea
 MIN_STACK_FREE_BYTES = 1024
 ALREADY_RUNNING_EXIT = 3
 FIXED_CHANGED_HANDLE = 3
+TOGGLE_SECONDS = os.environ.get("FM_BLUETOOTH_TOGGLE_SECONDS")
+RECONNECT_S = 60.0
 
 
 @pytest.mark.parametrize("case", ["[FM-13] real session shows working, waiting, working, done, idle"])
@@ -332,3 +334,44 @@ def test_layout_change_announced_once(case, card, bridge, run_dir):
     assert third["layout"] == "GATT layout same", summary
     assert summary["announced_after_third_boot"] == [], summary
     assert summary["status"]["card"] == "connected", summary
+
+
+def bluetooth_states(bridge):
+    return [e["state"] for e in bridge.log_entries() if e.get("kind") == "bluetooth"]
+
+
+def turned_back_on(states):
+    return "poweredOff" in states and states[-1] == "poweredOn" and states.index("poweredOff") < len(states) - 1
+
+
+@pytest.mark.skipif(not TOGGLE_SECONDS, reason="needs a person to turn the Mac's Bluetooth off and on; set FM_BLUETOOTH_TOGGLE_SECONDS")
+@pytest.mark.parametrize("case", ["[FM-13] after the Mac's Bluetooth goes off and on, the bridge reconnects and shows the state that changed meanwhile"])
+def test_mac_bluetooth_off_and_on(case, card, bridge, run_dir):
+    seconds = float(TOGGLE_SECONDS)
+    start = start_and_mark(bridge, card)
+    bridge.hook(event("UserPromptSubmit", "a", prompt="x"))
+    card.wait_for(lambda line: line == "BLE state working", 5.0, start)
+    before = bridge.settle("working")
+    (run_dir / "ready-off.txt").write_text(f"{time.time():.3f}\n", encoding="utf-8")
+    wait_until(lambda: "poweredOff" in bluetooth_states(bridge), seconds, "Mac Bluetooth off")
+    card.wait_for(lambda line: line.startswith("BLE disconnected"), 30.0, start)
+    off = bridge.status()
+    bridge.hook(event("Stop", "a", stop_hook_active=False))
+    during = bridge.status()
+    mark = card.mark()
+    (run_dir / "ready-on.txt").write_text(f"{time.time():.3f}\n", encoding="utf-8")
+    wait_until(lambda: turned_back_on(bluetooth_states(bridge)), seconds, "Mac Bluetooth on")
+    card.wait_for(lambda line: line == "BLE state done", RECONNECT_S, mark)
+    after = bridge.status()
+    summary = {"before": before, "off": off, "during": during, "after": after,
+               "bluetooth": bluetooth_states(bridge), "card_lines": card_lines(card, start, "BLE "),
+               "states_after_on": card_states(card, mark)}
+    write_summary(run_dir, summary)
+    assert before["card"] == "connected" and before["card_state"] == "working", summary
+    assert off["card"] == "off" and off["card_state"] is None, summary
+    assert during["desired"] == "done" and during["card"] == "off", summary
+    assert after["card"] == "connected" and after["card_state"] == "done", summary
+    lines = summary["card_lines"]
+    dropped = next(i for i, line in enumerate(lines) if line.startswith("BLE disconnected"))
+    assert "BLE connected" in lines[dropped:], summary
+    assert summary["states_after_on"] == ["done"], summary
