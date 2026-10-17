@@ -1,0 +1,34 @@
+{
+  "task": "onboarding",
+  "prefix": "OB",
+  "items": [
+    {
+      "id": "OB-1",
+      "title": "和 OpenCode（DeepSeek V4.1 Flash）讨论让用户少操作、快上手的方案，把讨论结果交给用户看",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "讨论结果"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "看过讨论结果后，选哪个方案，还是都先不做？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G1 要求和 OpenCode 讨论并把结果给用户看"
+      }
+    }
+  ]
+}
