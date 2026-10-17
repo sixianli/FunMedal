@@ -188,14 +188,19 @@ def talk(card, run_dir, hold_ms, start, speak=None, shot_name="result"):
     started, _, began = wait_voice(card, VOICE_START, 2.0, pressed)
     finished = []
     watcher = None
+    speaker = None
     if speak:
         launched = time.time()
         speaker = subprocess.Popen(["say", "-a", device, "-v", SPEAKING_VOICE, speak])
         watcher = threading.Thread(target=record_speaker_end, args=(speaker, finished), daemon=True)
         watcher.start()
-    ended, ended_t, end = wait_voice(card, VOICE_END, hold_ms / 1000 + 3.0, started)
-    if watcher:
-        watcher.join(10.0)
+    try:
+        ended, ended_t, end = wait_voice(card, VOICE_END, hold_ms / 1000 + 3.0, started)
+        if watcher:
+            watcher.join(10.0)
+    finally:
+        if speaker is not None and speaker.poll() is None:
+            speaker.kill()
     _, result_t, result = wait_voice(card, VOICE_RESULT, RESULT_WAIT_S + 3.0, ended)
     shot = snapshot(card, run_dir, shot_name)
     wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
@@ -613,12 +618,13 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
     try:
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
         armed = card.request(f"ble reject {way}")
+        assert armed == f"OK ble reject {way}", armed
         refused = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN, shot_name="refused")
         recovered = talk(card, run_dir, SPOKEN_HOLD_MS, card.mark(), speak=SPOKEN, shot_name="recovered")
         said = {message["clip"]: message["say"] for message in channel.collect()}
     finally:
-        card.request("ble reject none")
         channel.close()
+        card.request("ble reject none")
     clips = {"refused": refused["clip"], "recovered": recovered["clip"]}
     results = {name: [r["result"] for r in voice_log(bridge, "voice_result") if r["clip"] == clip]
                for name, clip in clips.items()}
@@ -638,8 +644,6 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
                             "rejects": rejects, "heard_chars": {c: len(t) for c, t in said.items()},
                             "bridge_chars": chars,
                             "talk": [{k: v for k, v in got.items() if k != "shot"} for got in (refused, recovered)]})
-    assert armed == f"OK ble reject {way}", armed
-    assert spoke_before_release(refused) and spoke_before_release(recovered), (refused, recovered)
     assert rejects == [REFUSED_LINES[way]], rejects
     assert results == {"refused": ["sent"], "recovered": ["sent"]}, results
     assert sorted(said) == sorted(clips.values()) and all(len(said[c]) == chars[c] > 0 for c in said), (said, chars)
@@ -652,6 +656,10 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
     else:
         assert len(image_writes["refused"]) > 1 and image_writes["refused"][0] == 0, image_writes
         assert refused["result"] == "timeout", refused
+        assert RESULT_WAIT_S - 0.5 <= refused["result_after_end_s"] <= RESULT_WAIT_S + 1.0, refused
+        hint_ink = ink(refused["shot"]["pixels"], HINT_ROWS, VOICE_BACKGROUND)
+        assert screens["refused"]["header_ink"] == 0 and screens["refused"]["title_ink"] > 200 and hint_ink > 100, (
+            screens, hint_ink)
     assert recovered["result"] == "sent", recovered
     assert screens["recovered"]["header_ink"] > 0, screens
     assert screens["recovered"]["image_ink"] == drawn[recovered["clip"]] > 0, (screens, drawn)

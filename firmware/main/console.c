@@ -328,7 +328,7 @@ static void ble_decision_command(void)
     bool allow = word != NULL && strcmp(word, "allow") == 0;
     bool valid = id_text != NULL && *end == '\0' && end != id_text && (allow || (word != NULL && strcmp(word, "deny") == 0));
     if (!valid || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
+        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
         return;
     }
     if (!ble_link_send_decision((uint32_t)id, allow)) {
@@ -342,7 +342,7 @@ static void ble_layout_command(void)
 {
     char *word = strtok(NULL, " ");
     if (word == NULL || strcmp(word, "forget") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
+        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
         return;
     }
     esp_err_t err = ble_link_forget_layout();
@@ -371,7 +371,7 @@ static void ble_reject_command(void)
     char *name = strtok(NULL, " ");
     ble_refusal_t what;
     if (!refusal_from_name(name, &what) || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
+        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
         return;
     }
     ble_link_refuse_next(what);
@@ -394,7 +394,7 @@ static void ble_command(char *args)
         return;
     }
     if (what == NULL || strcmp(what, "unpair") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
+        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
         return;
     }
     int rc = ble_link_unpair();
