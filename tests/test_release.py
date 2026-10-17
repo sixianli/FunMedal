@@ -239,7 +239,8 @@ def test_speech_access_while_serving(case, bridge, run_dir):
     runs = []
     for index, (document, line) in enumerate(commands):
         report = run_dir / f"speech-access-{index}.json"
-        process = subprocess.Popen(shlex.split(line) + ["--log", str(report)], cwd=ROOT)
+        process = subprocess.Popen([os.path.expanduser(word) for word in shlex.split(line)] + ["--log", str(report)],
+                                   cwd=ROOT)
         try:
             code = process.wait(timeout=COMMAND_WAIT_S)
         except subprocess.TimeoutExpired:

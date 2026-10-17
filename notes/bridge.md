@@ -122,22 +122,11 @@
    mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
    ```
 
-4. **接上 Claude Code**：在 `~/.claude/settings.json` 的 `hooks` 里，给 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 这 9 个事件各加一条同样的命令。`PermissionRequest` 那一条的 `timeout` 写 600，其他写 5。下面是其中一个事件的写法，`<仓库路径>` 换成 FunMedal 仓库的绝对路径：
+4. **接上 Claude Code**：运行仓库根目录的 `install.sh`，它把桥接程序复制到 `~/Applications/FunMedalBridge.app`，再从本仓库这个插件市场装上 `funmedal` 插件。插件的 [plugin/hooks/hooks.json](../plugin/hooks/hooks.json) 给 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 这 9 个事件各配一条同样的命令 `"$HOME/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge" hook`；`PermissionRequest` 那一条的 `timeout` 是 600，其他是 5。命令运行固定位置的程序，不运行仓库里的文件：挪走仓库后，已经开着的会话的 hook 不会因为找不到文件而以退出码 2 结束（退出码 2 会拦下工具调用）。桥接程序没装时，shell 找不到程序，以退出码 127 结束，Claude Code 照常往下走。
 
-   ```json
-   {
-     "hooks": {
-       "UserPromptSubmit": [
-         {"hooks": [{"type": "command", "timeout": 5,
-                     "command": "<仓库路径>/mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge hook"}]}
-       ]
-     }
-   }
-   ```
+   不带 `--socket` 时，各个模式先看环境变量 `FUNMEDAL_SOCKET`，有值就用它作套接字路径，没有才用默认路径。测试用 `claude --plugin-dir plugin` 加载插件，并给会话设 `FUNMEDAL_SOCKET`，让插件的 hooks 连到本次测试自己的常驻程序。
 
-   常驻程序用了 `--socket` 时，hook 命令也要加同样的 `--socket <路径>`。测试用的就是这种写法，每次运行生成的 `settings.json` 在测试记录目录里。
-
-上面第 2、3 步和默认套接字路径实际跑过一次，记录在 `artifacts/fm13-default-socket-20261016-222621/`。第 4 步写进 `~/.claude/settings.json` 没有实测；测试是用 `claude --settings <临时文件>` 加载同样的 hooks。
+上面第 2、3 步和默认套接字路径实际跑过一次，记录在 `artifacts/fm13-default-socket-20261016-222621/`。第 4 步的 `install.sh` 由 `tests/test_plugin.py` 用真的 `claude` 在临时 `HOME` 里装过两遍；真实会话测试走 `--plugin-dir`，不经插件市场。
 
 ## 测试要覆盖的出错情况
 

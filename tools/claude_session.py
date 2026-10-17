@@ -29,11 +29,14 @@ def squeeze(text: str) -> str:
 
 
 class ClaudeSession:
-    def __init__(self, workdir: Path, settings: Path, out: Path, model: str = "haiku"):
+    def __init__(self, workdir: Path, settings: Path, out: Path, model: str = "haiku", plugin_dirs=(), env=None):
         self.workdir = Path(workdir)
         self.out = Path(out)
         self.argv = ["claude", "--setting-sources", "project", "--settings", str(settings),
                      "--model", model, "--permission-mode", "default"]
+        for folder in plugin_dirs:
+            self.argv += ["--plugin-dir", str(folder)]
+        self.extra_env = dict(env or {})
         self.timeline: list[dict] = []
         self.text = ""
         self.last_output = time.time()
@@ -54,6 +57,7 @@ class ClaudeSession:
         self.out.mkdir(parents=True, exist_ok=True)
         env = {k: v for k, v in os.environ.items() if not k.startswith(INHERITED_PREFIXES)}
         env["TERM"] = "xterm-256color"
+        env.update(self.extra_env)
         self.start_time = time.time()
         master, slave = os.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))

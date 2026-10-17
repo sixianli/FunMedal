@@ -16,7 +16,7 @@ FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240
 | Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到蓝牙和离线语音识别，都是 macOS 自带的 |
 | Xcode 命令行工具 | 提供 `swiftc`（Swift 编译器），用来编译桥接程序 |
 | ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境，用来编译和烧录卡片固件，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
-| Claude Code | 本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话要用到 Channels（“频道”：一个 MCP 服务器往运行中的会话推消息），要求 2.1.80 以上，并且用 claude.ai 账号登录 |
+| Claude Code | 要 2.1.292 或更新的版本，`install.sh` 会检查；本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话要用到 Channels（“频道”：一个 MCP 服务器往运行中的会话推消息），要求 2.1.80 以上，并且用 claude.ai 账号登录 |
 | Python 3 | 只有跑测试时需要 |
 
 ## 安装
@@ -55,14 +55,30 @@ cd firmware && idf.py -p <端口> build flash
 
 烧录完卡片会重启，屏幕上出现像素小人。固件的结构和串口命令见 [notes/firmware.md](notes/firmware.md)。
 
-### 3. 编译并启动桥接程序
+### 3. 编译桥接程序，装上 Claude Code 插件
 
 ```bash
 sh mac/bridge/build.sh
 ```
 
 ```bash
-open -g mac/bridge/build/FunMedalBridge.app --args serve
+sh install.sh
+```
+
+`install.sh` 依次做三件事：
+
+- 查 Claude Code 的版本。低于 2.1.292 时它会停下，让你先把 Claude Code 升级到最新版。
+- 把编译好的桥接程序复制到 `~/Applications/FunMedalBridge.app`。每次重新编译后都要再运行一次 `install.sh`，把新版本复制过去。
+- 把这个仓库加为 Claude Code 的插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。插件里是 hooks（Claude Code 在各种事件发生时运行的外部命令），它们运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。
+
+插件直接从仓库目录加载，装好后不要挪动仓库；要挪，先卸载插件、重开会话。已经开着的 Claude Code 会话要重开，才会用上插件。
+
+hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令；唯一的例外是要显示在卡片批准画面上的那一小段内容，它不写进任何记录。详见 [notes/bridge.md](notes/bridge.md) 和 [notes/approval.md](notes/approval.md)。
+
+启动桥接程序：
+
+```bash
+open -g ~/Applications/FunMedalBridge.app --args serve
 ```
 
 桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。**每次重新编译后 macOS 都会再问一次**，因为脚本用的是只在本机有效的临时签名。
@@ -74,13 +90,13 @@ open -g mac/bridge/build/FunMedalBridge.app --args serve
 配对失败或取消后，退出桥接程序再启动一次，就会重新弹出配对对话框：
 
 ```bash
-mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge quit
+~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge quit
 ```
 
 查看连接状态：输出里 `card` 是 `connected` 就连上了。
 
 ```bash
-mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
+~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
 ```
 
 ### 5. 允许语音识别
@@ -88,27 +104,10 @@ mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
 运行下面的命令，macOS 会问是否允许 FunMedal Bridge 使用语音识别，选允许。和蓝牙一样，每次重新编译后要再允许一次。`-n` 让 macOS 另开一个桥接程序来做这件事；不加它时，第 3 步启动的桥接程序还在运行，命令会一直等着，什么也不做。
 
 ```bash
-open -n -W mac/bridge/build/FunMedalBridge.app --args speech-access
+open -n -W ~/Applications/FunMedalBridge.app --args speech-access
 ```
 
-### 6. 接上 Claude Code 的 hooks
-
-hooks 是 Claude Code 在各种事件发生时运行的外部命令。在 `~/.claude/settings.json` 的 `hooks` 里，给 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 这 9 个事件各加一条同样的命令。`PermissionRequest` 那一条的 `timeout` 写 600（卡片上的批准最多等 590 秒），其他写 5。`<仓库路径>` 换成这个仓库的绝对路径，下面是其中一个事件的写法：
-
-```json
-{
-  "hooks": {
-    "PermissionRequest": [
-      {"hooks": [{"type": "command", "timeout": 600,
-                  "command": "<仓库路径>/mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge hook"}]}
-    ]
-  }
-}
-```
-
-hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令；唯一的例外是要显示在卡片批准画面上的那一小段内容，它不写进任何记录。详见 [notes/bridge.md](notes/bridge.md) 和 [notes/approval.md](notes/approval.md)。
-
-### 7. 接上按住说话的频道
+### 6. 接上按住说话的频道
 
 把频道服务器写进一个单独的 MCP 配置文件，比如 `~/.config/funmedal/mcp.json`：
 
@@ -156,7 +155,7 @@ python -m esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/fac
 
 ## 测试
 
-测试在 [tests/](tests/)，用 pytest 运行。大部分测试要接着卡片、开着蓝牙；有几个要启动真实的 Claude Code 会话，或者用 Mac 的扬声器朗读。
+测试在 [tests/](tests/)，用 pytest 运行。大部分测试要接着卡片、开着蓝牙；有几个要启动真实的 Claude Code 会话，或者用 Mac 的扬声器朗读。启动真实会话的测试用插件里的 hooks 和 `~/Applications` 里的桥接程序，所以每次重新编译后先照第 3 步再运行一次 `install.sh`；它们用 `claude --plugin-dir` 加载仓库里的插件，不读你的 `~/.claude/settings.json`。
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt

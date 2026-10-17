@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import socket
 import subprocess
@@ -27,6 +26,9 @@ from claude_session import ClaudeSession  # noqa: E402
 
 APP = ROOT / "mac" / "bridge" / "build" / "FunMedalBridge.app"
 BRIDGE = APP / "Contents" / "MacOS" / "funmedal-bridge"
+INSTALLED_APP = Path.home() / "Applications" / "FunMedalBridge.app"
+INSTALLED_BRIDGE = INSTALLED_APP / "Contents" / "MacOS" / "funmedal-bridge"
+PLUGIN = ROOT / "plugin"
 HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
                "PostToolUseFailure", "Stop", "StopFailure", "SessionEnd"]
 HOOK_TIMEOUT_S = 5
@@ -54,6 +56,12 @@ def bridge_cli(*args, payload=None, timeout=10.0, env=None):
 def require_bridge_app():
     if not BRIDGE.exists():
         pytest.fail(f"bridge app not built: run mac/bridge/build.sh ({BRIDGE} missing)")
+
+
+def require_installed_bridge():
+    require_bridge_app()
+    if not INSTALLED_BRIDGE.exists() or INSTALLED_BRIDGE.read_bytes() != BRIDGE.read_bytes():
+        pytest.fail(f"the bridge in {INSTALLED_APP} is missing or differs from the build: run install.sh")
 
 
 def encode(payload):
@@ -306,21 +314,18 @@ def bridge(card, run_dir):
     instance.activity.unlink(missing_ok=True)
 
 
-def write_settings(path: Path, bridge: Bridge):
-    command = f"{shlex.quote(str(BRIDGE))} hook --socket {shlex.quote(bridge.socket)}"
-    hooks = {name: [{"hooks": [{"type": "command", "command": command,
-                                "timeout": PERMISSION_HOOK_TIMEOUT_S if name == "PermissionRequest"
-                                else HOOK_TIMEOUT_S}]}] for name in HOOK_EVENTS}
-    path.write_text(json.dumps({"sandbox": {"enabled": False}, "hooks": hooks}, indent=2) + "\n", encoding="utf-8")
+def write_settings(path: Path):
+    path.write_text(json.dumps({"sandbox": {"enabled": False}}, indent=2) + "\n", encoding="utf-8")
 
 
 @contextmanager
 def real_session(bridge, run_dir):
+    require_installed_bridge()
     bridge.start()
     settings = run_dir / "settings.json"
-    write_settings(settings, bridge)
+    write_settings(settings)
     workdir = Path(tempfile.mkdtemp(prefix="fm-claude-"))
-    session = ClaudeSession(workdir, settings, run_dir)
+    session = ClaudeSession(workdir, settings, run_dir, plugin_dirs=[PLUGIN], env={"FUNMEDAL_SOCKET": bridge.socket})
     session.start()
     try:
         yield session, workdir / "fm-marker.txt"

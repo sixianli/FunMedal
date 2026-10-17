@@ -1,0 +1,8 @@
+{
+  "name": "funmedal",
+  "version": "0.1.0",
+  "description": "Shows Claude Code's state on the FunMedal card and lets you approve or deny on the card",
+  "author": { "name": "FunMedal" },
+  "repository": "https://github.com/sixianli/FunMedal",
+  "license": "MIT"
+}

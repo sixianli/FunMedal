@@ -13,6 +13,7 @@ func fail(_ message: String, _ code: Int32) -> Never {
 }
 
 func defaultSocket() -> String {
+    if let chosen = ProcessInfo.processInfo.environment["FUNMEDAL_SOCKET"], !chosen.isEmpty { return chosen }
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     return support.appendingPathComponent("FunMedal/bridge.sock").path
 }

@@ -1,0 +1,14 @@
+{
+  "name": "funmedal",
+  "description": "The FunMedal card for Claude Code",
+  "owner": {
+    "name": "FunMedal"
+  },
+  "plugins": [
+    {
+      "name": "funmedal",
+      "source": "./plugin",
+      "description": "Shows Claude Code's state on the FunMedal card and lets you approve or deny on the card"
+    }
+  ]
+}
