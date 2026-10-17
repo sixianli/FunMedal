@@ -136,7 +136,7 @@ OB-9 起，`hook` 模式收到 `SessionStart` 时，如果套接字连不上（�
 
    不带 `--socket` 时，各个模式先看环境变量 `FUNMEDAL_SOCKET`，有值就用它作套接字路径，没有才用默认路径。测试用 `claude --plugin-dir plugin` 加载插件，并给会话设 `FUNMEDAL_SOCKET`，让插件的 hooks 连到本次测试自己的常驻程序。
 
-上面第 2、3 步和默认套接字路径实际跑过一次，记录在 `artifacts/fm13-default-socket-20261016-222621/`。第 4 步的 `install.sh` 由 `tests/test_plugin.py` 用真的 `claude` 在临时 `HOME` 里装过两遍；真实会话测试走 `--plugin-dir`，不经插件市场。
+上面第 2、3 步和默认套接字路径实际跑过一次，记录在 `artifacts/fm13-default-socket-20261016-222621/`。第 4 步的 `install.sh` 由 `tests/test_plugin.py` 用真的 `claude` 在临时 `HOME` 里装过两遍；README 里“卸载”一节的 `uninstall.sh` 由 `tests/test_uninstall.py` 在临时 `HOME` 里接着装好的插件卸过两遍，之后插件列表、插件市场列表和三个设置文件里都找不到 FunMedal；真实会话测试走 `--plugin-dir`，不经插件市场。
 
 ## 测试要覆盖的出错情况
 

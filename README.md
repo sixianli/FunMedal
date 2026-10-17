@@ -71,7 +71,7 @@ sh install.sh
 - 把编译好的桥接程序复制到 `~/Applications/FunMedalBridge.app`。每次重新编译后都要再运行一次 `install.sh`，把新版本复制过去。
 - 把这个仓库加为 Claude Code 的插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。插件里是 hooks（Claude Code 在各种事件发生时运行的外部命令）和一个 mod（在 Claude Code 进程里运行的一段 JavaScript 程序），它们都运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。hooks 把会话的状态和批准请求交给桥接程序；mod 在每个会话开始时接上桥接程序，把卡片上说的话当作你打的字送进会话。
 
-插件直接从仓库目录加载，装好后不要挪动仓库；要挪，先卸载插件、重开会话。已经开着的 Claude Code 会话要重开，才会用上插件。
+插件直接从仓库目录加载，装好后不要挪动仓库；要挪，先照“卸载”一节卸掉插件、重开会话。已经开着的 Claude Code 会话要重开，才会用上插件。
 
 hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令；唯一的例外是要显示在卡片批准画面上的那一小段内容，它不写进任何记录。详见 [notes/bridge.md](notes/bridge.md) 和 [notes/approval.md](notes/approval.md)。
 
@@ -109,6 +109,20 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 | 按住右侧中间的键说话，松开 | 把这句话送进最近需要你的那个会话：你刚给它发过指令、它刚答完、或者它刚请你批准；按住不到 0.5 秒算误触，最长 15 秒 |
 
 左侧的键不接芯片的任何引脚，本项目的固件用不到它。
+
+## 卸载
+
+```bash
+sh uninstall.sh
+```
+
+`uninstall.sh` 卸掉 `funmedal` 插件，再删掉这个仓库对应的插件市场。没装的部分它会跳过，所以重复运行也没关系；读不出插件列表或者卸载失败时，它会停下并报错。
+
+卸完它会列出三步，要你自己按顺序做：
+
+1. 重开已经开着的 Claude Code 会话，或者在会话里运行 `/reload-plugins`（让会话重新读一遍插件）。卸载只改设置和磁盘上的文件，开着的会话还带着插件，会照旧把状态发给桥接程序，会话开始或压缩上下文时还会把桥接程序重新启动起来，所以这一步要在退出桥接程序之前做。
+2. 退出桥接程序（命令见第 4 步），之后可以删掉 `~/Applications/FunMedalBridge.app`。
+3. 在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`。以后再装时，要照第 4 步重新配对。
 
 ## 恢复原厂固件
 
