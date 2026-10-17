@@ -174,6 +174,13 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func start() {
+        let speech = SFSpeechRecognizer.authorizationStatus()
+        log.write("speech", ["status": Voice.name(speech)])
+        if speech == .notDetermined {
+            SFSpeechRecognizer.requestAuthorization { [log] answer in
+                log.write("speech", ["status": Voice.name(answer)])
+            }
+        }
         queue.async {
             self.central = CBCentralManager(delegate: self, queue: self.queue)
         }
@@ -338,9 +345,6 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     private func beginClip(_ clip: UInt8) {
         transcription?.cancel()
-        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-            SFSpeechRecognizer.requestAuthorization { _ in }
-        }
         let started = Transcription(clip: clip, recognizer: recognizer) { [weak self] update in
             self?.advance(update)
         }

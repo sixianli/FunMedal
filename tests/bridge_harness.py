@@ -337,9 +337,12 @@ def newest_claude():
 
 
 @contextmanager
-def real_session(bridge, run_dir, settings_extra=None, program="claude"):
+def real_session(bridge, run_dir, settings_extra=None, program="claude", start_bridge=True):
     require_installed_bridge()
-    bridge.start()
+    if start_bridge:
+        bridge.start()
+    else:
+        bridge.started = True
     settings = run_dir / "settings.json"
     write_settings(settings, settings_extra)
     workdir = Path(tempfile.mkdtemp(prefix="fm-claude-"))

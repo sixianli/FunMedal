@@ -8,6 +8,8 @@ enum Hook {
     static let defaultWaitLimit = 590.0
     static let ackSeconds = 2.0
     static let giveUpReplySeconds = 2.0
+    static let startWaitSeconds = 3.0
+    static let startPollSeconds = 0.05
     static let denyMessage = "The user denied this on the FunMedal card."
     static let summaryFields = [
         "Bash": "command", "Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path", "Read": "file_path",
@@ -110,9 +112,37 @@ enum Hook {
         return answer(from: reader.next(until: Date().addingTimeInterval(giveUpReplySeconds)))
     }
 
-    static func run(socket: String, waitLimit: Double) {
+    static func startBridge(socket: String, logPath: String?) {
+        let opener = Process()
+        opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        opener.arguments = ["-n", "-g", Bundle.main.bundlePath, "--args", "serve", "--socket", socket]
+            + (logPath.map { ["--log", $0] } ?? [])
+        opener.standardInput = FileHandle.nullDevice
+        opener.standardOutput = FileHandle.nullDevice
+        opener.standardError = FileHandle.nullDevice
+        try? opener.run()
+    }
+
+    static func connectStarting(socket: String, logPath: String?) -> Int32? {
+        if let fd = UnixSocket.connect(socket, timeoutSeconds: 1) { return fd }
+        startBridge(socket: socket, logPath: logPath)
+        let deadline = Date().addingTimeInterval(startWaitSeconds)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: startPollSeconds)
+            if let fd = UnixSocket.connect(socket, timeoutSeconds: 1) { return fd }
+        }
+        return nil
+    }
+
+    static func run(socket: String, waitLimit: Double, logPath: String?) {
         let input = FileHandle.standardInput.readDataToEndOfFile()
         guard let message = message(from: input) else { return }
+        if message["event"] as? String == "SessionStart" {
+            guard let fd = connectStarting(socket: socket, logPath: logPath) else { return }
+            _ = UnixSocket.exchange(fd, message)
+            close(fd)
+            return
+        }
         guard message["op"] as? String == "approve" else {
             _ = UnixSocket.request(socket, message, timeoutSeconds: 1)
             return

@@ -118,12 +118,12 @@ VOICE_IMAGE 特征值 `6d2f1007-…`，Mac 在写 `queued` 结果之前，分几
 - **图片怎么画**：用系统界面字体（中文是苹方）17 像素，行高固定 20 像素，所以最多 5 行，每行大约 12 个汉字。超过 5 行时，最后一行末尾换成“…”。灰度低于一半的像素算有字。
 - **`status` 多了几项**：`channels`（连着的收话端各属于哪个 `claude` 进程）、`waiting`（哪几段话在等收话端交回结果）、`speech`（语音识别授权：`authorized`、`denied`、`restricted`、`not_determined`）、`voice`（已经回过几段话的结果）。
 - **记录里多了几种**：`listen` / `unlisten`（收话端连上 / 断开，带进程号；`listen` 还带 `reports_results`）、`voice_followed`（写给卡片的下文：编号、结果、哪个进程）、`voice_start`（带编号和授权状态）、`voice_end`（带包数、补成静音的包数、结束原因）、`voice_result`（带结果、文字的字数、图片里有字的像素数、送给了哪个进程）、`voice_bad`（收到格式不对的包）。
-- **权限**：第一次运行 `speech-access` 模式时，macOS 问是否允许语音识别，选允许。没先运行它就按住说话时，桥接程序在这一段话开始时才请 macOS 弹出授权框，这一段话本身会显示“Mac 没有语音识别权限”，允许之后的下一段话才能用。桥接程序每次改代码重新编译后，macOS 都会把它当成新程序，蓝牙和语音识别都要再允许一次（见 [bridge.md](bridge.md) 的“怎么配置”）。
+- **权限**：OB-9 起，常驻程序一启动就看语音识别授权，还没定时请 macOS 弹出授权框，选允许。授权状态记进记录（`speech`，见 [bridge.md](bridge.md) 的“会话开始时启动桥接程序”）。以前要等第一段话开始时才弹框，那一段话本身会显示“Mac 没有语音识别权限”。桥接程序每次改代码重新编译后，macOS 都会把它当成新程序，蓝牙和语音识别都要再允许一次（见 [bridge.md](bridge.md) 的“怎么配置”）：2026-10-18 01:06 重新编译后第一次启动，系统授权日志里先是 `Failed to match existing code requirement`（找不到和新程序匹配的旧授权），48 毫秒后弹出语音识别授权框（`artifacts/ob9-nocard-20261018-010607/tccd-funmedal-0105-0107.log`）。`speech-access` 模式仍然保留，用来单独查授权和识别器能不能用。
 - **隐私**：声音只在内存里，不存文件。桥接程序的记录只记每段话的编号、包数、文字长度和结果，不记文字本身。
 
 ## 怎么配置
 
-1. 让 macOS 允许语音识别（只需一次）：
+1. 常驻程序启动时会自己请 macOS 问语音识别权限。想单独查授权、中文识别器在不在、能不能离线识别，运行：
 
    ```bash
    open -n -W mac/bridge/build/FunMedalBridge.app --args speech-access

@@ -129,7 +129,8 @@ def test_parallel_approvals(case, card, bridge, run_dir):
     assert card_states(card, start) == expected_states
 
 
-@pytest.mark.parametrize("case", ["[FM-13] hook exits at once with no output when no bridge is listening"])
+@pytest.mark.parametrize("case", ["[FM-13] a hook for an event other than session start exits at once with no "
+                                  "output when no bridge is listening"])
 def test_hook_without_bridge(case, tmp_path):
     require_bridge_app()
     missing = os.path.join(tempfile.gettempdir(), f"fm-absent-{uuid.uuid4().hex[:8]}.sock")

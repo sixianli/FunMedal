@@ -147,7 +147,7 @@ switch mode {
 case "serve":
     serve(socket: socketPath, logPath: logPath, locale: voiceLocale)
 case "hook":
-    Hook.run(socket: socketPath, waitLimit: waitLimit)
+    Hook.run(socket: socketPath, waitLimit: waitLimit, logPath: logPath)
     exit(0)
 case "channel":
     Channel.run(socket: socketPath)

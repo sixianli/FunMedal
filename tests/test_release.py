@@ -251,7 +251,7 @@ def test_speech_access_while_serving(case, bridge, run_dir):
                      "report": json.loads(report.read_text(encoding="utf-8")) if report.exists() else None})
     serving = bridge.status()
     write_summary(run_dir, {"runs": runs, "bridge_after": serving})
-    assert len(commands) >= 2, commands
+    assert [document for document, _ in commands] == ["notes/voice.md"], commands
     assert all(run["exit"] == 0 and run["report"] is not None for run in runs), runs
     assert serving is not None and serving["card"] == "connected", serving
 

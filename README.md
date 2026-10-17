@@ -75,19 +75,19 @@ sh install.sh
 
 hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令；唯一的例外是要显示在卡片批准画面上的那一小段内容，它不写进任何记录。详见 [notes/bridge.md](notes/bridge.md) 和 [notes/approval.md](notes/approval.md)。
 
-启动桥接程序：
+桥接程序不用你自己启动：Claude Code 的会话开始时，插件的 hook 发现它没在运行，就用 `open` 在后台启动 `~/Applications` 里的它，这一次会话开始要多等约 1.3 秒。它不跟着会话结束，关掉会话后照常运行，直到你让它退出或者重启 Mac。想先启动它也可以：
 
 ```bash
 open -g ~/Applications/FunMedalBridge.app --args serve
 ```
 
-桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。第一次启动时 macOS 会问是否允许它使用蓝牙，选允许。**每次重新编译后 macOS 都会再问一次**，因为脚本用的是只在本机有效的临时签名。
+桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。它第一次启动时，macOS 会先后问是否允许它使用语音识别和蓝牙，都选允许。**每次重新编译后 macOS 都会再问一次**，因为脚本用的是只在本机有效的临时签名，macOS 把内容变了的程序当成新程序。
 
 ### 4. 蓝牙配对
 
 桥接程序第一次连上卡片时，Mac 弹出蓝牙配对对话框，上面有六位数字；卡片同时显示蓝色的“蓝牙配对”画面和同一串数字。两边数字相同时，先在 Mac 上点“连接”，再按卡片右侧最上面的键。不同就按右侧最下面的键取消。
 
-配对失败或取消后，退出桥接程序再启动一次，就会重新弹出配对对话框：
+配对失败或取消后，退出桥接程序，再照第 3 步启动它（或者开一个新的 Claude Code 会话），就会重新弹出配对对话框。退出用这条命令：
 
 ```bash
 ~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge quit
@@ -97,14 +97,6 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 
 ```bash
 ~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge status
-```
-
-### 5. 允许语音识别
-
-运行下面的命令，macOS 会问是否允许 FunMedal Bridge 使用语音识别，选允许。和蓝牙一样，每次重新编译后要再允许一次。`-n` 让 macOS 另开一个桥接程序来做这件事；不加它时，第 3 步启动的桥接程序还在运行，命令会一直等着，什么也不做。
-
-```bash
-open -n -W ~/Applications/FunMedalBridge.app --args speech-access
 ```
 
 ## 怎么用

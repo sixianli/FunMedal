@@ -85,6 +85,10 @@ enum UnixSocket {
     static func request(_ path: String, _ message: [String: Any], timeoutSeconds: Int) -> [String: Any]? {
         guard let fd = connect(path, timeoutSeconds: timeoutSeconds) else { return nil }
         defer { close(fd) }
+        return exchange(fd, message)
+    }
+
+    static func exchange(_ fd: Int32, _ message: [String: Any]) -> [String: Any]? {
         guard var data = try? JSONSerialization.data(withJSONObject: message) else { return nil }
         data.append(UInt8(ascii: "\n"))
         guard writeAll(fd, data) else { return nil }

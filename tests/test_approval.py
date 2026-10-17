@@ -153,7 +153,8 @@ def test_hook_answers(case, artifacts):
     assert all(o["s"] < 2.0 for name, o in outcomes.items() if name != "gave_up"), outcomes
 
 
-@pytest.mark.parametrize("case", ["[FM-14] approval hook exits at once with no output when no bridge is listening"])
+@pytest.mark.parametrize("case", ["[FM-14] approval hook exits at once with no output when no bridge is listening, "
+                                  "since only session start starts the bridge"])
 def test_approval_without_bridge(case):
     require_bridge_app()
     missing = os.path.join(tempfile.gettempdir(), f"fm-absent-{uuid.uuid4().hex[:8]}.sock")
