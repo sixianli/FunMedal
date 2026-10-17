@@ -136,6 +136,8 @@ OB-9 起，`hook` 模式收到 `SessionStart` 时，如果套接字连不上（�
 
    不带 `--socket` 时，各个模式先看环境变量 `FUNMEDAL_SOCKET`，有值就用它作套接字路径，没有才用默认路径。测试用 `claude --plugin-dir plugin` 加载插件，并给会话设 `FUNMEDAL_SOCKET`，让插件的 hooks 连到本次测试自己的常驻程序。
 
+   **卡片测试期间挡住常驻程序**：卡片一次只接受一个蓝牙连接。2026-10-18 凌晨，测试跑到一半时，默认套接字上的常驻程序两次被插件的 `SessionStart` hook 启动起来，连走了卡片，测试用的桥接程序 60 秒里搜不到卡片，6 项失败（`artifacts/ob13-oldbridge-20261018-014413/`）。01:46 那次是本项目的 Claude 会话压缩上下文；01:51 那次来源没查实，测试自己开的会话不会这样，因为它们的 hook 只连测试的套接字。这是第三次因为常驻程序占着卡片而测试失败：前两次是测试开始前它就在跑，夹具（测试开始前准备卡片的那段代码）只在开始时查一次，挡不住中途被启动的。现在 [tests/bridge_harness.py](../tests/bridge_harness.py) 的 `card` 夹具在整个测试文件运行期间用 `flock`（一种文件锁，同一时间只有一个进程能拿到）占着默认套接字的 `bridge.sock.lock`，`serve` 拿不到这把锁就以退出码 3 结束。[tests/test_card_guard.py](../tests/test_card_guard.py) 照插件的真实路径送一个 `SessionStart` 事件，再看 10 秒：加锁前常驻程序起来了、卡片被连走（`artifacts/guard-before-20261018-015420/`），加锁后常驻程序起不来、卡片一直在广播（`artifacts/guard-after-20261018-015445/`）。之前失败的 6 项加锁后重跑全部通过（`artifacts/ob13-oldbridge-rerun-20261018-015518/`）。
+
 上面第 2、3 步和默认套接字路径实际跑过一次，记录在 `artifacts/fm13-default-socket-20261016-222621/`。第 4 步的 `install.sh` 由 `tests/test_plugin.py` 用真的 `claude` 在临时 `HOME` 里装过两遍；README 里“卸载”一节的 `uninstall.sh` 由 `tests/test_uninstall.py` 在临时 `HOME` 里接着装好的插件卸过两遍，之后插件列表、插件市场列表和三个设置文件里都找不到 FunMedal；真实会话测试走 `--plugin-dir`，不经插件市场。
 
 ## 测试要覆盖的出错情况

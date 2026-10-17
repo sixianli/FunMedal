@@ -1,3 +1,4 @@
+import fcntl
 import glob
 import hashlib
 import json
@@ -28,6 +29,8 @@ APP = ROOT / "mac" / "bridge" / "build" / "FunMedalBridge.app"
 BRIDGE = APP / "Contents" / "MacOS" / "funmedal-bridge"
 INSTALLED_APP = Path.home() / "Applications" / "FunMedalBridge.app"
 INSTALLED_BRIDGE = INSTALLED_APP / "Contents" / "MacOS" / "funmedal-bridge"
+DEFAULT_SOCKET = Path(os.environ.get("FUNMEDAL_SOCKET")
+                      or Path.home() / "Library" / "Application Support" / "FunMedal" / "bridge.sock")
 PLUGIN = ROOT / "plugin"
 APP_CLAUDES = Path.home() / "Library" / "Application Support" / "Claude" / "claude-code"
 CLAUDE_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+) ")
@@ -157,6 +160,21 @@ class Bridge:
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+@contextmanager
+def resident_locked_out():
+    DEFAULT_SOCKET.parent.mkdir(parents=True, exist_ok=True)
+    lock = os.open(f"{DEFAULT_SOCKET}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(lock)
+        pytest.fail(f"a bridge holds {DEFAULT_SOCKET}.lock and with it the card; stop it with `{BRIDGE} quit` first")
+    try:
+        yield
+    finally:
+        os.close(lock)
+
+
 def stop_leftover_bridges():
     for path in glob.glob(os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}*.sock")):
         bridge_cli("quit", "--socket", path)
@@ -282,19 +300,20 @@ def card(artifacts):
     if resident.returncode == 0:
         pytest.fail("a bridge is running on the default socket and holds the card's only bluetooth connection; "
                     f"stop it with `{BRIDGE} quit` first")
-    stop_leftover_bridges()
-    watcher = CardWatcher()
-    watcher.start()
-    try:
-        info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
-        (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
-        assert " ble=" in info, info
-        watcher.request("frame auto")
-        yield watcher
-    finally:
-        lines = [f"{t:.3f} {line}" for t, line in watcher.lines]
-        (artifacts / "serial.log").write_text("\n".join(compact_log(lines)) + "\n", encoding="utf-8")
-        watcher.close()
+    with resident_locked_out():
+        stop_leftover_bridges()
+        watcher = CardWatcher()
+        watcher.start()
+        try:
+            info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
+            (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
+            assert " ble=" in info, info
+            watcher.request("frame auto")
+            yield watcher
+        finally:
+            lines = [f"{t:.3f} {line}" for t, line in watcher.lines]
+            (artifacts / "serial.log").write_text("\n".join(compact_log(lines)) + "\n", encoding="utf-8")
+            watcher.close()
 
 
 @pytest.fixture
