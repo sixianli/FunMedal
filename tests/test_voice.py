@@ -44,9 +44,13 @@ INITIALIZE = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
               "params": {"protocolVersion": "2025-11-25", "capabilities": {},
                          "clientInfo": {"name": "claude-code", "version": "2.1.292"}}}
 INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-SPOKEN = "把测试跑一遍"
+SPOKEN = "请帮我把所有测试跑一遍，然后告诉我结果"
 SPOKEN_KEYWORD = "测试"
 SPEAKING_VOICE = "Tingting"
+SPOKEN_HOLD_MS = 10000
+SPEAKER_WAKE = "[[slnc 300]]"
+PERSON_SECONDS = os.environ.get("FM_PERSON_AT_CARD_SECONDS")
+PERSON_TRIES = 3
 IMAGE_ROWS = (60, 160)
 BUSY_TOOL = {"tool_name": "Bash", "tool_input": {"command": "make busy"}}
 IMAGE_COLUMNS = (10, 230)
@@ -163,20 +167,44 @@ def built_in_speaker():
     return built_in[0]
 
 
+def record_speaker_end(speaker, finished):
+    speaker.wait()
+    finished.append(time.time())
+
+
+def wake_speaker(device):
+    woken = time.time()
+    subprocess.run(["say", "-a", device, SPEAKER_WAKE], check=True, timeout=15.0)
+    return round(time.time() - woken, 3)
+
+
 def talk(card, run_dir, hold_ms, start, speak=None):
     device = built_in_speaker() if speak else None
+    wake_s = wake_speaker(device) if speak else None
     press(card, "up", f"hold {hold_ms}")
     pressed, pressed_t, _ = card.wait_for(lambda line: line == "KEY press up", 2.0, start)
     started, _, began = wait_voice(card, VOICE_START, 2.0, pressed)
-    speaker = subprocess.Popen(["say", "-a", device, "-v", SPEAKING_VOICE, speak]) if speak else None
+    finished = []
+    watcher = None
+    if speak:
+        launched = time.time()
+        speaker = subprocess.Popen(["say", "-a", device, "-v", SPEAKING_VOICE, speak])
+        watcher = threading.Thread(target=record_speaker_end, args=(speaker, finished), daemon=True)
+        watcher.start()
     ended, ended_t, end = wait_voice(card, VOICE_END, hold_ms / 1000 + 3.0, started)
-    if speaker:
-        speaker.wait(10.0)
+    if watcher:
+        watcher.join(10.0)
     _, result_t, result = wait_voice(card, VOICE_RESULT, RESULT_WAIT_S + 3.0, ended)
     shot = snapshot(card, run_dir, "result")
     wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
+    spoken = {"wake_s": wake_s, "speaker_s": round(finished[0] - launched, 3),
+              "speech_done_before_release_s": round(ended_t - finished[0], 3)} if finished else {}
     return {"clip": int(began.group(1)), "packets": int(end.group(2)), "result": result.group(2),
-            "result_after_end_s": result_t - ended_t, "speaker": device, "shot": shot}
+            "result_after_end_s": result_t - ended_t, "speaker": device, "shot": shot, **spoken}
+
+
+def spoke_before_release(got):
+    return got.get("speech_done_before_release_s", -1.0) > 0
 
 
 def voice_log(bridge, kind):
@@ -504,7 +532,7 @@ def test_voice_spoken(case, card, bridge, run_dir):
         hook_as(bridge, 2222, event("PreToolUse", "a", tool_use_id="t1", **BUSY_TOOL))
         hook_as(bridge, 2222, event("PostToolUse", "a", tool_use_id="t1", tool_response={}, **BUSY_TOOL))
         status = bridge.status()
-        got = talk(card, run_dir, 4000, start, speak=SPOKEN)
+        got = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN)
         said = {"newer": newer.collect(), "older": older.collect()}
     finally:
         older.close()
@@ -517,6 +545,7 @@ def test_voice_spoken(case, card, bridge, run_dir):
                             "png": got["shot"]["png"], "said": said, "results": results, "image_ink": image_ink,
                             "lines": voice_lines(card, start), "writes": voice_log(bridge, "write")})
     assert sorted(status["channels"]) == [1111, 2222], status
+    assert spoke_before_release(got), got
     assert got["result"] == "sent", got
     assert [m["clip"] for m in said["newer"]] == [got["clip"]] and said["older"] == [], said
     assert SPOKEN_KEYWORD in heard, heard
@@ -542,7 +571,7 @@ def test_voice_after_restart(case, card, bridge, run_dir):
              "never_needed_last": FakeChannel(bridge.socket, 3333)}
     try:
         status = bridge.status()
-        got = talk(card, run_dir, 4000, start, speak=SPOKEN)
+        got = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN)
         said = {name: channel.collect() for name, channel in after.items()}
     finally:
         for channel in after.values():
@@ -553,7 +582,39 @@ def test_voice_after_restart(case, card, bridge, run_dir):
                             "starts": voice_log(bridge, "start"), "listens": voice_log(bridge, "listen")})
     assert len(voice_log(bridge, "start")) == 2, results
     assert status["channels"] == [2222, 1111, 3333], status
+    assert spoke_before_release(got), got
     assert got["result"] == "sent", got
     assert {name: [m["clip"] for m in messages] for name, messages in said.items()} == \
         {"older_first": [], "needed": [got["clip"]], "never_needed_last": []}, said
+    assert SPOKEN_KEYWORD in said["needed"][0]["say"], said
     assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
+
+
+@pytest.mark.skipif(not PERSON_SECONDS, reason="needs a person at the card; set FM_PERSON_AT_CARD_SECONDS")
+@pytest.mark.parametrize("case", ["[FM-15] a person holds the middle key, says the test phrase and the words arrive"])
+def test_person_speaks(case, card, bridge, run_dir):
+    seconds = float(PERSON_SECONDS)
+    start = start_and_mark(bridge, card)
+    channel = FakeChannel(bridge.socket, 1111)
+    tries = []
+    try:
+        hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
+        mark = start
+        for attempt in range(1, PERSON_TRIES + 1):
+            (run_dir / f"ready-{attempt}.txt").write_text(f"{time.time():.3f}\n", encoding="utf-8")
+            started, _, began = wait_voice(card, VOICE_START, seconds, mark)
+            ended, _, end = wait_voice(card, VOICE_END, LIMIT_S + 3.0, started)
+            mark, _, result = wait_voice(card, VOICE_RESULT, RESULT_WAIT_S + 3.0, ended)
+            wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
+            tries.append({"clip": int(began.group(1)), "packets": int(end.group(2)), "result": result.group(2)})
+        said = {message["clip"]: message["say"] for message in channel.collect()}
+    finally:
+        channel.close()
+    for attempt in tries:
+        attempt["heard"] = said.get(attempt["clip"], "")
+    injected = card_lines(card, start, "OK key")
+    write_summary(run_dir, {"note": "only the agreed test phrase is spoken", "tries": tries, "injected": injected,
+                            "results": voice_log(bridge, "voice_result")})
+    assert injected == [], injected
+    assert [attempt["result"] for attempt in tries] == ["sent"] * PERSON_TRIES, tries
+    assert all(SPOKEN_KEYWORD in attempt["heard"] for attempt in tries), tries

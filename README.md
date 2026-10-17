@@ -162,6 +162,11 @@ python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt
 FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tests -v
 ```
 
+有三个测试要你本人在卡片旁边按键或说话，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
+
+- `FM_KEY_PRESS_SECONDS=60`：依次长按右侧上、中、下三个键，检查卡片读到的按下、长按和松开。
+- `FM_PERSON_AT_CARD_SECONDS=90`：在真实会话里长按确认键批准一次、按下键拒绝一次；再按住中间的键说“把测试跑一遍”3 次，检查认出的文字。测试记录会存下认出的文字，所以只说这句测试话。
+
 每次运行的串口记录、截图和桥接程序记录存在 `FM_ARTIFACTS` 指定的目录里。默认目录 `artifacts/` 不进 git：串口记录里有卡片的蓝牙地址，结果里有本机路径。
 
 发布或推送之前跑一遍 `tests/test_release.py`，它检查会被公开的内容里有没有不该公开的东西：
