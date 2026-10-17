@@ -89,6 +89,35 @@
         "on": "2026-10-17",
         "why": "G5 写明桌面 App 部分要改设置，做之前先问用户"
       }
+    },
+    {
+      "id": "OB-4",
+      "title": "和 OpenCode 里三个免费模型（DeepSeek V4.1 Flash、GLM-5.3-Flash、MiMo-V2.6-Flash）头脑风暴上手方案，看有没有比现在更好的",
+      "goal_ref": [
+        "G7",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "多模型头脑风暴"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "看过多模型头脑风暴的结果后，按哪个方案做？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G7 用户认为 Claude 想方案不够全面，要求和多个免费模型头脑风暴"
+      }
     }
   ]
 }

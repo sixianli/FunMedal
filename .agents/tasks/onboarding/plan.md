@@ -7,11 +7,12 @@
 
 ## 当前批次
 
-- OB-2 写一个只含 mod 的实验插件（`experiments/mod-submit/`）和一个驱动脚本 `run.py`：用 Python 的伪终端启动 `claude --plugin-dir`，mod 在会话开始时用 `$.process.spawn` 起一个一直运行的小程序读收件文件，读到一行就 `$.prompt.submit({ text, asUser: true })`；驱动脚本在会话空闲、Claude 在干活、批准框挂着、`/clear` 之后、`--safe-mode` 下各写一行，用 hooks 和 mod 自己的时间记录判断新一轮何时开始。文档写定的行为由脚本断言，文档没写的只记录。证据：run.py 退出码 0 的记录、artifacts/ 下的时间记录、notes/onboarding.md 的“mod 实验”一节、Claude 的审核记录。
+- OB-4 两轮头脑风暴。第一轮各模型独立想：工作区是仓库外的临时目录，内容是提交 11d9dbd（上手讨论之前）的导出，不含 git 历史和 device-scan/，看不到现有方案；每个模型写自己的停止文件。第二轮接着同一会话，把现有方案和终端实验结果发给它们逐条比较。参加的是用户框出的三个免费模型：opencode/deepseek-v4.1-flash-free、opencode/glm-5.3-flash-free、opencode/mimo-v2.6-flash-free，每个先过一句话小测试。Claude 核对各方引用的事实，把结果写进 notes/onboarding.md 的“多模型头脑风暴”一节。证据：各模型两轮的停止文件、notes/onboarding.md、Claude 的审核记录、用户的选择。
 
 ## 之后
 
-- OB-3 桌面 App 部分：等用户同意改设置后再做。
+- OB-3 仍等用户决定，头脑风暴的结果可能改变它。
+
 
 ## 计划改动记录
 
@@ -19,6 +20,7 @@
 - 2026-10-17 17:12 加 OB-1（G1）。G2、G3 是同一话题之前的原话，G4 是用户在别的项目定的 OpenCode 模型规则，这里照用。
 - 2026-10-17 17:35 用户看过讨论结果，选先做 mod 小实验（G5），使用范围还没想好、先按自用（G6）。OB-1 的 done_when 里用户决定一项改为指向 G5。加 OB-2（终端实验）、OB-3（桌面 App 实验，需用户先同意改设置）。status：OB-1 等你决定 1。
 - 2026-10-17 17:43 代码指纹排除 `notes/`：实验脚本不读 notes/，审核按文件本身的摘要判断，改文档不该让 OB-2 的实验证据过期。
+- 2026-10-17 17:56 用户问为什么第一版没想到 mod，并要求和 OpenCode 里多个免费模型头脑风暴（G7）。加 OB-4（G7）；OB-3 没有得到回答，仍等用户决定。status：当前版本已验证 2 · 等你决定 1。
 
 ## 意外和发现
 
@@ -26,3 +28,4 @@
 - 2026-10-17 17:43 试跑 OB-2（会话只开 60 秒）全部通过：Claude 在干活或批准框挂着时，送进去的话等那一轮结束、批准框被回答后才进入；/clear 之后照常；安全模式下 mod 不加载。本机生成的接口说明写明 asUser 的话在会话记录里仍标出插件名，终端也显示“Prompt from the … plugin”，推翻了讨论里“会话记录看不出来自语音”的说法。证据 artifacts/mod-submit-20261017-174033/。
 
 ## 决定
+- 2026-10-17 17:56 模型：G4 禁止的是付费按量的 `opencode/*` 模型。G7 要求多用几个免费模型，G8 用户框定了三个：opencode/deepseek-v4.1-flash-free、opencode/glm-5.3-flash-free、opencode/mimo-v2.6-flash-free。本条目只用这三个，其它模型不用。
