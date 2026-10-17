@@ -174,6 +174,247 @@
         "on": "2026-10-17",
         "why": "G19 负责人要求开工前确认方案真的可行，免得做到一半发现不行"
       }
+    },
+    {
+      "id": "OB-7",
+      "title": "正式插件管状态和批准：仓库里的插件带 hooks，hooks 直接运行装在固定位置的桥接程序；不再往 settings.json 手工粘 hooks；低于 v2.1.292 的 Claude Code 提示升级",
+      "goal_ref": [
+        "G9",
+        "G17",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-7"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 1、2 条；开工前检查发现插件直接从仓库目录运行，hooks 不能依赖仓库位置"
+      }
+    },
+    {
+      "id": "OB-8",
+      "title": "mod 送语音：插件里的 mod 启动小程序向桥接程序收话，用 $.prompt.submit 当作用户的话送进会话，结果用短命令交回桥接程序；卡片显示已排队、已送进去、没送进去（两种提示），桌面 App 清空对话后显示未连接",
+      "goal_ref": [
+        "G9",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-8"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 2 条；OB-3、OB-5、OB-6 的结果"
+      }
+    },
+    {
+      "id": "OB-9",
+      "title": "自动启动桥接程序：桥接程序的 hook 模式发现没有桥接程序在跑时自己用 open -g 启动它再转发；桥接程序一启动就请求语音识别权限",
+      "goal_ref": [
+        "G9",
+        "G20",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-9"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 3 条；开工前检查发现会话开始的 hook 比 mod 先运行，G20 负责人选由 hook 模式启动"
+      }
+    },
+    {
+      "id": "OB-10",
+      "title": "固定证书签名：桥接程序改用一张固定的证书签名，改代码重新编译后 macOS 不再重新要蓝牙和语音授权",
+      "goal_ref": [
+        "G9",
+        "G14",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "桥接程序用哪种证书签名：在钥匙串里自建一张，还是用免费 Apple ID 拿苹果的开发证书？"
+        },
+        {
+          "type": "test",
+          "tag": "OB-10"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 3 条；用哪种证书要负责人先定"
+      }
+    },
+    {
+      "id": "OB-11",
+      "title": "doctor 自检命令：一条命令依次查桥接程序在不在跑、蓝牙和语音是否允许、签名种类、卡片连没连上、固件版本配不配、插件是否装上、是否被 disableAllHooks 关掉、Claude Code 版本够不够",
+      "goal_ref": [
+        "G9",
+        "G17",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-11"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 6 条"
+      }
+    },
+    {
+      "id": "OB-12",
+      "title": "卸载：一条命令卸掉插件，提示退出桥接程序、重开已经开着的会话、在蓝牙设置里忽略卡片",
+      "goal_ref": [
+        "G9",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-12"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 1 条；开工前检查发现卸载后已开着的会话仍带着插件"
+      }
+    },
+    {
+      "id": "OB-13",
+      "title": "版本互报：固件和桥接程序连上时互报版本，不配时卡片直接说明，不再反复断开重连",
+      "goal_ref": [
+        "G9",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-13"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 4 条"
+      }
+    },
+    {
+      "id": "OB-14",
+      "title": "配对失败自动重试：配对失败或被取消时，桥接程序自己断开重连，再弹一次配对框",
+      "goal_ref": [
+        "G9",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-14"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 5 条"
+      }
+    },
+    {
+      "id": "OB-15",
+      "title": "刷固件不装 ESP-IDF：发编译好的固件文件，一条只需 esptool 的命令依次备份、校验、刷写；想自己编译的照旧用 ESP-IDF",
+      "goal_ref": [
+        "G9",
+        "G15",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-15"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "修改后的推荐组合第 4 条；G15 负责人选两种都给"
+      }
+    },
+    {
+      "id": "OB-16",
+      "title": "删掉频道这条路：mod 送语音做好后，去掉频道服务器、mcp.json 和开发参数的说明",
+      "goal_ref": [
+        "G9",
+        "G17",
+        "G22"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-16"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G17 负责人定不留旧版本备用路"
+      }
     }
   ]
 }
