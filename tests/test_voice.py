@@ -538,20 +538,22 @@ def test_voice_after_restart(case, card, bridge, run_dir):
             channel.close()
     bridge.quit()
     start = start_and_mark(bridge, card)
-    needed, reconnected_last = FakeChannel(bridge.socket, 1111), FakeChannel(bridge.socket, 2222)
+    after = {"older_first": FakeChannel(bridge.socket, 2222), "needed": FakeChannel(bridge.socket, 1111),
+             "never_needed_last": FakeChannel(bridge.socket, 3333)}
     try:
         status = bridge.status()
         got = talk(card, run_dir, 4000, start, speak=SPOKEN)
-        said = {"needed": needed.collect(), "reconnected_last": reconnected_last.collect()}
+        said = {name: channel.collect() for name, channel in after.items()}
     finally:
-        reconnected_last.close()
-        needed.close()
+        for channel in after.values():
+            channel.close()
     results = voice_log(bridge, "voice_result")
     write_summary(run_dir, {"status": status, "talk": {k: v for k, v in got.items() if k != "shot"},
                             "said": said, "results": results, "lines": voice_lines(card, start),
                             "starts": voice_log(bridge, "start"), "listens": voice_log(bridge, "listen")})
     assert len(voice_log(bridge, "start")) == 2, results
-    assert status["channels"] == [1111, 2222], status
+    assert status["channels"] == [2222, 1111, 3333], status
     assert got["result"] == "sent", got
-    assert [m["clip"] for m in said["needed"]] == [got["clip"]] and said["reconnected_last"] == [], said
+    assert {name: [m["clip"] for m in messages] for name, messages in said.items()} == \
+        {"older_first": [], "needed": [got["clip"]], "never_needed_last": []}, said
     assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
