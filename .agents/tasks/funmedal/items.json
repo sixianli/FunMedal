@@ -16,7 +16,7 @@
       "done_when": [
         {
           "type": "command",
-          "run": "shasum -a 256 -c firmware-backup/trae_card_<id>_fw1.0.3_full8MB_2026-10-16.bin.sha256",
+          "run": "shasum -a 256 -c firmware-backup/*.sha256",
           "scope": "environment",
           "host": "MacBookAir",
           "max_age_days": 30
