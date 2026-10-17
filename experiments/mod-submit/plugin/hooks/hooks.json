@@ -1,0 +1,4 @@
+{
+  "description": "FunMedal mod-submit experiment",
+  "modules": ["./register.js"]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "funmedal-mod-submit",
+  "version": "0.1.0",
+  "description": "Experiment: send text into the session as the user's words from a background listener"
+}

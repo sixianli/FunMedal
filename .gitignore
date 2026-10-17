@@ -11,3 +11,5 @@ artifacts/
 mac/bridge/build/
 __pycache__/
 third_party/noto-sans-sc/*.otf
+experiments/*/plugin/.claude-plugin/types/
+experiments/*/plugin/tsconfig.json

@@ -1,6 +1,11 @@
 {
   "task": "onboarding",
   "prefix": "OB",
+  "fingerprint": {
+    "exclude": [
+      "notes/"
+    ]
+  },
   "items": [
     {
       "id": "OB-1",
@@ -20,7 +25,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G5",
           "question": "看过讨论结果后，选哪个方案，还是都先不做？"
         }
       ],
@@ -28,6 +33,61 @@
         "by": "claude",
         "on": "2026-10-17",
         "why": "G1 要求和 OpenCode 讨论并把结果给用户看"
+      }
+    },
+    {
+      "id": "OB-2",
+      "title": "mod 小实验（终端）：插件里的 mod 能否用 $.prompt.submit 代替频道把语音送进会话",
+      "goal_ref": [
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "python3 experiments/mod-submit/run.py"
+        },
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "mod 实验"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G5 用户选先做 mod 小实验；终端部分不改用户设置"
+      }
+    },
+    {
+      "id": "OB-3",
+      "title": "mod 小实验（桌面 App）：同样的检查在桌面 App 的会话里做一遍",
+      "goal_ref": [
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "是否允许在 ~/.claude/settings.json 的 env 里临时加一行 CLAUDE_CODE_PLUGIN_DIRS，让桌面 App 的会话加载实验插件（做完删掉）？"
+        },
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "桌面 App 里的 mod 实验"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G5 写明桌面 App 部分要改设置，做之前先问用户"
       }
     }
   ]
