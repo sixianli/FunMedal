@@ -341,7 +341,7 @@ def bluetooth_states(bridge):
 
 
 def turned_back_on(states):
-    return "poweredOff" in states and states[-1] == "poweredOn" and states.index("poweredOff") < len(states) - 1
+    return "poweredOff" in states and states[-1] == "poweredOn"
 
 
 @pytest.mark.skipif(not TOGGLE_SECONDS, reason="needs a person to turn the Mac's Bluetooth off and on; set FM_BLUETOOTH_TOGGLE_SECONDS")
@@ -362,7 +362,7 @@ def test_mac_bluetooth_off_and_on(case, card, bridge, run_dir):
     (run_dir / "ready-on.txt").write_text(f"{time.time():.3f}\n", encoding="utf-8")
     wait_until(lambda: turned_back_on(bluetooth_states(bridge)), seconds, "Mac Bluetooth on")
     card.wait_for(lambda line: line == "BLE state done", RECONNECT_S, mark)
-    after = bridge.status()
+    after = bridge.settle("done")
     summary = {"before": before, "off": off, "during": during, "after": after,
                "bluetooth": bluetooth_states(bridge), "card_lines": card_lines(card, start, "BLE "),
                "states_after_on": card_states(card, mark)}

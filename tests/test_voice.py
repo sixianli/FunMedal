@@ -58,6 +58,19 @@ REFUSALS = {"image": ("image", 1), "result": ("voice", 1), "result-twice": ("voi
 REFUSED_LINES = {"image": "BLE reject image injected", "voice": "BLE reject voice injected"}
 HEADER_ROWS = (0, 55)
 RETRIED_RESULT_S = 5.0
+RETRY_WAIT_S = (1.0, 1.5)
+REJECT_REPLIES = {
+    "ble reject image": "OK ble reject image 1",
+    "ble reject voice 9": "OK ble reject voice 9",
+    "ble reject none": "OK ble reject none",
+    "ble reject voice 0": "ERR ble usage",
+    "ble reject voice 10": "ERR ble usage",
+    "ble reject image 2x": "ERR ble usage",
+    "ble reject none 1": "ERR ble usage",
+    "ble reject sound": "ERR ble usage",
+    "ble reject": "ERR ble usage",
+    "ble reject voice 1 2": "ERR ble usage",
+}
 
 
 class FakeBridgeSocket:
@@ -611,6 +624,26 @@ def result_screen(shot):
             "image_ink": ink(pixels, IMAGE_ROWS, VOICE_BACKGROUND, IMAGE_COLUMNS)}
 
 
+def retry_gaps(bridge, clip):
+    entries = [e for e in bridge.log_entries() if e.get("what") == "voice" and e.get("clip") == clip
+               and e.get("kind") in ("write", "write_error")]
+    return [round(later["t"] - entry["t"], 3) for entry, later in zip(entries, entries[1:])
+            if entry["kind"] == "write_error" and later["kind"] == "write"]
+
+
+@pytest.mark.parametrize("case", ["[FM-15] the card's test command for refusing voice writes takes a count from 1 to 9 and turns down anything else"])
+def test_reject_command_usage(case, card, run_dir):
+    replies = {}
+    try:
+        for command in REJECT_REPLIES:
+            replies[command] = card.request(command)
+    finally:
+        cleared = card.request("ble reject none")
+    write_summary(run_dir, {"replies": replies, "cleared": cleared})
+    assert {command: reply.split(":")[0] for command, reply in replies.items()} == REJECT_REPLIES, replies
+    assert cleared == "OK ble reject none", cleared
+
+
 @pytest.mark.parametrize("way,case", [
     ("image", "[FM-15] when the card refuses a piece of the text image, the words still arrive and the card shows the result without the image"),
     ("result", "[FM-15] when the card refuses the result once, the bridge writes it again and the card shows the words"),
@@ -628,8 +661,10 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
         recovered = talk(card, run_dir, SPOKEN_HOLD_MS, card.mark(), speak=SPOKEN, shot_name="recovered")
         said = {message["clip"]: message["say"] for message in channel.collect()}
     finally:
-        channel.close()
-        card.request("ble reject none")
+        try:
+            channel.close()
+        finally:
+            cleared = card.request("ble reject none")
     clips = {"refused": refused["clip"], "recovered": recovered["clip"]}
     results = {name: [r["result"] for r in voice_log(bridge, "voice_result") if r["clip"] == clip]
                for name, clip in clips.items()}
@@ -643,12 +678,15 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
     drawn = {r["clip"]: r.get("ink") for r in voice_log(bridge, "voice_result")}
     screens = {"refused": result_screen(refused["shot"]), "recovered": result_screen(recovered["shot"])}
     rejects = card_lines(card, start, "BLE reject")
-    write_summary(run_dir, {"armed": armed, "clips": clips, "card_results": [refused["result"], recovered["result"]],
+    retry_waits = retry_gaps(bridge, refused["clip"])
+    write_summary(run_dir, {"armed": armed, "cleared": cleared, "retry_waits_s": retry_waits, "clips": clips,
+                            "card_results": [refused["result"], recovered["result"]],
                             "bridge_results": results, "write_errors": errors, "image_writes": image_writes,
                             "result_writes": result_writes, "drawn_ink": drawn, "screens": screens,
                             "rejects": rejects, "heard_chars": {c: len(t) for c, t in said.items()},
                             "bridge_chars": chars,
                             "talk": [{k: v for k, v in got.items() if k != "shot"} for got in (refused, recovered)]})
+    assert cleared == "OK ble reject none", cleared
     assert rejects == [REFUSED_LINES[kind]] * times, rejects
     assert results == {"refused": ["sent"], "recovered": ["sent"]}, results
     assert sorted(said) == sorted(clips.values()) and all(len(said[c]) == chars[c] > 0 for c in said), (said, chars)
@@ -662,6 +700,7 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
     else:
         assert len(image_writes["refused"]) > 1 and image_writes["refused"][0] == 0, image_writes
         assert result_writes["refused"] == ["sent", "sent"], result_writes
+        assert len(retry_waits) == 1 and RETRY_WAIT_S[0] <= retry_waits[0] < RETRY_WAIT_S[1], retry_waits
     if way == "result":
         assert refused["result"] == "sent" and refused["result_after_end_s"] < RETRIED_RESULT_S, refused
         assert refused_screen["header_ink"] > 0 and refused_screen["image_ink"] == drawn[refused["clip"]] > 0, (

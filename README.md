@@ -150,7 +150,7 @@ python -m esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/fac
 
 写完卡片自动重启，跑回原厂固件。写回会把 FunMedal 存在卡片上的蓝牙配对一起覆盖掉。
 
-想再换回 FunMedal：照第 2 步烧录，然后先在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`，再照第 4 步重新配对。不先忽略的话，Mac 还拿旧的配对去连，卡片已经不认，桥接程序会一直连不上，它的记录里每次都是 `Peer removed pairing information`（macOS 的意思是“对方删掉了配对信息”）。
+想再换回 FunMedal：照第 2 步烧录，然后先在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`，再退出桥接程序、重新启动它（命令见第 3、4 步），照第 4 步重新配对。不先忽略的话，Mac 还拿旧的配对去连，卡片已经不认，桥接程序连不上，它的记录里每次都是 `Peer removed pairing information`（macOS 的意思是“对方删掉了配对信息”）。
 
 2026-10-17 在一张卡片上完整走过一遍：8 MB 写入用了约 16 秒，`esptool` 核对写入的内容无误；原厂固件的开机日志里有 `Project name: trae_card` 和 `App version: 1.0.3`，一直启动到 `99-ready`；再照第 2 步烧回 FunMedal、在 Mac 上忽略卡片、照第 4 步配对，第一次就配上。那一分钟里没有人看屏幕，原厂固件能开机的依据只有串口日志。
 
@@ -169,7 +169,7 @@ FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tes
 有四个测试要你本人在卡片旁边操作，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
 
 - `FM_KEY_PRESS_SECONDS=60`：依次长按右侧上、中、下三个键，检查卡片读到的按下、长按和松开。
-- `FM_BLUETOOTH_TOGGLE_SECONDS=300`：等 `FM_ARTIFACTS` 目录里出现 `ready-off.txt`（启动后约 5 秒），在控制中心把 Mac 的蓝牙关掉约 10 秒再打开，检查桥接程序自己重连、补上关着时变的状态。
+- `FM_BLUETOOTH_TOGGLE_SECONDS=300`：等 `FM_ARTIFACTS` 目录下的 `bridge/test_mac_bluetooth_off_and_on/ready-off.txt` 出现（单独跑这个测试时，启动后约 5 秒；跑全部测试时要等前面的测试跑完），在控制中心把 Mac 的蓝牙关掉约 10 秒再打开，检查桥接程序自己重连、补上关着时变的状态。
 - `FM_PERSON_AT_CARD_SECONDS=90`：在真实会话里长按确认键批准一次、按下键拒绝一次；再按住中间的键说“把测试跑一遍”3 次，检查认出的文字。测试记录会存下认出的文字，所以只说这句测试话。
 
 每次运行的串口记录、截图和桥接程序记录存在 `FM_ARTIFACTS` 指定的目录里。默认目录 `artifacts/` 不进 git：串口记录里有卡片的蓝牙地址，结果里有本机路径。
