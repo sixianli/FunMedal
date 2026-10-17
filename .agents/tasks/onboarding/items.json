@@ -71,7 +71,7 @@
       "done_when": [
         {
           "type": "user",
-          "ref": null,
+          "ref": "G10",
           "question": "是否允许在 ~/.claude/settings.json 的 env 里临时加一行 CLAUDE_CODE_PLUGIN_DIRS，让桌面 App 的会话加载实验插件（做完删掉）？"
         },
         {
@@ -109,7 +109,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G9",
           "question": "看过多模型头脑风暴的结果后，按哪个方案做？"
         }
       ],
