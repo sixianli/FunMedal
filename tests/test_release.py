@@ -21,9 +21,10 @@ EMAIL = re.compile(rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za
 ALLOWED_EMAIL = re.compile(rb"^(noreply@anthropic\.com|[A-Za-z0-9._%+-]+@users\.noreply\.github\.com)$")
 USER_NAME = re.escape(Path.home().name.encode())
 FINDINGS = {
-    "user_name": re.compile(rb"(?<![A-Za-z0-9])" + USER_NAME + rb"(?![A-Za-z0-9])"),
+    "user_name": re.compile(rb"(?<![A-Za-z0-9])" + USER_NAME + rb"(?![A-Za-z0-9])", re.IGNORECASE),
     "chip_unique_id": re.compile(rb"Optional unique 128-bit ID\s*=\s*[0-9a-f]{2}(?: [0-9a-f]{2}){15}"),
-    "hardware_address": re.compile(rb"(?<![0-9A-Fa-f:])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![0-9A-Fa-f:])"),
+    "hardware_address": re.compile(rb"(?<![0-9A-Fa-f])(?<![0-9A-Fa-f][:-])[0-9A-Fa-f]{2}([:-])[0-9A-Fa-f]{2}"
+                                   rb"(?:\1[0-9A-Fa-f]{2}){4}(?![0-9A-Fa-f])(?![:-][0-9A-Fa-f])"),
     "card_identity": re.compile(rb"trae_card_[0-9A-Fa-f]{12}", re.IGNORECASE),
     "secret": re.compile(rb"sk-ant-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 }
@@ -73,7 +74,7 @@ def blob_contents(root, shas):
 
 def history_files(root):
     places = {}
-    for commit in git("rev-list", "--all", cwd=root).decode().split():
+    for commit in git("rev-list", "--reverse", "--all", cwd=root).decode().split():
         for entry in filter(None, git("ls-tree", "-r", "-z", commit, cwd=root).split(b"\0")):
             meta, path = entry.split(b"\t", 1)
             _, kind, sha = meta.split()
@@ -99,16 +100,24 @@ def index_files(root):
 def working_files(root):
     for name in filter(None, git("ls-files", "-z", "--cached", "--others", "--exclude-standard", cwd=root).split(b"\0")):
         path = root / name.decode()
-        if path.is_file():
+        if path.is_symlink():
+            yield name.decode(), "working tree", os.fsencode(os.readlink(path))
+        elif path.is_file():
             yield name.decode(), "working tree", path.read_bytes()
 
 
-def commit_fields(root):
+def commit_and_tag_fields(root):
     log = git("log", "--all", "--format=%H%x00%an <%ae>%x00%cn <%ce>%x00%B%x01", cwd=root)
     for record in filter(bytes.strip, log.split(b"\x01")):
         commit, *fields = record.strip().split(b"\0", 3)
         for name, value in zip(("author", "committer", "message"), fields):
             yield f"commit {commit[:7].decode()}: {name}", value
+    tags = git("for-each-ref", "refs/tags", "--format=%(refname:short)%00%(taggername) %(taggeremail)%00%(contents)%01",
+               cwd=root)
+    for record in filter(bytes.strip, tags.split(b"\x01")):
+        tag, *fields = record.strip().split(b"\0", 2)
+        for name, value in zip(("tagger", "message"), fields):
+            yield f"tag {tag.decode()}: {name}", value
 
 
 def private_findings(root, backup_dir):
@@ -133,12 +142,12 @@ def private_findings(root, backup_dir):
             found["flash_image"].add(place)
         if any(hashlib.sha256(block).digest() in digests for block in blocks(content)):
             found["backup_content"].add(place)
-    for place, value in commit_fields(root):
+    for place, value in commit_and_tag_fields(root):
         look(place, value)
     return found
 
 
-@pytest.mark.parametrize("case", ["[FM-16] the privacy check finds data planted in commit details, paths, the index and partial dumps"])
+@pytest.mark.parametrize("case", ["[FM-16] the privacy check finds data planted in commit and tag details, paths, links, the index and partial dumps"])
 def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
     repo, backup = tmp_path / "repo", tmp_path / "backup"
     backup.mkdir()
@@ -161,6 +170,12 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
     (repo / "logs").mkdir()
     (repo / log_name).write_text("ok\n")
     with_identity = commit("add a log")
+    (repo / "dash.txt").write_text("-".join(["AA", "BB", "CC", "DD", "EE", "03"]) + "\n")
+    (repo / "case.txt").write_text(f"/Users/{Path.home().name.upper()}/work\n")
+    with_variants = commit("more notes")
+    git("-c", f"user.name={Path.home().name}", "-c", "user.email=1+someone@users.noreply.github.com",
+        "tag", "-a", "v0", "-m", "first", cwd=repo)
+    (repo / "link").symlink_to(f"/Users/{Path.home().name}/nowhere")
     (repo / "staged.txt").write_text(f"peer {address_start}:02\n")
     (repo / "part.bin").write_bytes(dump[BLOCK_BYTES:])
     git("add", "staged.txt", "part.bin", cwd=repo)
@@ -172,6 +187,10 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
         ("user_name", f"commit {by_user}: author"),
         ("hardware_address", f"commit {with_address}: message"),
         ("card_identity", f"commit {with_identity}: {log_name}"),
+        ("hardware_address", f"commit {with_variants}: dash.txt"),
+        ("user_name", f"commit {with_variants}: case.txt"),
+        ("user_name", "tag v0: tagger"),
+        ("user_name", "working tree: link"),
         ("hardware_address", "index: staged.txt"),
         ("backup_content", "index: part.bin"),
         ("backup_content", "working tree: part.bin"),
@@ -184,8 +203,10 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
 def test_nothing_private(case, run_dir):
     found = private_findings(ROOT, ROOT / BACKUP_DIR)
     report = {kind: {"count": len(where), "where": sorted(where)} for kind, where in sorted(found.items())}
+    backups = len(backup_files(ROOT / BACKUP_DIR))
     write_summary(run_dir, {"note": "only kinds and paths are recorded, never the matched text",
-                            "backup_files": len(backup_files(ROOT / BACKUP_DIR)), "found": report})
+                            "backup_files": backups, "found": report})
+    assert backups > 0, f"no flash backup under {BACKUP_DIR}: README step 1 makes one, and without it the backup check finds nothing"
     assert not report, {kind: entry["count"] for kind, entry in report.items()}
 
 
