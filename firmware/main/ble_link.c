@@ -63,8 +63,15 @@ static _Atomic bool decision_subscribed;
 static _Atomic bool audio_subscribed;
 static _Atomic bool pairing;
 static _Atomic uint32_t numcmp_conn = BLE_HS_CONN_HANDLE_NONE;
+static _Atomic int refusal = BLE_REFUSE_NONE;
 
 static void advertise(void);
+
+static bool take_refusal(ble_refusal_t what)
+{
+    int expected = what;
+    return atomic_compare_exchange_strong(&refusal, &expected, BLE_REFUSE_NONE);
+}
 
 static int state_write(struct ble_gatt_access_ctxt *ctxt)
 {
@@ -140,6 +147,10 @@ static int voice_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctx
         console_event("BLE reject voice length\n");
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
+    if (take_refusal(BLE_REFUSE_VOICE)) {
+        console_event("BLE reject voice injected\n");
+        return BLE_ATT_ERR_UNLIKELY;
+    }
     uint8_t clip;
     voice_result_t result;
     if (!voice_result_parse(value, len, &clip, &result)) {
@@ -163,6 +174,11 @@ static int voice_image_access(uint16_t conn, uint16_t attr, struct ble_gatt_acce
         voice_image_reset(&incoming_image);
         console_event("BLE reject image length\n");
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    if (take_refusal(BLE_REFUSE_IMAGE)) {
+        voice_image_reset(&incoming_image);
+        console_event("BLE reject image injected\n");
+        return BLE_ATT_ERR_UNLIKELY;
     }
     if (!voice_image_write(&incoming_image, chunk, len)) {
         console_event("BLE reject image chunk\n");
@@ -596,6 +612,11 @@ int ble_link_unpair(void)
 uint16_t ble_link_changed_handle(void)
 {
     return changed_handle;
+}
+
+void ble_link_refuse_next(ble_refusal_t what)
+{
+    atomic_store(&refusal, what);
 }
 
 esp_err_t ble_link_forget_layout(void)

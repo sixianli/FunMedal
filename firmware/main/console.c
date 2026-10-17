@@ -328,7 +328,7 @@ static void ble_decision_command(void)
     bool allow = word != NULL && strcmp(word, "allow") == 0;
     bool valid = id_text != NULL && *end == '\0' && end != id_text && (allow || (word != NULL && strcmp(word, "deny") == 0));
     if (!valid || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
         return;
     }
     if (!ble_link_send_decision((uint32_t)id, allow)) {
@@ -342,7 +342,7 @@ static void ble_layout_command(void)
 {
     char *word = strtok(NULL, " ");
     if (word == NULL || strcmp(word, "forget") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
         return;
     }
     esp_err_t err = ble_link_forget_layout();
@@ -353,9 +353,38 @@ static void ble_layout_command(void)
     console_printf("OK ble layout forget\n");
 }
 
+static bool refusal_from_name(const char *name, ble_refusal_t *what)
+{
+    static const char *const names[] = {
+        [BLE_REFUSE_NONE] = "none", [BLE_REFUSE_IMAGE] = "image", [BLE_REFUSE_VOICE] = "voice"};
+    for (size_t i = 0; name != NULL && i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(name, names[i]) == 0) {
+            *what = (ble_refusal_t)i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void ble_reject_command(void)
+{
+    char *name = strtok(NULL, " ");
+    ble_refusal_t what;
+    if (!refusal_from_name(name, &what) || strtok(NULL, " ") != NULL) {
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
+        return;
+    }
+    ble_link_refuse_next(what);
+    console_printf("OK ble reject %s\n", name);
+}
+
 static void ble_command(char *args)
 {
     char *what = strtok(args, " ");
+    if (what != NULL && strcmp(what, "reject") == 0) {
+        ble_reject_command();
+        return;
+    }
     if (what != NULL && strcmp(what, "decision") == 0) {
         ble_decision_command();
         return;
@@ -365,7 +394,7 @@ static void ble_command(char *args)
         return;
     }
     if (what == NULL || strcmp(what, "unpair") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny|reject image|voice|none\n");
         return;
     }
     int rc = ble_link_unpair();

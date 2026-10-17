@@ -54,6 +54,8 @@ PERSON_TRIES = 3
 IMAGE_ROWS = (60, 160)
 BUSY_TOOL = {"tool_name": "Bash", "tool_input": {"command": "make busy"}}
 IMAGE_COLUMNS = (10, 230)
+REFUSED_LINES = {"image": "BLE reject image injected", "voice": "BLE reject voice injected"}
+HEADER_ROWS = (0, 55)
 
 
 class FakeBridgeSocket:
@@ -178,7 +180,7 @@ def wake_speaker(device):
     return round(time.time() - woken, 3)
 
 
-def talk(card, run_dir, hold_ms, start, speak=None):
+def talk(card, run_dir, hold_ms, start, speak=None, shot_name="result"):
     device = built_in_speaker() if speak else None
     wake_s = wake_speaker(device) if speak else None
     press(card, "up", f"hold {hold_ms}")
@@ -195,7 +197,7 @@ def talk(card, run_dir, hold_ms, start, speak=None):
     if watcher:
         watcher.join(10.0)
     _, result_t, result = wait_voice(card, VOICE_RESULT, RESULT_WAIT_S + 3.0, ended)
-    shot = snapshot(card, run_dir, "result")
+    shot = snapshot(card, run_dir, shot_name)
     wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
     spoken = {"wake_s": wake_s, "speaker_s": round(finished[0] - launched, 3),
               "speech_done_before_release_s": round(ended_t - finished[0], 3)} if finished else {}
@@ -588,6 +590,71 @@ def test_voice_after_restart(case, card, bridge, run_dir):
         {"older_first": [], "needed": [got["clip"]], "never_needed_last": []}, said
     assert SPOKEN_KEYWORD in said["needed"][0]["say"], said
     assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
+
+
+def card_writes(bridge, kind, what, clip):
+    return [e for e in voice_log(bridge, kind) if e.get("what") == what and e.get("clip") == clip]
+
+
+def result_screen(shot):
+    pixels = shot["pixels"]
+    return {"png": shot["png"], "header_ink": ink(pixels, HEADER_ROWS, VOICE_BACKGROUND),
+            "title_ink": ink(pixels, TITLE_ROWS, VOICE_BACKGROUND),
+            "image_ink": ink(pixels, IMAGE_ROWS, VOICE_BACKGROUND, IMAGE_COLUMNS)}
+
+
+@pytest.mark.parametrize("way,case", [
+    ("image", "[FM-15] when the card refuses a piece of the text image, the words still arrive and the card shows the result without the image"),
+    ("voice", "[FM-15] when the card refuses the result, the bridge does not write it again and the card says the Mac did not answer"),
+])
+def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    channel = FakeChannel(bridge.socket, 1111)
+    try:
+        hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
+        armed = card.request(f"ble reject {way}")
+        refused = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN, shot_name="refused")
+        recovered = talk(card, run_dir, SPOKEN_HOLD_MS, card.mark(), speak=SPOKEN, shot_name="recovered")
+        said = {message["clip"]: message["say"] for message in channel.collect()}
+    finally:
+        card.request("ble reject none")
+        channel.close()
+    clips = {"refused": refused["clip"], "recovered": recovered["clip"]}
+    results = {name: [r["result"] for r in voice_log(bridge, "voice_result") if r["clip"] == clip]
+               for name, clip in clips.items()}
+    chars = {r["clip"]: r.get("chars") for r in voice_log(bridge, "voice_result")}
+    errors = {name: [e["what"] for e in voice_log(bridge, "write_error") if e.get("clip") == clip]
+              for name, clip in clips.items()}
+    image_writes = {name: [e["offset"] for e in card_writes(bridge, "write", "voice_image", clip)]
+                    for name, clip in clips.items()}
+    result_writes = {name: [e["result"] for e in card_writes(bridge, "write", "voice", clip)]
+                     for name, clip in clips.items()}
+    drawn = {r["clip"]: r.get("ink") for r in voice_log(bridge, "voice_result")}
+    screens = {"refused": result_screen(refused["shot"]), "recovered": result_screen(recovered["shot"])}
+    rejects = card_lines(card, start, "BLE reject")
+    write_summary(run_dir, {"armed": armed, "clips": clips, "card_results": [refused["result"], recovered["result"]],
+                            "bridge_results": results, "write_errors": errors, "image_writes": image_writes,
+                            "result_writes": result_writes, "drawn_ink": drawn, "screens": screens,
+                            "rejects": rejects, "heard_chars": {c: len(t) for c, t in said.items()},
+                            "bridge_chars": chars,
+                            "talk": [{k: v for k, v in got.items() if k != "shot"} for got in (refused, recovered)]})
+    assert armed == f"OK ble reject {way}", armed
+    assert spoke_before_release(refused) and spoke_before_release(recovered), (refused, recovered)
+    assert rejects == [REFUSED_LINES[way]], rejects
+    assert results == {"refused": ["sent"], "recovered": ["sent"]}, results
+    assert sorted(said) == sorted(clips.values()) and all(len(said[c]) == chars[c] > 0 for c in said), (said, chars)
+    assert errors == {"refused": ["voice_image" if way == "image" else "voice"], "recovered": []}, errors
+    assert result_writes == {"refused": ["sent"], "recovered": ["sent"]}, result_writes
+    if way == "image":
+        assert image_writes["refused"] == [0], image_writes
+        assert refused["result"] == "sent", refused
+        assert screens["refused"]["header_ink"] == 0 and screens["refused"]["title_ink"] > 200, screens
+    else:
+        assert len(image_writes["refused"]) > 1 and image_writes["refused"][0] == 0, image_writes
+        assert refused["result"] == "timeout", refused
+    assert recovered["result"] == "sent", recovered
+    assert screens["recovered"]["header_ink"] > 0, screens
+    assert screens["recovered"]["image_ink"] == drawn[recovered["clip"]] > 0, (screens, drawn)
 
 
 @pytest.mark.skipif(not PERSON_SECONDS, reason="needs a person at the card; set FM_PERSON_AT_CARD_SECONDS")
