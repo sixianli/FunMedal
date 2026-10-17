@@ -138,7 +138,7 @@ claude --mcp-config ~/.config/funmedal/mcp.json --dangerously-load-development-c
 
 ## 恢复原厂固件
 
-把第 1 步的备份从地址 0 整个写回。先校验备份没坏：
+把第 1 步的备份从地址 0 整个写回。新开的终端要先运行第 1 步那条 `export …` 命令，才能用 `esptool`（乐鑫的烧录工具）。先校验备份没坏：
 
 ```bash
 shasum -a 256 -c firmware-backup/factory-full8MB.bin.sha256
@@ -148,7 +148,11 @@ shasum -a 256 -c firmware-backup/factory-full8MB.bin.sha256
 python -m esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/factory-full8MB.bin
 ```
 
-本项目只校验过备份文件完好，还没有真正写回过一次。
+写完卡片自动重启，跑回原厂固件。写回会把 FunMedal 存在卡片上的蓝牙配对一起覆盖掉。
+
+想再换回 FunMedal：照第 2 步烧录，然后先在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`，再照第 4 步重新配对。不先忽略的话，Mac 还拿旧的配对去连，卡片已经不认，桥接程序会一直连不上，它的记录里每次都是 `Peer removed pairing information`（macOS 的意思是“对方删掉了配对信息”）。
+
+2026-10-17 在一张卡片上完整走过一遍：8 MB 写入用了约 16 秒，`esptool` 核对写入的内容无误；原厂固件的开机日志里有 `Project name: trae_card` 和 `App version: 1.0.3`，一直启动到 `99-ready`；再照第 2 步烧回 FunMedal、在 Mac 上忽略卡片、照第 4 步配对，第一次就配上。那一分钟里没有人看屏幕，原厂固件能开机的依据只有串口日志。
 
 ## 测试
 
