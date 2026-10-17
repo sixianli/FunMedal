@@ -26,6 +26,15 @@
 
 - 2026-10-17 17:27 OpenCode 第一轮没有想到插件里的 mod 能代替频道送语音；第二轮看过 Claude 的方案后同意，并补了 6 条风险。Claude 方案文件里的“17:20”“17:40”是估计的时间，实际最后修改是 17:15:40，更正写在 notes/onboarding.md 的讨论记录里。
 - 2026-10-17 17:43 试跑 OB-2（会话只开 60 秒）全部通过：Claude 在干活或批准框挂着时，送进去的话等那一轮结束、批准框被回答后才进入；/clear 之后照常；安全模式下 mod 不加载。本机生成的接口说明写明 asUser 的话在会话记录里仍标出插件名，终端也显示“Prompt from the … plugin”，推翻了讨论里“会话记录看不出来自语音”的说法。证据 artifacts/mod-submit-20261017-174033/。
+- 2026-10-17 18:04 小测试：DeepSeek 和 GLM 的免费模型都有 `#high` 档位，MiMo 的免费模型没有（报 Variant unavailable），只能用默认档位。工作区的 webfetch 已禁止打开本项目在 GitHub 上的公开仓库，小测试确认被拒绝。
+- 2026-10-17 18:24 第一轮的权限设置漏了一处：网页超过约 5 万字时，OpenCode 把后半部分存进工作区外的 `tool-output` 文件，而禁止规则挡住了它，三个模型都只读到每个长页面的前半部分。18:05 放开这个目录并重新加载配置；重新加载打断了三个会话各自正在进行的一步（几次 webfetch 被取消），会话本身没断。索引被截掉的第 480–585 行只有 Agent SDK、周报和译文，没有漏掉相关页面。GLM 把被取消的 webfetch 当成限流，只打开 4 页就收尾，18:14 在同一会话里让它补读，18:22 写出完整重写的 stop-1b。
+- 2026-10-17 18:24 第一轮三个模型都没有想到用 mod 的 `$.prompt.submit` 送语音：DeepSeek 读了 mods 三页，只想到用 mod 拦工具调用；MiMo 把“Mods”整类判为无关跳过；GLM 补读时读完了写有 mod 的插件组件页，也没想到。三个模型都推荐了会话收件口（`CLAUDE_CODE_MESSAGING_SOCKET`），文档写明从那里进来的话会被标成来自另一个会话（cross-session-messaging “How a session treats an incoming message”）。
+- 2026-10-17 18:24 第一轮里已核实、现有方案没有的做法：插件放进 `~/.claude/skills/<名字>/` 每个会话自动加载、不用安装（plugins/create “Make a plugin load in every session”，MiMo 提出）；从本机目录添加的插件市场里相对路径的插件原地加载、改代码不用升版本（plugins/loading “In-place and copied plugins”，GLM 提出）；`userConfig` 用 `/plugin` 安装时弹窗、`claude plugin install` 不弹要用 `--config`（plugins/components 第 1050 行，DeepSeek 提出）。
+- 2026-10-17 18:36 第二轮三个模型都接受现有主干（插件 hooks + mod 送语音 + 编译好的桥接 App + 不装 ESP-IDF），都撤回了收件口。核对推翻两条：DeepSeek、GLM 以为插件在会话开始时启动的桥接程序会随会话结束，本机桥接程序由 `open -g` 启动、父进程号是 1，不属于会话；DeepSeek 提议的 `claude agents --json` 列不出前台交互会话（agent-view）。确认并改了上文三处：`disableAllHooks` 会让状态和批准一起停；`asUser` 的“不带署名”只指 Claude 读到的内容；`notes/claude-code.md:38` 说只有 Channels 已过时。
+- 2026-10-17 18:36 三个模型都提了用固定证书签桥接程序，免去重新编译后的重新授权。苹果 TN3127 确认授权记在认定规则上、苹果发的证书能跨版本保住授权；钥匙串自建证书只有个人博客的说法，未确认。
 
 ## 决定
 - 2026-10-17 17:56 模型：G4 禁止的是付费按量的 `opencode/*` 模型。G7 要求多用几个免费模型，G8 用户框定了三个：opencode/deepseek-v4.1-flash-free、opencode/glm-5.3-flash-free、opencode/mimo-v2.6-flash-free。本条目只用这三个，其它模型不用。
+- 2026-10-17 18:04 第一轮的档位：头脑风暴是开放的设计问题，按规则用高档位，DeepSeek 和 GLM 用 `#high`，MiMo 没有高档位，用默认。18:03–18:04 三个会话同时启动：ses_eb6e5b29affepH2uYiVvc2AdJL（DeepSeek）、ses_eb6e59b48ffeg9Jk34b7GGPSof（GLM）、ses_eb6e58aedffeK8N3TrwaL0y5T1（MiMo）。
+- 2026-10-17 18:24 第二轮等三个模型的第一轮都结束后才开始：现有方案的文件一放进工作区，还在第一轮的模型就可能读到。18:23 三个会话同时接着原会话开始第二轮，模型和档位不变。另外两个问题（mod 和收件口哪个好；固定本机证书能否免去重编译后的授权）写进了三份第二轮说明。
+- 2026-10-17 18:36 推荐顺序：先做 OB-3（桌面 App 里的 mod），再做固定证书检查。OB-3 的结果可能推翻语音入口，证书检查只影响编译脚本。GLM 排 OB-3 第一，MiMo 排证书第一，DeepSeek 排“关掉会话后桥接程序还在不在”第一（已由父进程号回答）。
