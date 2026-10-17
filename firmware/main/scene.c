@@ -18,6 +18,11 @@
 #define PAIRING_TITLE_TOP 30
 #define PAIRING_CODE_TOP 110
 #define PAIRING_HINT_TOP 190
+#define VOICE_BACKGROUND 0x5a189a
+#define VOICE_TEXT 0xffffff
+#define VOICE_TITLE_TOP 110
+#define VOICE_HINT_TOP 170
+#define VOICE_IMAGE_TOP 60
 
 typedef struct {
     const char *name;
@@ -54,6 +59,24 @@ static const char *const DENIED = "已拒绝";
 static const char *const PAIRING_TITLE = "蓝牙配对";
 static const char *const NUMCMP_HINTS[] = {"数字和 Mac 上的相同时", "按右侧最上面的键配对", "按右侧最下面的键取消"};
 static const char *const PASSKEY_HINT = "在 Mac 上输入这串数字";
+static const char *const LISTENING = "在听";
+static const char *const LISTENING_HINT = "松开就发送";
+static const char *const TRANSCRIBING = "转文字中";
+static const char *const SENT = "已发送";
+static const char *const NOT_SENT = "没发出去";
+static const char *const NOT_SENT_REASONS[] = {
+    [VOICE_RESULT_EMPTY] = "没听清",
+    [VOICE_RESULT_NO_SESSION] = "没有能接收的会话",
+    [VOICE_RESULT_DENIED] = "Mac 没有语音识别权限",
+    [VOICE_RESULT_OFFLINE] = "没连上 Mac",
+    [VOICE_RESULT_TIMEOUT] = "Mac 没有回音",
+};
+static const char *const VOICE_NAMES[] = {
+    [SCENE_VOICE_NONE] = "none",
+    [SCENE_VOICE_LISTENING] = "listening",
+    [SCENE_VOICE_TRANSCRIBING] = "transcribing",
+    [SCENE_VOICE_RESULT] = "result",
+};
 
 uint16_t scene_rgb565_wire(uint32_t rgb)
 {
@@ -90,6 +113,11 @@ const char *scene_state_name(pet_state_t state)
 const char *scene_state_label(pet_state_t state)
 {
     return STYLES[state].label;
+}
+
+const char *scene_voice_name(scene_voice_t voice)
+{
+    return VOICE_NAMES[voice];
 }
 
 bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state)
@@ -232,6 +260,45 @@ static void render_pairing(const scene_t *scene, int y0, int rows, uint16_t *out
     render_runs(&runs, PAIRING_BACKGROUND, PAIRING_TEXT, y0, rows, out);
 }
 
+static void draw_voice_image(const uint8_t *pixels, int y0, int rows, uint16_t *out)
+{
+    uint16_t ink = scene_rgb565_wire(VOICE_TEXT);
+    for (int y = y0; y < y0 + rows; y++) {
+        int iy = y - VOICE_IMAGE_TOP;
+        if (iy < 0 || iy >= VOICE_IMAGE_H) {
+            continue;
+        }
+        uint16_t *row = out + (y - y0) * SCENE_W;
+        for (int ix = 0; ix < VOICE_IMAGE_W; ix++) {
+            if (voice_image_pixel(pixels, ix, iy)) {
+                row[SCENE_MARGIN + ix] = ink;
+            }
+        }
+    }
+}
+
+static void render_voice(const scene_t *scene, int y0, int rows, uint16_t *out)
+{
+    runs_t runs = {.count = 0};
+    bool image = false;
+    if (scene->voice == SCENE_VOICE_LISTENING) {
+        add_centered(&runs, &font_large, LISTENING, VOICE_TITLE_TOP);
+        add_centered(&runs, &font_text, LISTENING_HINT, VOICE_HINT_TOP);
+    } else if (scene->voice == SCENE_VOICE_TRANSCRIBING) {
+        add_centered(&runs, &font_large, TRANSCRIBING, VOICE_TITLE_TOP);
+    } else if (scene->voice_result == VOICE_RESULT_SENT) {
+        image = scene->voice_image != NULL;
+        add_centered(&runs, &font_large, SENT, image ? HEADER_TOP : VOICE_TITLE_TOP);
+    } else {
+        add_centered(&runs, &font_large, NOT_SENT, VOICE_TITLE_TOP);
+        add_centered(&runs, &font_text, NOT_SENT_REASONS[scene->voice_result], VOICE_HINT_TOP);
+    }
+    render_runs(&runs, VOICE_BACKGROUND, VOICE_TEXT, y0, rows, out);
+    if (image) {
+        draw_voice_image(scene->voice_image, y0, rows, out);
+    }
+}
+
 static uint32_t pattern_pixel(int x, int y)
 {
     const int box = 40;
@@ -306,6 +373,8 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
     }
     if (scene->pairing != SCENE_PAIRING_NONE) {
         render_pairing(scene, y0, rows, out);
+    } else if (scene->voice != SCENE_VOICE_NONE) {
+        render_voice(scene, y0, rows, out);
     } else if (scene->prompt.active) {
         render_prompt(scene, y0, rows, out);
     } else {

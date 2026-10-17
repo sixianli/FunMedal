@@ -1,12 +1,16 @@
 import CoreBluetooth
 import Darwin
 import Foundation
+import Speech
 
 let serviceUUID = CBUUID(string: "6D2F1001-6B0E-4A8E-9A4B-46756E4D6564")
 let stateUUID = CBUUID(string: "6D2F1002-6B0E-4A8E-9A4B-46756E4D6564")
 let promptUUID = CBUUID(string: "6D2F1003-6B0E-4A8E-9A4B-46756E4D6564")
 let decisionUUID = CBUUID(string: "6D2F1004-6B0E-4A8E-9A4B-46756E4D6564")
-let cardCharacteristics = [stateUUID, promptUUID, decisionUUID]
+let audioUUID = CBUUID(string: "6D2F1005-6B0E-4A8E-9A4B-46756E4D6564")
+let voiceUUID = CBUUID(string: "6D2F1006-6B0E-4A8E-9A4B-46756E4D6564")
+let voiceImageUUID = CBUUID(string: "6D2F1007-6B0E-4A8E-9A4B-46756E4D6564")
+let cardCharacteristics = [stateUUID, promptUUID, decisionUUID, audioUUID, voiceUUID, voiceImageUUID]
 
 final class EventLog {
     private let handle: FileHandle?
@@ -56,10 +60,27 @@ final class Approval {
     }
 }
 
+final class Listener {
+    let pid: Int
+    let fd: Int32
+
+    init(pid: Int, fd: Int32) {
+        self.pid = pid
+        self.fd = fd
+    }
+}
+
+struct CardWrite {
+    let uuid: CBUUID
+    let data: Data
+    let what: [String: Any]
+}
+
 struct Handled {
-    let reply: [String: Any]?
-    let approval: Approval?
-    let quit: Bool
+    var reply: [String: Any]?
+    var approval: Approval?
+    var listener: Listener?
+    var quit = false
 }
 
 final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
@@ -67,12 +88,17 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let toolLimit = 31
     static let summaryLimit = 240
     static let countLimit = 999
+    static let imageChunkHeader = 3
+    static let attributeLimit = 512
     static let releasingEvents = ["UserPromptSubmit": "prompt", "Stop": "stop", "StopFailure": "stop_failure",
                                   "SessionEnd": "session_end"]
+    static let attentionEvents: Set<String> = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop",
+                                               "StopFailure"]
 
     let queue = DispatchQueue(label: "funmedal.bridge")
     let socketPath: String
     let log: EventLog
+    let locale: String
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var characteristics: [CBUUID: CBCharacteristic] = [:]
@@ -87,10 +113,23 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var cardPrompt: String?
     private var inFlight: (uuid: CBUUID, value: String)?
     private var counts: [String: Int] = [:]
+    private var listeners: [Listener] = []
+    private var lastActive: [Int: Date] = [:]
+    private var transcription: Transcription?
+    private var voiceWrites: [CardWrite] = []
+    private lazy var recognizer: SFSpeechRecognizer? = {
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
+        let results = OperationQueue()
+        results.underlyingQueue = queue
+        results.maxConcurrentOperationCount = 1
+        recognizer?.queue = results
+        return recognizer
+    }()
 
-    init(socketPath: String, log: EventLog) {
+    init(socketPath: String, log: EventLog, locale: String) {
         self.socketPath = socketPath
         self.log = log
+        self.locale = locale
     }
 
     func start() {
@@ -111,6 +150,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 return Handled(reply: receive(message), approval: nil, quit: false)
             case "approve":
                 return approve(message, client: client)
+            case "listen":
+                return listen(message, client: client)
             case "status":
                 return Handled(reply: status(), approval: nil, quit: false)
             case "quit":
@@ -125,9 +166,15 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func gaveUp(_ approval: Approval) {
         queue.sync {
             guard approval.outcome == nil else { return }
-            approval.outcome = "gave_up"
-            approvals.removeAll { $0 === approval }
+            finish(approval, as: "gave_up", decision: nil)
             refresh()
+        }
+    }
+
+    func unlisten(_ listener: Listener) {
+        queue.sync {
+            listeners.removeAll { $0 === listener }
+            log.write("unlisten", ["pid": listener.pid])
         }
     }
 
@@ -167,9 +214,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if let value = message[key] as? String { fields[key] = value }
         }
         log.write("event", fields)
+        if Bridge.attentionEvents.contains(name), let pid = message["claude_pid"] as? Int { lastActive[pid] = Date() }
         let toolKey = message["tool_key"] as? String
-        sessions.apply(HookEvent(name: name, session: session, toolKey: toolKey))
-        if name == "PostToolUse" || name == "PostToolUseFailure",
+        let followsCardAllow = sessions.apply(HookEvent(name: name, session: session, toolKey: toolKey))
+        if !followsCardAllow, name == "PostToolUse" || name == "PostToolUseFailure",
            let approval = approvals.first(where: { $0.session == session && $0.toolKey == toolKey }) {
             answer(approval, nil, why: "post_tool_use")
         }
@@ -207,16 +255,150 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return Handled(reply: nil, approval: approval, quit: false)
     }
 
+    private func listen(_ message: [String: Any], client: Int32) -> Handled {
+        guard let pid = message["claude_pid"] as? Int, pid > 0 else {
+            return Handled(reply: reject("listen needs a claude_pid"))
+        }
+        let listener = Listener(pid: pid, fd: client)
+        listeners.append(listener)
+        lastActive[pid] = Date()
+        log.write("listen", ["pid": pid])
+        if let data = Hook.line(["ok": true]) { _ = UnixSocket.writeAll(client, data) }
+        return Handled(reply: nil, listener: listener)
+    }
+
+    private func target() -> Listener? {
+        listeners.max { (lastActive[$0.pid] ?? .distantPast) < (lastActive[$1.pid] ?? .distantPast) }
+    }
+
+    private func beginClip(_ clip: UInt8) {
+        transcription?.cancel()
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            SFSpeechRecognizer.requestAuthorization { _ in }
+        }
+        let started = Transcription(clip: clip, recognizer: recognizer) { [weak self] update in
+            self?.advance(update)
+        }
+        transcription = started
+        log.write("voice_start", ["clip": Int(clip), "speech": Voice.name(SFSpeechRecognizer.authorizationStatus()),
+                                  "ready": !started.denied])
+    }
+
+    private func endClip(_ current: Transcription, count: Int, reason: String) {
+        current.end(count: count, reason: reason)
+        log.write("voice_end", ["clip": Int(current.clip), "packets": current.packets, "missing": current.missing,
+                                "reason": reason])
+        if current.denied {
+            conclude(current, "denied")
+        } else if listeners.isEmpty {
+            conclude(current, "no_session")
+        } else {
+            queue.asyncAfter(deadline: .now() + Transcription.finalWaitSeconds) { [weak self] in
+                guard let self, current === self.transcription, !current.concluded else { return }
+                self.deliver(current)
+            }
+            advance(current)
+        }
+    }
+
+    private func hear(_ data: Data) {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 2 else {
+            log.write("voice_bad", ["bytes": bytes.count])
+            return
+        }
+        let clip = bytes[1]
+        switch bytes[0] {
+        case 1 where bytes.count == 2:
+            beginClip(clip)
+        case 2 where bytes.count == Adpcm.packetSize:
+            guard let current = transcription, current.clip == clip, let samples = Adpcm.decode(bytes) else { return }
+            current.receive(sequence: Int(bytes[2]) | Int(bytes[3]) << 8, samples: samples)
+        case 3 where bytes.count == 5:
+            guard let current = transcription, current.clip == clip, !current.ended else { return }
+            endClip(current, count: Int(bytes[2]) | Int(bytes[3]) << 8, reason: bytes[4] == 1 ? "limit" : "release")
+        default:
+            log.write("voice_bad", ["bytes": bytes.count])
+        }
+    }
+
+    private func advance(_ current: Transcription) {
+        guard current === transcription, current.ended, current.recognized, !current.concluded else { return }
+        deliver(current)
+    }
+
+    private func deliver(_ current: Transcription) {
+        let text = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            conclude(current, "empty")
+            return
+        }
+        guard let listener = target(), let line = Hook.line(["say": text, "clip": Int(current.clip)]),
+              UnixSocket.writeAll(listener.fd, line) else {
+            conclude(current, "no_session", ["chars": text.count])
+            return
+        }
+        var fields: [String: Any] = ["chars": text.count, "pid": listener.pid]
+        if let image = TextImage.render(text) {
+            queueImage(image.pixels, clip: current.clip)
+            fields["ink"] = image.ink
+        }
+        conclude(current, "sent", fields)
+    }
+
+    private func queueImage(_ pixels: Data, clip: UInt8) {
+        guard let peripheral else { return }
+        let room = min(peripheral.maximumWriteValueLength(for: .withResponse), Bridge.attributeLimit)
+            - Bridge.imageChunkHeader
+        guard room > 0 else { return }
+        var offset = 0
+        while offset < pixels.count {
+            let end = min(offset + room, pixels.count)
+            var chunk = Data([clip, UInt8(offset & 0xFF), UInt8(offset >> 8)])
+            chunk.append(pixels[offset..<end])
+            voiceWrites.append(CardWrite(uuid: voiceImageUUID, data: chunk,
+                                         what: ["what": "voice_image", "clip": Int(clip), "offset": offset]))
+            offset = end
+        }
+    }
+
+    private func dropVoiceWrite() {
+        guard let failed = voiceWrites.first else { return }
+        voiceWrites.removeFirst()
+        guard failed.uuid == voiceImageUUID, let clip = failed.data.first else { return }
+        voiceWrites.removeAll { $0.uuid == voiceImageUUID && $0.data.first == clip }
+    }
+
+    private func conclude(_ current: Transcription, _ result: String, _ extra: [String: Any] = [:]) {
+        current.concluded = true
+        current.cancel()
+        if current === transcription { transcription = nil }
+        voiceWrites.append(CardWrite(uuid: voiceUUID, data: Data("\(current.clip)\t\(result)".utf8),
+                                     what: ["what": "voice", "clip": Int(current.clip), "result": result]))
+        var fields = extra
+        fields["clip"] = Int(current.clip)
+        fields["result"] = result
+        fields["packets"] = current.packets
+        fields["missing"] = current.missing
+        counts["voice", default: 0] += 1
+        log.write("voice_result", fields)
+        push()
+    }
+
     private func send(_ approval: Approval, _ object: [String: Any]) {
         if let data = Hook.line(object) { _ = UnixSocket.writeAll(approval.fd, data) }
     }
 
-    private func answer(_ approval: Approval, _ decision: String?, why: String) {
-        guard approval.outcome == nil else { return }
-        approval.outcome = "answered"
+    private func finish(_ approval: Approval, as outcome: String, decision: String?) {
+        approval.outcome = outcome
         approvals.removeAll { $0 === approval }
         send(approval, ["decision": decision ?? NSNull()])
         shutdown(approval.fd, SHUT_WR)
+    }
+
+    private func answer(_ approval: Approval, _ decision: String?, why: String) {
+        guard approval.outcome == nil else { return }
+        finish(approval, as: "answered", decision: decision)
         log.write("answer", ["id": approval.id, "decision": decision ?? "released", "why": why])
     }
 
@@ -260,6 +442,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "writes": counts["writes", default: 0],
             "acks": counts["acks", default: 0],
             "connects": counts["connects", default: 0],
+            "channels": listeners.map(\.pid),
+            "speech": Voice.name(SFSpeechRecognizer.authorizationStatus()),
+            "voice": counts["voice", default: 0],
         ]
     }
 
@@ -269,12 +454,20 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             write(desired, to: characteristic, of: peripheral)
         } else if cardPrompt != desiredPrompt, let characteristic = characteristics[promptUUID] {
             write(desiredPrompt, to: characteristic, of: peripheral)
+        } else if let next = voiceWrites.first, let characteristic = characteristics[next.uuid] {
+            inFlight = (next.uuid, "")
+            counts["writes", default: 0] += 1
+            log.write("write", next.what)
+            peripheral.writeValue(next.data, for: characteristic, type: .withResponse)
         }
     }
 
     private func describe(_ uuid: CBUUID, _ value: String) -> [String: Any] {
-        uuid == stateUUID ? ["what": "state", "value": value]
-            : ["what": "prompt", "id": value.split(separator: "\t").first.map(String.init) ?? "none"]
+        if uuid == stateUUID { return ["what": "state", "value": value] }
+        if uuid == promptUUID {
+            return ["what": "prompt", "id": value.split(separator: "\t").first.map(String.init) ?? "none"]
+        }
+        return voiceWrites.first?.what ?? ["what": "voice"]
     }
 
     private func write(_ value: String, to characteristic: CBCharacteristic, of peripheral: CBPeripheral) {
@@ -289,6 +482,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         cardState = nil
         cardPrompt = nil
         inFlight = nil
+        voiceWrites.removeAll()
+        transcription?.cancel()
+        transcription = nil
     }
 
     private func isCurrent(_ candidate: CBPeripheral) -> Bool {
@@ -371,7 +567,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         for characteristic in service.characteristics ?? [] where cardCharacteristics.contains(characteristic.uuid) {
             found[characteristic.uuid] = characteristic
         }
-        guard found.count == cardCharacteristics.count, let decision = found[decisionUUID] else {
+        guard found.count == cardCharacteristics.count, let decision = found[decisionUUID],
+              let audio = found[audioUUID] else {
             log.write("characteristic_missing", ["found": found.keys.map(\.uuidString).sorted(),
                                                  "error": error.map { String(describing: $0) } ?? NSNull()])
             central?.cancelPeripheralConnection(peripheral)
@@ -382,13 +579,15 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         link = "connected"
         log.write("ready")
         peripheral.setNotifyValue(true, for: decision)
+        peripheral.setNotifyValue(true, for: audio)
         push()
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
                     error: Error?) {
         guard isCurrent(peripheral) else { return }
-        log.write("subscribed", ["notifying": characteristic.isNotifying,
+        log.write("subscribed", ["what": characteristic.uuid == audioUUID ? "audio" : "decision",
+                                 "notifying": characteristic.isNotifying,
                                  "error": error.map { String(describing: $0) } ?? NSNull()])
     }
 
@@ -396,22 +595,41 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard isCurrent(peripheral), let flight = inFlight, characteristic.uuid == flight.uuid else { return }
         inFlight = nil
         if let error {
-            if flight.uuid == stateUUID { cardState = nil } else { cardPrompt = nil }
             var fields = describe(flight.uuid, flight.value)
             fields["error"] = String(describing: error)
             log.write("write_error", fields)
+            if flight.uuid == stateUUID {
+                cardState = nil
+            } else if flight.uuid == promptUUID {
+                cardPrompt = nil
+            } else {
+                dropVoiceWrite()
+                push()
+                return
+            }
             queue.asyncAfter(deadline: .now() + Bridge.writeRetrySeconds) { self.push() }
             return
         }
-        if flight.uuid == stateUUID { cardState = flight.value } else { cardPrompt = flight.value }
+        let acked = describe(flight.uuid, flight.value)
+        if flight.uuid == stateUUID {
+            cardState = flight.value
+        } else if flight.uuid == promptUUID {
+            cardPrompt = flight.value
+        } else if !voiceWrites.isEmpty {
+            voiceWrites.removeFirst()
+        }
         counts["acks", default: 0] += 1
-        log.write("ack", describe(flight.uuid, flight.value))
+        log.write("ack", acked)
         push()
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard isCurrent(peripheral), characteristic.uuid == decisionUUID, error == nil,
-              let data = characteristic.value, let text = String(data: data, encoding: .utf8) else { return }
+        guard isCurrent(peripheral), error == nil, let data = characteristic.value else { return }
+        if characteristic.uuid == audioUUID {
+            hear(data)
+            return
+        }
+        guard characteristic.uuid == decisionUUID, let text = String(data: data, encoding: .utf8) else { return }
         let parts = text.split(separator: " ").map(String.init)
         guard parts.count == 2, let id = Int(parts[0]), parts[1] == "allow" || parts[1] == "deny" else {
             log.write("decision_bad", ["bytes": data.count])

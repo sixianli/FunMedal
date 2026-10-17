@@ -37,7 +37,7 @@
 3. 常驻的桥接程序记着每个会话的状态，算出卡片该显示哪一种。变了就用 BLE（低功耗蓝牙）写给卡片。
 4. 卡片的 USB 串口只在测试时用：测试从这里读回卡片收到了什么、显示了什么，平时不需要接 USB。
 
-桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。
+桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。FM-15 起还有 `channel` 模式，是 Claude Code 为每个会话启动的频道服务器，同样不碰蓝牙，见 [voice.md](voice.md)。
 
 ## 卡片怎么收状态
 
@@ -100,7 +100,7 @@
 - **从不挡住 Claude Code**：桥接程序没在运行、套接字连不上、输入不是 JSON，都直接退出，退出码是 0。连接和读写都有 1 秒上限；`PermissionRequest` 不同，桥接程序确认收到请求最多等 2 秒，之后一直等回答，见 [approval.md](approval.md) 的“hook 模式的变化”。hook 命令本身的参数写错时（比如 `--socket` 后面没有路径），退出码是 64；按官方文档，退出码不是 0 也不是 2 的 hook 算“不挡事的出错”，操作照常进行，会话记录里会多一条 `hook error` 提示。
 - **不往标准输出写任何东西**：`SessionStart` 和 `UserPromptSubmit` 的 hook 往标准输出写的内容，会被 Claude Code 当成上下文交给 Claude。
 - **批准请求要等卡片**：FM-14 起，`PermissionRequest` 的 hook 不马上退出，而是等卡片上的回答，规则见 [approval.md](approval.md)。终端里的批准弹窗照常显示，哪边先答算哪边。其他事件仍然马上退出。
-- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），以及“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同）。不传工具参数本身、命令内容、文件内容、工作目录或用户的指令。唯一的例外是 `PermissionRequest` 多传一段要显示在卡片上的 `summary`，它不写进桥接程序的记录（见 [approval.md](approval.md)）。
+- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同），以及 FM-15 起的 `claude_pid`（这个 hook 属于哪个 `claude` 进程，用来把语音送进对的会话，见 [voice.md](voice.md) 的“送进哪个会话”）。不传工具参数本身、命令内容、文件内容、工作目录或用户的指令。唯一的例外是 `PermissionRequest` 多传一段要显示在卡片上的 `summary`，它不写进桥接程序的记录（见 [approval.md](approval.md)）。
 
 ## 怎么配置
 
@@ -178,6 +178,8 @@ FM-14 起，`status` 打印的 JSON 多了几项：
 
 写给卡片的请求只记编号，不记内容。
 
+FM-15 起 `status` 和记录里和语音有关的几项见 [voice.md](voice.md) 的“Mac 端”。
+
 ## 实测结果
 
 以下都在本机终端版 Claude Code 2.1.292、真实卡片和真实蓝牙上测得。
@@ -189,6 +191,7 @@ FM-14 起，`status` 打印的 JSON 多了几项：
 5. **卡片重启**：卡片执行 `reboot` 后 0.44 秒打出 `READY`，0.96 秒时已重新连上并恢复成重启前的状态。记录在 `artifacts/fm13-focused-20261016-221112/`。卡片用 `esp_restart`（ESP-IDF 里让芯片从软件重启的函数）重启时 USB 串口不断开，Mac 上的串口一直能读。
 6. **卡片任务的栈余量**：`stacks` 报的是开机以来每个任务栈空间最少时还剩多少。`artifacts/fm13-focused-20261016-225144/` 那次，卡片烧完固件后开机 92 秒，期间跑过两次真实会话的拒绝测试和大输入测试，收到 14 次状态写入，读到：按键 2600 字节、屏幕 3440 字节、串口命令 1740 字节、蓝牙 1452 字节（蓝牙任务一共 4096 字节）。测试要求每个任务至少剩 1024 字节，完整测试里这一项在其余蓝牙测试都跑完后检查，每次的数字记在结果目录的 `bridge/card-stacks.txt`。
 7. **hook 传出去的内容**：测试在套接字另一头收下 7 种事件的消息，每条只有 `op`、`event`、`session` 和该事件对应的 `tool_name`、`tool_key`、`source`、`reason`、`error`，没有测试塞进工具参数、指令、回答内容里的那串字符（`artifacts/fm13-focused-20261016-225144/bridge/hook-captured.json`）。
+8. **换固件后 Mac 用旧的功能表**：卡片换上带语音的固件后，Mac 一直用旧固件的功能表，桥接程序找不到语音的 3 项，连不上。原因和改法见 [firmware.md](firmware.md) 的“换固件后 Mac 还用旧的功能表”。
 
 ## 还没做的
 

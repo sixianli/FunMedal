@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import socket
 import tempfile
 import threading
@@ -8,13 +9,13 @@ import uuid
 
 import pytest
 
-from bridge_harness import (artifacts, bash, ble_writes, bridge, bridge_cli, card, card_states,  # noqa: F401
-                            event, hook_times, info_fields, raw_exchange, real_session, request_touch,
+from bridge_harness import (artifacts, bash, ble_writes, bridge, bridge_cli, card, card_lines,  # noqa: F401
+                            card_states, event, hook_times, info_fields, raw_exchange, real_session, request_touch,
                             require_bridge_app, run_dir, start_and_mark, wait_session_ready, wait_until, write_summary)
 
 ARTIFACTS_PREFIX = "fm13"
 ARTIFACTS_SUBDIR = "bridge"
-HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "source", "reason", "error"}
+HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "source", "reason", "error", "claude_pid"}
 MIN_STACK_FREE_BYTES = 1024
 ALREADY_RUNNING_EXIT = 3
 
@@ -256,7 +257,7 @@ def test_card_stack_headroom(case, card, artifacts):
     info = card.request("info")
     (artifacts / "card-stacks.txt").write_text(line + "\n" + info + "\n", encoding="utf-8")
     free = {name: int(value) for name, value in (p.split("=", 1) for p in line.split()[2:])}
-    assert set(free) == {"keys", "display", "console", "nimble_host"}, line
+    assert set(free) == {"keys", "display", "console", "nimble_host", "voice"}, line
     assert all(value >= MIN_STACK_FREE_BYTES for value in free.values()), free
 
 
@@ -290,3 +291,30 @@ def test_card_reboot_restores_state(case, card, bridge, run_dir):
     assert restored["state"] == "waiting" and restored["ble"] == "connected", summary
     assert summary["states_after_reboot"] == ["working", "done"], summary
     assert summary["status"]["connects"] >= 2, summary
+
+
+@pytest.mark.parametrize("case", ["[FM-13] a changed bluetooth layout is announced once so the Mac rereads it"])
+def test_layout_change_announced_once(case, card, bridge, run_dir):
+    assert card.request("ble layout forget") == "OK ble layout forget"
+    first = card.mark()
+    assert card.request("reboot") == "OK reboot"
+    ready, _, _ = card.wait_for(lambda line: line.startswith("READY "), 20.0, first)
+    _, _, changed = card.wait_for(lambda line: line.startswith("GATT layout "), 10.0, first)
+    status = bridge.start()
+    card.wait_for(lambda line: line == "GATT changed acked", 30.0, ready)
+    second = card.mark()
+    assert card.request("reboot") == "OK reboot"
+    ready_again, _, _ = card.wait_for(lambda line: line.startswith("READY "), 20.0, second)
+    _, _, same = card.wait_for(lambda line: line.startswith("GATT layout "), 10.0, second)
+    card.wait_for(lambda line: line == f"BLE state {status['desired']}", 30.0, ready_again)
+    summary = {"first_boot": changed, "second_boot": same,
+               "announced": card_lines(card, first, "GATT changed"),
+               "announced_after_second_boot": card_lines(card, second, "GATT changed"),
+               "subscriptions": card_lines(card, first, "BLE subscribe changed"),
+               "bridge_kinds": sorted({entry["kind"] for entry in bridge.log_entries()}),
+               "status": bridge.status()}
+    write_summary(run_dir, summary)
+    assert re.fullmatch(r"GATT layout changed subscribers=[1-9][0-9]*", changed), summary
+    assert same == "GATT layout same", summary
+    assert summary["announced_after_second_boot"] == [], summary
+    assert summary["status"]["card"] == "connected", summary

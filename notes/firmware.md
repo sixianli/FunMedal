@@ -74,7 +74,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent`，Mac 确认收到时报 `GATT changed acked`，见下文“换固件后 Mac 还用旧的功能表”。
 
 两类输出的发送规则不同：
 
@@ -92,9 +92,11 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `lcd invert\|bgr <0\|1>`、`lcd mirror <0\|1> <0\|1>`、`lcd gap <x> <y>` | 调屏幕的颜色反转、颜色顺序、镜像、偏移；会按新设置重建屏幕驱动，成功回 `OK lcd <全部屏幕设置>`。重建失败时退回原来的设置；退回也失败时串口上会多一行 ESP-IDF 的错误日志，之后每次画屏都失败，`info` 的 `draw_errors` 会一直增加 |
 | `adc <1-120>` | 在给定秒数内每 20 ms 回一行 `ADC <毫伏> <原始读数> <判断>`，结束时回 `ADC END` |
 | `backlight <0-100>` | 调背光亮度 |
-| `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
+| `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节> voice=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
 | `key <ok\|up\|down> <press\|long\|hold <毫秒>>` | 模拟一次按键，走和真按键相同的处理，测试用它代替人按键，见 [approval.md](approval.md) |
 | `ble unpair` | 清掉卡片上的全部蓝牙绑定，见 [approval.md](approval.md) |
+| `ble decision <编号> allow\|deny` | 不按键，直接发一个回答给 Mac，测试用，见 [approval.md](approval.md) |
+| `ble layout forget` | 忘掉记下的功能表指纹，下次开机按“功能表变了”处理，测试用，见下文“换固件后 Mac 还用旧的功能表” |
 | `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
@@ -159,6 +161,23 @@ Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/
 **做了的改动**：固件加了 `adc_errors` 计数；真实按键测试在等待期间一直录电压，并要求 `adc_errors` 不变。第 4 次失败已撤回（证据记录 `E20261016T214001-9c8342`，理由是用户确认按键不在等待时间里）；第 1 次的失败记录在旧版本上，保留。
 
 **以后跑真实按键测试**：先确认用户就在卡片旁边、现在就能按，再启动测试。
+
+## 换固件后 Mac 还用旧的功能表
+
+GATT 是蓝牙设备对外公布的功能表：卡片有哪些可以读写的项，比如状态、批准请求、录音。2026-10-17 早上，卡片换上带语音的固件后，桥接程序 3 分钟里连了 358 次，每次都只找到旧固件的 3 项（状态、批准请求、回答），找不到语音的 3 项，于是断开重连。记录在 `artifacts/fm13-gatt-cache-before-20261017-101731/bridge.jsonl`。
+
+**原因**：macOS 把配对过的蓝牙设备的功能表记在本机，下次连接直接用记下的，不再问设备。设备的功能表变了，要由设备发一个 `Service Changed` 通知（蓝牙标准里“我的功能表变了，请重新读”的通知），Mac 收到后才会重新读。卡片用的 NimBLE 蓝牙库带这个通知，但旧固件从没发过。
+
+**改法**：卡片开机时把自己的功能表（每一项的编号和读写方式）算成一个指纹，和上次存在 NVS（芯片上存设置的一小块存储）里的比较。
+
+- 一样：报 `GATT layout same`，什么也不发。
+- 不一样或者没存过：调用 NimBLE 的 `ble_svc_gatt_changed` 发通知，存下新指纹，报 `GATT layout changed subscribers=<数>`。`subscribers` 是订阅了这个通知的已配对设备数，本机的 Mac 是 1。
+
+Mac 当时没连着也不要紧：NimBLE 把“还欠这台设备一个通知”存起来，等它连上、恢复加密后再发，收到确认才清掉。从 FM-14 的固件升级上来时没存过指纹，所以第一次开机就会发。
+
+**结果**：修好后，桥接程序第一次连接就找到全部 6 项，没再报缺项；第二次开机报 `GATT layout same`，不再发通知。测试是 [test_bridge.py](../tests/test_bridge.py) 的 `test_layout_change_announced_once`：先用 `ble layout forget` 让卡片忘掉指纹，重启，要求卡片报 `changed` 且订阅数至少 1、Mac 确认收到、桥接程序连上；再重启一次，要求报 `same` 并且不再发通知。记录在 `artifacts/fm13-layout-after-20261017-102133/`。
+
+**以后改功能表**：只要固件里的功能表变了，指纹就会变，不用另外做什么。如果以后某次换固件后配对还没生效，或者 `subscribers=0`，说明 Mac 没订阅这个通知，只能在 Mac 的蓝牙设置里删掉卡片再重新配对。
 
 ## 测试
 

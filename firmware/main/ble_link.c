@@ -6,6 +6,8 @@
 
 #include "app.h"
 #include "console.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -14,16 +16,25 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "nvs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "voice.h"
 
 #define LINK_UUID(n) BLE_UUID128_INIT(0x64, 0x65, 0x4d, 0x6e, 0x75, 0x46, 0x4b, 0x9a, \
                                       0x8e, 0x4a, 0x0e, 0x6b, n, 0x10, 0x2f, 0x6d)
 #define STATE_VALUE_MAX 16
 #define DECISION_VALUE_MAX 24
 #define PASSKEY_RANGE 1000000
+#define IMAGE_CHUNK_MAX (VOICE_IMAGE_HEADER + 512)
+#define AUDIO_SEND_ATTEMPTS 25
+#define AUDIO_RETRY_MS 2
 #define SECURE_FLAGS_READ (BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN)
 #define SECURE_FLAGS_WRITE (BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN)
+#define LAYOUT_NAMESPACE "funmedal"
+#define LAYOUT_KEY "gatt_layout"
+#define FNV_OFFSET 2166136261u
+#define FNV_PRIME 16777619u
 #define SECURE_FLAGS_NOTIFY \
     (BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN)
 
@@ -35,12 +46,19 @@ static const ble_uuid128_t service_uuid = LINK_UUID(0x01);
 static const ble_uuid128_t state_uuid = LINK_UUID(0x02);
 static const ble_uuid128_t prompt_uuid = LINK_UUID(0x03);
 static const ble_uuid128_t decision_uuid = LINK_UUID(0x04);
+static const ble_uuid128_t audio_uuid = LINK_UUID(0x05);
+static const ble_uuid128_t voice_uuid = LINK_UUID(0x06);
+static const ble_uuid128_t voice_image_uuid = LINK_UUID(0x07);
 
 static uint8_t own_addr_type;
 static uint16_t decision_handle;
+static uint16_t audio_handle;
+static uint16_t changed_handle;
+static voice_image_t incoming_image;
 static _Atomic uint32_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static _Atomic uint32_t state_writes;
 static _Atomic bool decision_subscribed;
+static _Atomic bool audio_subscribed;
 static _Atomic bool pairing;
 static _Atomic uint32_t numcmp_conn = BLE_HS_CONN_HANDLE_NONE;
 
@@ -109,6 +127,48 @@ static int decision_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+static int voice_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    char value[VOICE_RESULT_VALUE_MAX];
+    uint16_t len = 0;
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (ble_hs_mbuf_to_flat(ctxt->om, value, sizeof(value), &len) != 0) {
+        console_event("BLE reject voice length\n");
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    uint8_t clip;
+    voice_result_t result;
+    if (!voice_result_parse(value, len, &clip, &result)) {
+        console_event("BLE reject voice format\n");
+        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    bool image = result == VOICE_RESULT_SENT && voice_image_complete(&incoming_image, clip);
+    voice_on_result(clip, result, image ? incoming_image.pixels : NULL);
+    voice_image_reset(&incoming_image);
+    return 0;
+}
+
+static int voice_image_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    static uint8_t chunk[IMAGE_CHUNK_MAX];
+    uint16_t len = 0;
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (ble_hs_mbuf_to_flat(ctxt->om, chunk, sizeof(chunk), &len) != 0) {
+        voice_image_reset(&incoming_image);
+        console_event("BLE reject image length\n");
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    if (!voice_image_write(&incoming_image, chunk, len)) {
+        console_event("BLE reject image chunk\n");
+        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    return 0;
+}
+
 static const struct ble_gatt_svc_def services[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -130,11 +190,111 @@ static const struct ble_gatt_svc_def services[] = {
                 .flags = SECURE_FLAGS_NOTIFY,
                 .val_handle = &decision_handle,
             },
+            {
+                .uuid = &audio_uuid.u,
+                .access_cb = decision_access,
+                .flags = SECURE_FLAGS_NOTIFY,
+                .val_handle = &audio_handle,
+            },
+            {
+                .uuid = &voice_uuid.u,
+                .access_cb = voice_access,
+                .flags = SECURE_FLAGS_WRITE,
+            },
+            {
+                .uuid = &voice_image_uuid.u,
+                .access_cb = voice_image_access,
+                .flags = SECURE_FLAGS_WRITE,
+            },
             {0},
         },
     },
     {0},
 };
+
+static uint32_t fnv1a(uint32_t hash, const void *data, size_t len)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < len; i++) {
+        hash = (hash ^ bytes[i]) * FNV_PRIME;
+    }
+    return hash;
+}
+
+static uint32_t hash_uuid(uint32_t hash, const ble_uuid_t *uuid)
+{
+    char text[BLE_UUID_STR_LEN];
+    ble_uuid_to_str(uuid, text);
+    return fnv1a(hash, text, strlen(text));
+}
+
+static uint32_t layout_fingerprint(void)
+{
+    uint32_t hash = FNV_OFFSET;
+    for (const struct ble_gatt_svc_def *svc = services; svc->type != BLE_GATT_SVC_TYPE_END; svc++) {
+        hash = hash_uuid(hash, svc->uuid);
+        for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr->uuid != NULL; chr++) {
+            hash = hash_uuid(hash, chr->uuid);
+            hash = fnv1a(hash, &chr->flags, sizeof chr->flags);
+        }
+    }
+    return hash;
+}
+
+static int changed_subscribers(void)
+{
+    struct ble_store_key_cccd key = {.peer_addr = *BLE_ADDR_ANY, .chr_val_handle = changed_handle};
+    struct ble_store_value_cccd value;
+    int count = 0;
+    while (ble_store_read_cccd(&key, &value) == 0) {
+        count += value.flags != 0;
+        key.idx++;
+    }
+    return count;
+}
+
+static void announce_layout(void)
+{
+    if (ble_gatts_find_chr(BLE_UUID16_DECLARE(BLE_GATT_SVC_UUID16),
+                           BLE_UUID16_DECLARE(BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16), NULL, &changed_handle) != 0) {
+        console_event("GATT layout unknown changed characteristic missing\n");
+        return;
+    }
+    uint32_t current = layout_fingerprint();
+    uint32_t stored = 0;
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(LAYOUT_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        console_event("GATT layout unknown err=0x%x\n", err);
+        return;
+    }
+    if (nvs_get_u32(nvs, LAYOUT_KEY, &stored) == ESP_OK && stored == current) {
+        nvs_close(nvs);
+        console_event("GATT layout same\n");
+        return;
+    }
+    ble_svc_gatt_changed(0x0001, 0xffff);
+    err = nvs_set_u32(nvs, LAYOUT_KEY, current);
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    console_event("GATT layout changed subscribers=%d\n", changed_subscribers());
+    if (err != ESP_OK) {
+        console_event("GATT layout unsaved err=0x%x\n", err);
+    }
+}
+
+static void report_changed(int status)
+{
+    if (status == 0) {
+        console_event("GATT changed sent\n");
+    } else if (status == BLE_HS_EDONE) {
+        console_event("GATT changed acked\n");
+    } else {
+        console_event("GATT changed failed status=%d\n", status);
+    }
+}
 
 static bool security_of(uint16_t conn, struct ble_gap_conn_desc *desc)
 {
@@ -203,6 +363,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT: {
         atomic_store(&conn_handle, BLE_HS_CONN_HANDLE_NONE);
         atomic_store(&decision_subscribed, false);
+        atomic_store(&audio_subscribed, false);
         atomic_store(&pairing, false);
         end_pairing_screen();
         prompt_t none = {.active = false};
@@ -231,6 +392,16 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         if (event->subscribe.attr_handle == decision_handle) {
             atomic_store(&decision_subscribed, event->subscribe.cur_notify != 0);
             console_event("BLE subscribe decision=%d\n", event->subscribe.cur_notify);
+        } else if (event->subscribe.attr_handle == audio_handle) {
+            atomic_store(&audio_subscribed, event->subscribe.cur_notify != 0);
+            console_event("BLE subscribe audio=%d\n", event->subscribe.cur_notify);
+        } else if (event->subscribe.attr_handle == changed_handle) {
+            console_event("BLE subscribe changed=%d\n", event->subscribe.cur_indicate);
+        }
+        return 0;
+    case BLE_GAP_EVENT_NOTIFY_TX:
+        if (event->notify_tx.attr_handle == changed_handle && event->notify_tx.indication) {
+            report_changed(event->notify_tx.status);
         }
         return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -275,6 +446,7 @@ static void on_sync(void)
 {
     ble_hs_util_ensure_addr(0);
     ble_hs_id_infer_auto(0, &own_addr_type);
+    announce_layout();
     advertise();
 }
 
@@ -311,6 +483,33 @@ bool ble_link_send_decision(uint32_t id, bool allow)
     return om != NULL && ble_gatts_notify_custom(conn, decision_handle, om) == 0;
 }
 
+bool ble_link_ready(void)
+{
+    return link_secure((uint16_t)atomic_load(&conn_handle));
+}
+
+bool ble_link_send_audio(const uint8_t *data, size_t len)
+{
+    for (int attempt = 0; attempt < AUDIO_SEND_ATTEMPTS; attempt++) {
+        uint16_t conn = (uint16_t)atomic_load(&conn_handle);
+        if (!atomic_load(&audio_subscribed) || !link_secure(conn)) {
+            return false;
+        }
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
+        if (om != NULL) {
+            int rc = ble_gatts_notify_custom(conn, audio_handle, om);
+            if (rc == 0) {
+                return true;
+            }
+            if (rc != BLE_HS_ENOMEM) {
+                return false;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(AUDIO_RETRY_MS));
+    }
+    return false;
+}
+
 void ble_link_confirm_pairing(bool accept)
 {
     uint16_t conn = (uint16_t)atomic_exchange(&numcmp_conn, BLE_HS_CONN_HANDLE_NONE);
@@ -338,6 +537,21 @@ void ble_link_security(char *out, size_t size)
 int ble_link_unpair(void)
 {
     return ble_store_clear();
+}
+
+esp_err_t ble_link_forget_layout(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(LAYOUT_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_erase_key(nvs, LAYOUT_KEY);
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    return err;
 }
 
 esp_err_t ble_link_start(void)

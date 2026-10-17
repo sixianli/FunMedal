@@ -7,6 +7,7 @@ enum Hook {
     static let summaryLimit = 240
     static let defaultWaitLimit = 590.0
     static let ackSeconds = 2.0
+    static let giveUpReplySeconds = 2.0
     static let denyMessage = "The user denied this on the FunMedal card."
     static let summaryFields = [
         "Bash": "command", "Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path", "Read": "file_path",
@@ -43,12 +44,20 @@ enum Hook {
         return truncated(cleaned, bytes: summaryLimit)
     }
 
+    static func claudeProcess() -> Int {
+        if let named = ProcessInfo.processInfo.environment["CLAUDE_PID"], let pid = Int(named), pid > 0 {
+            return pid
+        }
+        return Int(getppid())
+    }
+
     static func message(from input: Data) -> [String: Any]? {
         guard let hook = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
               let name = hook["hook_event_name"] as? String, !name.isEmpty,
               let session = hook["session_id"] as? String, !session.isEmpty else { return nil }
         let approval = name == "PermissionRequest"
-        var message: [String: Any] = ["op": approval ? "approve" : "event", "event": name, "session": session]
+        var message: [String: Any] = ["op": approval ? "approve" : "event", "event": name, "session": session,
+                                      "claude_pid": claudeProcess()]
         if let tool = hook["tool_name"] as? String { message["tool_name"] = tool }
         if hook["tool_name"] != nil || hook["tool_input"] != nil {
             message["tool_key"] = toolKey(name: hook["tool_name"], input: hook["tool_input"])
@@ -77,6 +86,15 @@ enum Hook {
         return ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]
     }
 
+    static func answer(from reply: LineReader.Result) -> [String: Any]? {
+        guard case .line(let data) = reply,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let behavior = object["decision"] as? String, behavior == "allow" || behavior == "deny" else {
+            return nil
+        }
+        return answer(behavior)
+    }
+
     static func waitForCard(socket: String, message: [String: Any], waitLimit: Double) -> [String: Any]? {
         let deadline = Date().addingTimeInterval(waitLimit)
         guard let fd = UnixSocket.connect(socket, timeoutSeconds: 1) else { return nil }
@@ -86,19 +104,10 @@ enum Hook {
         guard case .line(let ackData) = reader.next(until: Date().addingTimeInterval(ackSeconds)),
               let ack = (try? JSONSerialization.jsonObject(with: ackData)) as? [String: Any],
               ack["ok"] as? Bool == true else { return nil }
-        switch reader.next(until: deadline) {
-        case .line(let data):
-            guard let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let behavior = reply["decision"] as? String, behavior == "allow" || behavior == "deny" else {
-                return nil
-            }
-            return answer(behavior)
-        case .timeout:
-            if let giveUp = line(["op": "give_up"]) { _ = UnixSocket.writeAll(fd, giveUp) }
-            return nil
-        case .closed, .tooLong:
-            return nil
-        }
+        let reply = reader.next(until: deadline)
+        guard case .timeout = reply else { return answer(from: reply) }
+        guard let giveUp = line(["op": "give_up"]), UnixSocket.writeAll(fd, giveUp) else { return nil }
+        return answer(from: reader.next(until: Date().addingTimeInterval(giveUpReplySeconds)))
     }
 
     static func run(socket: String, waitLimit: Double) {

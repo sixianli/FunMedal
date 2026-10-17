@@ -1,7 +1,5 @@
-import hashlib
 import json
 import os
-import re
 import socket
 import tempfile
 import threading
@@ -10,68 +8,27 @@ import uuid
 
 import pytest
 
-from bridge_harness import (Bridge, artifacts, bash, bridge, bridge_cli, card, card_lines, card_states,  # noqa: F401
-                            event, info_fields, real_session, request_touch, require_bridge_app, run_dir,
-                            start_and_mark, wait_session_ready, wait_until, write_summary)
+from bridge_harness import (PROMPT_LINE, W, Bridge, approve, artifacts, bash, behavior, bridge,  # noqa: F401
+                            bridge_cli, card, card_lines, card_states, event, info_fields, ink, press, real_session,
+                            request_touch, require_bridge_app, run_dir, snapshot, start_and_mark, wait_prompt,
+                            wait_session_ready, wait_until, write_summary)
 
 import cardlink  # noqa: E402
 
 ARTIFACTS_PREFIX = "fm14"
 ARTIFACTS_SUBDIR = "approval"
-APPROVE_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "summary"}
+APPROVE_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "summary", "claude_pid"}
 SUMMARY_MAX_BYTES = 240
-PROMPT_LINE = re.compile(r"PROMPT (\d+) (\d+)/(\d+) (\S+)$")
 SECURE = "encrypted,authenticated,bonded"
 MIN_STACK_FREE_BYTES = 1024
 REJECTION_HOLD_S = 3.0
 PROMPT_CLEAR_LIMIT_S = 0.5
 PERSON_SECONDS = os.environ.get("FM_PERSON_AT_CARD_SECONDS")
-W, H = 240, 320
 WAITING_BACKGROUND = cardlink.rgb888_to_565_rgb(0xFF9F1C)
-
-
-def approve(session, tool_name, tool_input):
-    return event("PermissionRequest", session, tool_name=tool_name, tool_input=tool_input,
-                 permission_suggestions=[{"type": "addRules", "rules": [{"toolName": tool_name}]}])
-
-
-def behavior(stdout):
-    if stdout.strip() == "":
-        return None
-    output = json.loads(stdout)
-    assert output["hookSpecificOutput"]["hookEventName"] == "PermissionRequest", output
-    return output["hookSpecificOutput"]["decision"]
-
-
-def wait_prompt(card, start, timeout=10.0, prompt_id=None):
-    def matches(line):
-        found = PROMPT_LINE.match(line)
-        return found is not None and (prompt_id is None or found.group(1) == str(prompt_id))
-    index, t, line = card.wait_for(matches, timeout, start)
-    found = PROMPT_LINE.match(line)
-    return {"index": index, "t": t, "id": int(found.group(1)), "position": int(found.group(2)),
-            "count": int(found.group(3)), "tool": found.group(4)}
-
-
-def press(card, key, how):
-    assert card.request(f"key {key} {how}") == f"OK key {key} {how}"
 
 
 def log_kinds(bridge, kind):
     return [e for e in bridge.log_entries() if e.get("kind") == kind]
-
-
-def snapshot(card, run_dir, name):
-    meta, width, height, data = card.snapshot()
-    assert (width, height) == (W, H)
-    pixels = cardlink.rgb565_wire_to_rgb(data)
-    path = run_dir / f"{name}.png"
-    cardlink.write_png(path, width, height, pixels)
-    return {"meta": meta, "png": path.name, "sha256": hashlib.sha256(data).hexdigest(), "pixels": pixels}
-
-
-def ink(pixels, rows, background, columns=(0, W)):
-    return sum(1 for y in range(*rows) for x in range(*columns) if pixels[y * W + x] != background)
 
 
 class FakeBridge:
@@ -191,7 +148,7 @@ def test_hook_answers(case, artifacts):
     assert "interrupt" not in denied or denied["interrupt"] is False, denied
     for name in ("released", "refused", "closed", "gave_up"):
         assert outcomes[name]["stdout"] == "", (name, outcomes[name])
-    assert 0.8 <= outcomes["gave_up"]["s"] < 3.0, outcomes["gave_up"]
+    assert 2.8 <= outcomes["gave_up"]["s"] < 4.0, outcomes["gave_up"]
     assert [m.get("op") for m in outcomes["gave_up"]["sent"]] == ["approve", "give_up"], outcomes["gave_up"]
     assert all(o["s"] < 2.0 for name, o in outcomes.items() if name != "gave_up"), outcomes
 
@@ -204,6 +161,53 @@ def test_approval_without_bridge(case):
                                  payload=json.dumps(approve("x", "Bash", {"command": "ls"})).encode())
     assert result.returncode == 0 and result.stdout == b"", result
     assert elapsed < 1.0, elapsed
+
+
+@pytest.mark.parametrize("case,way,reply", [
+    ("[FM-14] a card answer that lands as the hook gives up still reaches Claude Code", "answered",
+     {"decision": "allow"}),
+    ("[FM-14] a hook that gives up with no answer exits without answering", "unanswered", {"decision": None}),
+])
+def test_answer_at_give_up(case, way, reply, run_dir):
+    path = os.path.join(tempfile.gettempdir(), f"fm-giveup-{uuid.uuid4().hex[:8]}.sock")
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(path)
+    listener.listen(1)
+    listener.settimeout(10.0)
+    received = []
+    problems = []
+
+    def serve():
+        client, _ = listener.accept()
+        client.settimeout(10.0)
+        lines = client.makefile("rb")
+        try:
+            received.append(json.loads(lines.readline()))
+            client.sendall(b'{"ok":true,"id":1}\n')
+            received.append(json.loads(lines.readline()))
+            client.sendall((json.dumps(reply) + "\n").encode())
+            client.shutdown(socket.SHUT_WR)
+        except (OSError, ValueError) as error:
+            problems.append(str(error))
+        finally:
+            lines.close()
+            client.close()
+
+    server = threading.Thread(target=serve)
+    server.start()
+    try:
+        result, elapsed = bridge_cli("hook", "--socket", path, "--wait-limit", "1",
+                                     payload=json.dumps(approve("g", "Bash", {"command": "make late"})).encode())
+        server.join(15.0)
+    finally:
+        listener.close()
+        os.unlink(path)
+    stdout = result.stdout.decode()
+    write_summary(run_dir, {"way": way, "received": received, "problems": problems, "exit": result.returncode,
+                            "stdout": stdout, "elapsed": elapsed})
+    assert [m.get("op") for m in received] == ["approve", "give_up"], received
+    assert result.returncode == 0 and 1.0 <= elapsed < 3.5, (result.returncode, elapsed)
+    assert behavior(stdout) == (reply["decision"] and {"behavior": reply["decision"]}), stdout
 
 
 @pytest.mark.parametrize("case", ["[FM-14] bluetooth link is encrypted, authenticated and bonded"])
@@ -332,7 +336,7 @@ def test_hook_gives_up(case, card, bridge, run_dir):
     closed = log_kinds(bridge, "approval_closed")
     write_summary(run_dir, {"result": result, "status": status, "closed": closed})
     assert result["exit"] == 0 and result["stdout"] == "", result
-    assert 1.8 <= result["s"] < 4.0, result
+    assert 1.8 <= result["s"] < 3.0, result
     assert status["approvals"] == [] and status["sessions"]["g"]["pending"] == 1, status
     assert [(c["id"], c["how"]) for c in closed] == [(shown["id"], "gave_up")], closed
 
@@ -400,6 +404,61 @@ def test_session_events_release_waiting_hooks(case, way, fields, why, card, brid
     assert [(a["id"], a["decision"], a["why"]) for a in answers] == [(shown["id"], "released", why)], answers
     assert [(c["id"], c["how"]) for c in closed] == [(shown["id"], "answered")], closed
     assert status["approvals"] == [], status
+
+
+@pytest.mark.parametrize("case", ["[FM-14] an approval for one of two identical commands does not drop the other"])
+def test_identical_requests(case, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    same = bash("make same")
+    first = bridge.hook_async(approve("i", same["tool_name"], same["tool_input"]))
+    shown = wait_prompt(card, start)
+    second = bridge.hook_async(approve("i", same["tool_name"], same["tool_input"]))
+    queued = wait_prompt(card, shown["index"] + 1, prompt_id=shown["id"])
+    assert queued["count"] == 2, queued
+    press(card, "ok", "long")
+    card.wait_for(lambda line: line == f"DECISION {shown['id']} allow", 5.0, queued["index"])
+    first_result = first.result()
+    mark = card.mark()
+    bridge.hook(event("PostToolUse", "i", tool_use_id="t1", tool_response={}, **same), wait_limit=0)
+    time.sleep(1.0)
+    after = {"status": bridge.status(), "prompts": card_lines(card, mark, "PROMPT"), "second_running": second.running()}
+    write_summary(run_dir, {"first": first_result, "after": after})
+    assert behavior(first_result["stdout"]) == {"behavior": "allow"}, first_result
+    assert after["second_running"], after
+    assert [a["id"] for a in after["status"]["approvals"]] == [shown["id"] + 1], after
+    shown_next = wait_prompt(card, start, prompt_id=shown["id"] + 1)
+    press(card, "ok", "long")
+    card.wait_for(lambda line: line == f"DECISION {shown_next['id']} allow", 5.0, shown_next["index"])
+    assert behavior(second.result()["stdout"]) == {"behavior": "allow"}
+
+
+@pytest.mark.parametrize("case,way", [
+    ("[FM-14] the bridge ignores a card answer for a request it already closed", "closed"),
+    ("[FM-14] the bridge ignores a card answer for a request it never showed", "unknown"),
+])
+def test_stale_decision_ignored(case, way, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    if way == "closed":
+        done = bridge.hook_async(approve("s", "Bash", {"command": "make done"}))
+        closed = wait_prompt(card, start)
+        press(card, "down", "press")
+        card.wait_for(lambda line: line == f"DECISION {closed['id']} deny", 5.0, closed["index"])
+        done.result()
+        stale = closed["id"]
+    run = bridge.hook_async(approve("s", "Bash", {"command": "make stale"}))
+    shown = wait_prompt(card, start, prompt_id=stale + 1 if way == "closed" else None)
+    if way == "unknown":
+        stale = shown["id"] + 7
+    assert card.request(f"ble decision {stale} allow") == f"OK ble decision {stale} allow"
+    wait_until(lambda: any(e.get("kind") == "decision_ignored" and e.get("id") == stale
+                           for e in bridge.log_entries()), 5.0, "bridge ignoring the stale answer")
+    held = {"status": bridge.status(), "running": run.running()}
+    press(card, "ok", "long")
+    card.wait_for(lambda line: line == f"DECISION {shown['id']} allow", 5.0, shown["index"])
+    answered = run.result()
+    write_summary(run_dir, {"stale": stale, "held": held, "answered": answered})
+    assert held["running"] and [a["id"] for a in held["status"]["approvals"]] == [shown["id"]], held
+    assert behavior(answered["stdout"]) == {"behavior": "allow"}, answered
 
 
 def deny_until_done(card, start, limit=3):
@@ -593,7 +652,7 @@ def test_card_stack_headroom(case, card, artifacts):
     line = card.request("stacks")
     (artifacts / "card-stacks.txt").write_text(line + "\n", encoding="utf-8")
     free = {name: int(value) for name, value in (p.split("=", 1) for p in line.split()[2:])}
-    assert set(free) == {"keys", "display", "console", "nimble_host"}, line
+    assert set(free) == {"keys", "display", "console", "nimble_host", "voice"}, line
     assert all(value >= MIN_STACK_FREE_BYTES for value in free.values()), free
 
 

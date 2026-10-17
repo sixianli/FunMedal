@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "key_input.h"
+#include "voice.h"
 
 #define FIRMWARE_VERSION "funmedal-0.1"
 #define LINE_MAX_LEN 96
@@ -25,6 +26,8 @@
 #define WRITE_LIMIT_US (2000 * 1000LL)
 #define EVENT_WAIT_MS 5
 #define REBOOT_DELAY_MS 100
+#define MIC_PACKETS_MAX 500
+#define MIC_DEFAULT_GAIN 4
 
 static const char *TAG = "console";
 static _Atomic uint32_t events_dropped;
@@ -51,14 +54,15 @@ static void print_info(void)
     ble_link_security(security, sizeof(security));
     console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
-                   "ble=%s ble_writes=%lu prompt=%s sec=%s uptime_s=%lld\n",
+                   "ble=%s ble_writes=%lu prompt=%s sec=%s voice=%s mic=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
                    frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
                    (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
-                   (unsigned long)ble_link_writes(), prompt, security, (long long)(esp_timer_get_time() / 1000000));
+                   (unsigned long)ble_link_writes(), prompt, security, scene_voice_name(scene.voice),
+                   voice_ready() ? "ready" : "off", (long long)(esp_timer_get_time() / 1000000));
 }
 
 static bool write_all(const char *data, size_t size, int64_t *waited_us, int *timeouts)
@@ -154,7 +158,7 @@ static void snap(void)
 
 static void print_stacks(void)
 {
-    static const char *const names[] = {"keys", "display", "console", "nimble_host"};
+    static const char *const names[] = {"keys", "display", "console", "nimble_host", "voice"};
     char line[LINE_OUT_MAX];
     int len = snprintf(line, sizeof(line), "OK stacks");
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -163,6 +167,70 @@ static void print_stacks(void)
                         task != NULL ? (long)uxTaskGetStackHighWaterMark(task) : -1L);
     }
     console_printf("%s\n", line);
+}
+
+static bool mic_line(const uint8_t *packet, size_t size, void *context)
+{
+    static char line[16 + VOICE_AUDIO_PACKET * 2 + 2];
+    static const char digits[] = "0123456789abcdef";
+    int *sequence = context;
+    int len = snprintf(line, sizeof(line), "MIC %d ", (*sequence)++);
+    for (size_t i = 0; i < size; i++) {
+        line[len++] = digits[packet[i] >> 4];
+        line[len++] = digits[packet[i] & 0x0f];
+    }
+    line[len++] = '\n';
+    int64_t waited_us;
+    int timeouts = 0;
+    if (!write_all(line, (size_t)len, &waited_us, &timeouts)) {
+        replies_dropped++;
+        return false;
+    }
+    return true;
+}
+
+static uint32_t root_mean_square(uint64_t squares, uint32_t samples)
+{
+    uint64_t mean = samples > 0 ? squares / samples : 0;
+    uint32_t root = 0;
+    for (uint32_t bit = 1u << 15; bit != 0; bit >>= 1) {
+        uint32_t next = root | bit;
+        if ((uint64_t)next * next <= mean) {
+            root = next;
+        }
+    }
+    return root;
+}
+
+static void mic_command(char *args)
+{
+    char *count = strtok(args, " ");
+    char *gain_text = strtok(NULL, " ");
+    char *end = NULL;
+    long packets = count != NULL ? strtol(count, &end, 10) : 0;
+    bool valid = count != NULL && *end == '\0' && packets >= 1 && packets <= MIC_PACKETS_MAX;
+    long gain = MIC_DEFAULT_GAIN;
+    if (valid && gain_text != NULL) {
+        gain = strtol(gain_text, &end, 10);
+        valid = *end == '\0' && gain >= 0 && gain <= VOICE_GAIN_MAX;
+    }
+    if (!valid || strtok(NULL, " ") != NULL) {
+        console_printf("ERR mic usage: mic <1-%d> [0-%d]\n", MIC_PACKETS_MAX, VOICE_GAIN_MAX);
+        return;
+    }
+    if (!voice_ready()) {
+        console_printf("ERR mic unavailable\n");
+        return;
+    }
+    int sequence = 0;
+    voice_capture_stats_t stats;
+    if (!voice_capture((int)packets, (int)gain, mic_line, &sequence, &stats)) {
+        console_printf("ERR mic failed after %d packets\n", sequence);
+        return;
+    }
+    console_printf("OK mic packets=%ld gain=%ld rms=%lu other_rms=%lu peak=%d\n", packets, gain,
+                   (unsigned long)root_mean_square(stats.squares_used, stats.samples),
+                   (unsigned long)root_mean_square(stats.squares_other, stats.samples), stats.peak_used);
 }
 
 static bool parse_flag(const char *text, bool *value)
@@ -250,10 +318,53 @@ static void key_command(char *args)
     }
 }
 
+static void ble_decision_command(void)
+{
+    char *id_text = strtok(NULL, " ");
+    char *word = strtok(NULL, " ");
+    char *end = NULL;
+    unsigned long id = id_text != NULL ? strtoul(id_text, &end, 10) : 0;
+    bool allow = word != NULL && strcmp(word, "allow") == 0;
+    bool valid = id_text != NULL && *end == '\0' && end != id_text && (allow || (word != NULL && strcmp(word, "deny") == 0));
+    if (!valid || strtok(NULL, " ") != NULL) {
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
+        return;
+    }
+    if (!ble_link_send_decision((uint32_t)id, allow)) {
+        console_printf("ERR ble decision unsent\n");
+        return;
+    }
+    console_printf("OK ble decision %lu %s\n", id, word);
+}
+
+static void ble_layout_command(void)
+{
+    char *word = strtok(NULL, " ");
+    if (word == NULL || strcmp(word, "forget") != 0 || strtok(NULL, " ") != NULL) {
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
+        return;
+    }
+    esp_err_t err = ble_link_forget_layout();
+    if (err != ESP_OK) {
+        console_printf("ERR ble layout forget err=0x%x\n", err);
+        return;
+    }
+    console_printf("OK ble layout forget\n");
+}
+
 static void ble_command(char *args)
 {
-    if (strcmp(args, "unpair") != 0) {
-        console_printf("ERR ble usage: ble unpair\n");
+    char *what = strtok(args, " ");
+    if (what != NULL && strcmp(what, "decision") == 0) {
+        ble_decision_command();
+        return;
+    }
+    if (what != NULL && strcmp(what, "layout") == 0) {
+        ble_layout_command();
+        return;
+    }
+    if (what == NULL || strcmp(what, "unpair") != 0 || strtok(NULL, " ") != NULL) {
+        console_printf("ERR ble usage: ble unpair|layout forget|decision <id> allow|deny\n");
         return;
     }
     int rc = ble_link_unpair();
@@ -319,6 +430,8 @@ static void handle(char *line)
         key_command(args);
     } else if (strcmp(line, "ble") == 0) {
         ble_command(args);
+    } else if (strcmp(line, "mic") == 0) {
+        mic_command(args);
     } else if (strcmp(line, "stacks") == 0) {
         print_stacks();
     } else if (strcmp(line, "reboot") == 0) {

@@ -1,6 +1,8 @@
 import glob
+import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -18,6 +20,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+import cardlink  # noqa: E402
 from cardlink import compact_log  # noqa: E402
 from cardwatch import CardWatcher  # noqa: E402
 from claude_session import ClaudeSession  # noqa: E402
@@ -42,9 +45,9 @@ def wait_until(check, timeout, what):
     raise TimeoutError(f"{what} not reached within {timeout} s")
 
 
-def bridge_cli(*args, payload=None, timeout=10.0):
+def bridge_cli(*args, payload=None, timeout=10.0, env=None):
     started = time.monotonic()
-    result = subprocess.run([str(BRIDGE), *args], input=payload, capture_output=True, timeout=timeout)
+    result = subprocess.run([str(BRIDGE), *args], input=payload, capture_output=True, timeout=timeout, env=env)
     return result, time.monotonic() - started
 
 
@@ -170,6 +173,50 @@ def card_states(card, start):
 
 def ble_writes(card, start):
     return [line.split()[2] for _, line in card.since(start) if line.startswith("BLE state ")]
+
+
+PROMPT_LINE = re.compile(r"PROMPT (\d+) (\d+)/(\d+) (\S+)$")
+W, H = 240, 320
+
+
+def approve(session, tool_name, tool_input):
+    return event("PermissionRequest", session, tool_name=tool_name, tool_input=tool_input,
+                 permission_suggestions=[{"type": "addRules", "rules": [{"toolName": tool_name}]}])
+
+
+def behavior(stdout):
+    if stdout.strip() == "":
+        return None
+    output = json.loads(stdout)
+    assert output["hookSpecificOutput"]["hookEventName"] == "PermissionRequest", output
+    return output["hookSpecificOutput"]["decision"]
+
+
+def wait_prompt(card, start, timeout=10.0, prompt_id=None):
+    def matches(line):
+        found = PROMPT_LINE.match(line)
+        return found is not None and (prompt_id is None or found.group(1) == str(prompt_id))
+    index, t, line = card.wait_for(matches, timeout, start)
+    found = PROMPT_LINE.match(line)
+    return {"index": index, "t": t, "id": int(found.group(1)), "position": int(found.group(2)),
+            "count": int(found.group(3)), "tool": found.group(4)}
+
+
+def press(card, key, how):
+    assert card.request(f"key {key} {how}") == f"OK key {key} {how}"
+
+
+def snapshot(card, run_dir, name):
+    meta, width, height, data = card.snapshot()
+    assert (width, height) == (W, H)
+    pixels = cardlink.rgb565_wire_to_rgb(data)
+    path = run_dir / f"{name}.png"
+    cardlink.write_png(path, width, height, pixels)
+    return {"meta": meta, "png": path.name, "sha256": hashlib.sha256(data).hexdigest(), "pixels": pixels}
+
+
+def ink(pixels, rows, background, columns=(0, W)):
+    return sum(1 for y in range(*rows) for x in range(*columns) if pixels[y * W + x] != background)
 
 
 def card_lines(card, start, prefix):

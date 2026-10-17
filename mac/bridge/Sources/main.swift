@@ -17,7 +17,7 @@ func defaultSocket() -> String {
     return support.appendingPathComponent("FunMedal/bridge.sock").path
 }
 
-func serve(socket: String, logPath: String?) -> Never {
+func serve(socket: String, logPath: String?, locale: String) -> Never {
     guard UnixSocket.address(socket) != nil else { fail("socket path is too long: \(socket)", setupFailedExit) }
     let directory = (socket as NSString).deletingLastPathComponent
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true,
@@ -32,7 +32,7 @@ func serve(socket: String, logPath: String?) -> Never {
         fail("cannot listen on \(socket): \(String(cString: strerror(errno)))", setupFailedExit)
     }
     let log = EventLog(path: logPath)
-    let bridge = Bridge(socketPath: socket, log: log)
+    let bridge = Bridge(socketPath: socket, log: log, locale: locale)
     log.write("start", ["pid": Int(getpid()), "socket": socket])
     let acceptor = Thread {
         while true {
@@ -62,6 +62,9 @@ func serveClient(_ client: Int32, bridge: Bridge, socket: String, lockPath: Stri
     if let approval = handled.approval {
         follow(approval, reader: reader, bridge: bridge)
     }
+    if let listener = handled.listener {
+        hold(listener, reader: reader, bridge: bridge)
+    }
     close(client)
     if handled.quit {
         unlink(socket)
@@ -85,6 +88,18 @@ func follow(_ approval: Approval, reader: LineReader, bridge: Bridge) {
     }
 }
 
+func hold(_ listener: Listener, reader: LineReader, bridge: Bridge) {
+    while true {
+        switch reader.next(until: .distantFuture) {
+        case .line, .timeout:
+            continue
+        case .closed, .tooLong:
+            bridge.unlisten(listener)
+            return
+        }
+    }
+}
+
 func ask(socket: String, op: String) -> Int32 {
     guard let reply = UnixSocket.request(socket, ["op": op], timeoutSeconds: clientTimeoutSeconds) else {
         FileHandle.standardError.write(Data("funmedal-bridge: no bridge is running on \(socket)\n".utf8))
@@ -99,12 +114,14 @@ func ask(socket: String, op: String) -> Int32 {
 
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: funmedal-bridge serve|hook|status|quit [--socket PATH] [--log PATH] [--wait-limit SECONDS]"
+let usage = "usage: funmedal-bridge serve|hook|channel|status|quit|speech-access [--socket PATH] [--log PATH] "
+    + "[--wait-limit SECONDS] [--voice-locale LOCALE]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
 var logPath: String?
 var waitLimit = Hook.defaultWaitLimit
+var voiceLocale = Voice.localeIdentifier
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
     guard !arguments.isEmpty else { fail("\(option) needs a value", usageExit) }
@@ -116,16 +133,21 @@ while !arguments.isEmpty {
             fail("--wait-limit needs a number of seconds", usageExit)
         }
         waitLimit = seconds
+    case "--voice-locale": voiceLocale = arguments.removeFirst()
     default: fail("unknown option \(option)", usageExit)
     }
 }
 
 switch mode {
 case "serve":
-    serve(socket: socketPath, logPath: logPath)
+    serve(socket: socketPath, logPath: logPath, locale: voiceLocale)
 case "hook":
     Hook.run(socket: socketPath, waitLimit: waitLimit)
     exit(0)
+case "channel":
+    Channel.run(socket: socketPath)
+case "speech-access":
+    exit(Voice.access(reportTo: logPath, locale: voiceLocale))
 case "status", "quit":
     exit(ask(socket: socketPath, op: mode))
 default:

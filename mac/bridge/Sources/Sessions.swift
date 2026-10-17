@@ -33,12 +33,13 @@ struct Sessions {
 
     private(set) var table: [String: Session] = [:]
 
-    mutating func apply(_ event: HookEvent) {
+    mutating func apply(_ event: HookEvent) -> Bool {
         if event.name == "SessionEnd" {
             table[event.session] = nil
-            return
+            return false
         }
         var session = table[event.session] ?? Session()
+        var followsCardAllow = false
         switch event.name {
         case "UserPromptSubmit":
             session.activity = .working
@@ -51,7 +52,8 @@ struct Sessions {
             Session.add(event.toolKey, to: &session.pending)
         case "PostToolUse", "PostToolUseFailure":
             session.activity = .working
-            if !Session.take(event.toolKey, from: &session.allowedOnCard) {
+            followsCardAllow = Session.take(event.toolKey, from: &session.allowedOnCard)
+            if !followsCardAllow {
                 _ = Session.take(event.toolKey, from: &session.pending)
             }
         case "Stop":
@@ -66,6 +68,7 @@ struct Sessions {
             break
         }
         table[event.session] = session
+        return followsCardAllow
     }
 
     mutating func answeredOnCard(session name: String, toolKey: String?, allowed: Bool) {

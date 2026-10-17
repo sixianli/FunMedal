@@ -10,7 +10,8 @@ KEY_SOURCES = [FIRMWARE_MAIN / "keys.c", FIRMWARE_MAIN / "key_levels.c"]
 KEY_CAPTURE = ROOT / "notes" / "data" / "key-adc-2026-10-16.txt"
 FONT_SOURCES = [FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_large.c", FIRMWARE_MAIN / "font_text.c"]
 PROMPT_SOURCES = [FIRMWARE_MAIN / "prompt.c", *FONT_SOURCES]
-SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "pet_art.c", *PROMPT_SOURCES]
+VOICE_SOURCES = [FIRMWARE_MAIN / "voice_codec.c"]
+SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "pet_art.c", *PROMPT_SOURCES, *VOICE_SOURCES]
 C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 GLYPH_ENTRY = re.compile(r"\{0x([0-9a-f]+), \d+, \d+\}")
 
@@ -61,6 +62,16 @@ def test_state_value_parsing_on_host(case, tmp_path):
 def test_prompt_parsing_and_layout_on_host(case, tmp_path):
     binary = tmp_path / "test_prompt"
     build(ROOT / "tests" / "host" / "test_prompt.c", binary, PROMPT_SOURCES)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("case", ["[FM-15] voice packets, results and text images encode and parse on host"])
+def test_voice_codec_on_host(case, tmp_path):
+    binary = tmp_path / "test_voice_codec"
+    build(ROOT / "tests" / "host" / "test_voice_codec.c", binary, VOICE_SOURCES)
     result = subprocess.run([str(binary)], capture_output=True, text=True)
     print(result.stdout)
     assert result.returncode == 0, result.stdout

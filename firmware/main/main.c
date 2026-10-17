@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "app.h"
 #include "ble_link.h"
 #include "console.h"
@@ -8,6 +10,7 @@
 #include "freertos/task.h"
 #include "key_input.h"
 #include "nvs_flash.h"
+#include "voice.h"
 
 #define FRAME_PERIOD_MS 500
 
@@ -19,6 +22,7 @@ static int frame_mode = APP_FRAME_AUTO;
 static uint32_t draws;
 static uint32_t draw_errors;
 static int shown_frame = -1;
+static uint8_t voice_pixels[VOICE_IMAGE_BYTES];
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -145,6 +149,25 @@ void app_set_prompt(const prompt_t *prompt)
     }
 }
 
+void app_set_voice(scene_voice_t voice, voice_result_t result)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    scene.voice = voice;
+    scene.voice_result = result;
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+}
+
+void app_set_voice_image(const uint8_t *pixels)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (pixels != NULL) {
+        memcpy(voice_pixels, pixels, sizeof(voice_pixels));
+    }
+    scene.voice_image = pixels != NULL ? voice_pixels : NULL;
+    xSemaphoreGive(lock);
+}
+
 void app_set_pairing(scene_pairing_t pairing, uint32_t code)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -225,7 +248,15 @@ static void on_key(const key_event_t *event)
         on_pairing_key(&now, event);
         return;
     }
-    bool open = now.prompt.active && now.decision == SCENE_DECISION_NONE;
+    if (event->key == KEY_UP) {
+        if (event->type == KEY_EVENT_PRESS) {
+            voice_press();
+        } else if (event->type == KEY_EVENT_RELEASE) {
+            voice_release();
+        }
+        return;
+    }
+    bool open = now.voice == SCENE_VOICE_NONE && now.prompt.active && now.decision == SCENE_DECISION_NONE;
     if (event->key == KEY_OK) {
         on_ok_key(&now, open, event->type);
     } else if (event->key == KEY_DOWN && event->type == KEY_EVENT_PRESS && open) {
@@ -247,5 +278,10 @@ void app_main(void)
     ESP_ERROR_CHECK(console_start());
     ESP_ERROR_CHECK(key_input_start(on_key));
     ESP_ERROR_CHECK(ble_link_start());
+    err = voice_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "voice unavailable: %s", esp_err_to_name(err));
+        console_event("VOICE unavailable %s\n", esp_err_to_name(err));
+    }
     console_event("READY funmedal-0.1\n");
 }
