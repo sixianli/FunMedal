@@ -201,6 +201,10 @@ def run_main(out: Path, model: str, hold: float, results: dict) -> None:
             return
         session.pump(2.0)
         listener_ppid, listener_pid = (int(x) for x in (out / "listener.pid").read_text().split())
+        results["main_session_id"] = start.get("session_id")
+        observed["mod_session"] = {k: start.get(k) for k in ("session_id", "cwd", "surfaces")}
+        checks["mod_records_session_and_surface"] = bool(
+            start.get("session_id") and "terminal" in (start.get("surfaces") or []))
         observed["listener"] = {"pid": listener_pid, "ppid": listener_ppid, "claude_pid": session.pid,
                                 "ppid_is_claude": listener_ppid == session.pid,
                                 "hook_ppids": sorted({r["ppid"] for r in hooks()}),
@@ -264,6 +268,11 @@ def run_main(out: Path, model: str, hold: float, results: dict) -> None:
                 "resolved_after_dialog_answered_s": rel(r3 and r3["t"], answered),
                 "touch_ran": marker.exists(),
             })
+            asked = first(mod_events(out), after=typed, event="tool.check", decision="ask")
+            turn1 = first(mod_events(out), event="turn.start", text=text1)
+            done1 = turn1 and first(mod_events(out), after=turn1["t"], event="turn.complete")
+            checks["mod_records_turns_and_tool_checks"] = bool(asked and turn1 and done1)
+            observed["approval"]["mod_saw_ask"] = bool(asked)
         else:
             checks["approval_submit_starts_after_dialog_answered"] = False
 
@@ -334,6 +343,32 @@ def transcript_entries(out: Path, results: dict) -> None:
     }
 
 
+def run_second(out: Path, model: str, results: dict) -> None:
+    claimed_by = results.get("main_session_id")
+    listener_before = (out / "listener.pid").read_text() if (out / "listener.pid").exists() else None
+    session = Session(out, "second", model, ["--permission-mode", "default"])
+    results["second_argv"] = session.argv
+    try:
+        skipped = session.wait_for(lambda: first(mod_events(out), event="mod.start.skipped"), 90)
+        ready = session.wait_for(lambda: "❯" in session.text, 60)
+        session.pump(2.0)
+        text7 = "实验七：第二个会话不该收到这句。请只回复：收到七"
+        send(out, text7)
+        session.pump(SAFE_WATCH_SECONDS)
+        called = first(mod_events(out), event="submit.called", text=text7)
+        listener_after = (out / "listener.pid").read_text() if (out / "listener.pid").exists() else None
+        results["checks"]["second_session_does_not_listen"] = bool(
+            ready and skipped and skipped.get("owner") == claimed_by and not called
+            and listener_after == listener_before)
+        results["observed"]["second_session"] = {
+            "ready": bool(ready), "skipped": bool(skipped), "owner": skipped and skipped.get("owner"),
+            "own_session_id": skipped and skipped.get("session_id"), "submitted": bool(called),
+            "listener_restarted": listener_after != listener_before, "watched_s": SAFE_WATCH_SECONDS + 2}
+    finally:
+        session.close()
+        results["second_exit_status"] = session.exit_status
+
+
 def run_safe(out: Path, model: str, results: dict) -> None:
     safe = out / "safe-mode"
     safe.mkdir()
@@ -384,10 +419,13 @@ def main() -> int:
     try:
         run_main(out, args.model, args.hold, results)
         transcript_entries(out, results)
+        run_second(out, args.model, results)
         run_safe(out, args.model, results)
     finally:
-        expected = ("mod_loads_and_listener_starts", "idle_submit_starts_turn", "busy_submit_waits_for_turn_end",
-                    "approval_submit_starts_after_dialog_answered", "safe_mode_does_not_load_mod")
+        expected = ("mod_loads_and_listener_starts", "mod_records_session_and_surface", "idle_submit_starts_turn",
+                    "busy_submit_waits_for_turn_end", "approval_submit_starts_after_dialog_answered",
+                    "mod_records_turns_and_tool_checks", "second_session_does_not_listen",
+                    "safe_mode_does_not_load_mod")
         results["passed"] = all(results["checks"].get(name) for name in expected)
         results["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         (out / "summary.json").write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
