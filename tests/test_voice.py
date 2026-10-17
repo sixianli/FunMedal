@@ -54,8 +54,10 @@ PERSON_TRIES = 3
 IMAGE_ROWS = (60, 160)
 BUSY_TOOL = {"tool_name": "Bash", "tool_input": {"command": "make busy"}}
 IMAGE_COLUMNS = (10, 230)
+REFUSALS = {"image": ("image", 1), "result": ("voice", 1), "result-twice": ("voice", 2)}
 REFUSED_LINES = {"image": "BLE reject image injected", "voice": "BLE reject voice injected"}
 HEADER_ROWS = (0, 55)
+RETRIED_RESULT_S = 5.0
 
 
 class FakeBridgeSocket:
@@ -605,20 +607,23 @@ def result_screen(shot):
     pixels = shot["pixels"]
     return {"png": shot["png"], "header_ink": ink(pixels, HEADER_ROWS, VOICE_BACKGROUND),
             "title_ink": ink(pixels, TITLE_ROWS, VOICE_BACKGROUND),
+            "hint_ink": ink(pixels, HINT_ROWS, VOICE_BACKGROUND),
             "image_ink": ink(pixels, IMAGE_ROWS, VOICE_BACKGROUND, IMAGE_COLUMNS)}
 
 
 @pytest.mark.parametrize("way,case", [
     ("image", "[FM-15] when the card refuses a piece of the text image, the words still arrive and the card shows the result without the image"),
-    ("voice", "[FM-15] when the card refuses the result, the bridge does not write it again and the card says the Mac did not answer"),
+    ("result", "[FM-15] when the card refuses the result once, the bridge writes it again and the card shows the words"),
+    ("result-twice", "[FM-15] when the card refuses the result twice, the bridge stops and the card says the Mac did not answer"),
 ])
 def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
+    kind, times = REFUSALS[way]
     start = start_and_mark(bridge, card)
     channel = FakeChannel(bridge.socket, 1111)
     try:
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
-        armed = card.request(f"ble reject {way}")
-        assert armed == f"OK ble reject {way}", armed
+        armed = card.request(f"ble reject {kind} {times}")
+        assert armed == f"OK ble reject {kind} {times}", armed
         refused = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN, shot_name="refused")
         recovered = talk(card, run_dir, SPOKEN_HOLD_MS, card.mark(), speak=SPOKEN, shot_name="recovered")
         said = {message["clip"]: message["say"] for message in channel.collect()}
@@ -644,22 +649,28 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
                             "rejects": rejects, "heard_chars": {c: len(t) for c, t in said.items()},
                             "bridge_chars": chars,
                             "talk": [{k: v for k, v in got.items() if k != "shot"} for got in (refused, recovered)]})
-    assert rejects == [REFUSED_LINES[way]], rejects
+    assert rejects == [REFUSED_LINES[kind]] * times, rejects
     assert results == {"refused": ["sent"], "recovered": ["sent"]}, results
     assert sorted(said) == sorted(clips.values()) and all(len(said[c]) == chars[c] > 0 for c in said), (said, chars)
-    assert errors == {"refused": ["voice_image" if way == "image" else "voice"], "recovered": []}, errors
-    assert result_writes == {"refused": ["sent"], "recovered": ["sent"]}, result_writes
+    assert errors == {"refused": ["voice_image" if kind == "image" else "voice"] * times, "recovered": []}, errors
+    assert result_writes["recovered"] == ["sent"], result_writes
+    refused_screen = screens["refused"]
     if way == "image":
-        assert image_writes["refused"] == [0], image_writes
+        assert image_writes["refused"] == [0] and result_writes["refused"] == ["sent"], (image_writes, result_writes)
         assert refused["result"] == "sent", refused
-        assert screens["refused"]["header_ink"] == 0 and screens["refused"]["title_ink"] > 200, screens
+        assert refused_screen["header_ink"] == 0 and refused_screen["title_ink"] > 200, screens
     else:
         assert len(image_writes["refused"]) > 1 and image_writes["refused"][0] == 0, image_writes
+        assert result_writes["refused"] == ["sent", "sent"], result_writes
+    if way == "result":
+        assert refused["result"] == "sent" and refused["result_after_end_s"] < RETRIED_RESULT_S, refused
+        assert refused_screen["header_ink"] > 0 and refused_screen["image_ink"] == drawn[refused["clip"]] > 0, (
+            screens, drawn)
+    if way == "result-twice":
         assert refused["result"] == "timeout", refused
         assert RESULT_WAIT_S - 0.5 <= refused["result_after_end_s"] <= RESULT_WAIT_S + 1.0, refused
-        hint_ink = ink(refused["shot"]["pixels"], HINT_ROWS, VOICE_BACKGROUND)
-        assert screens["refused"]["header_ink"] == 0 and screens["refused"]["title_ink"] > 200 and hint_ink > 100, (
-            screens, hint_ink)
+        assert refused_screen["header_ink"] == 0 and refused_screen["title_ink"] > 200, screens
+        assert refused_screen["hint_ink"] > 100, screens
     assert recovered["result"] == "sent", recovered
     assert screens["recovered"]["header_ink"] > 0, screens
     assert screens["recovered"]["image_ink"] == drawn[recovered["clip"]] > 0, (screens, drawn)

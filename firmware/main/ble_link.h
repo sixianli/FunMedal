@@ -6,6 +6,8 @@
 
 #include "esp_err.h"
 
+#define BLE_REFUSE_MAX_TIMES 9
+
 typedef enum { BLE_REFUSE_NONE, BLE_REFUSE_IMAGE, BLE_REFUSE_VOICE } ble_refusal_t;
 
 esp_err_t ble_link_start(void);
@@ -19,4 +21,4 @@ void ble_link_security(char *out, size_t size);
 int ble_link_unpair(void);
 esp_err_t ble_link_forget_layout(void);
 uint16_t ble_link_changed_handle(void);
-void ble_link_refuse_next(ble_refusal_t what);
+void ble_link_refuse_next(ble_refusal_t what, int times);

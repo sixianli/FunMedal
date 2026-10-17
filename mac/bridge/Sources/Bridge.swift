@@ -74,6 +74,7 @@ struct CardWrite {
     let uuid: CBUUID
     let data: Data
     let what: [String: Any]
+    var retried = false
 }
 
 struct Handled {
@@ -397,11 +398,17 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    private func dropVoiceWrite() {
-        guard let failed = voiceWrites.first else { return }
+    private func keepFailedVoiceWrite() -> Bool {
+        guard let failed = voiceWrites.first else { return false }
+        if failed.uuid == voiceUUID, !failed.retried {
+            voiceWrites[0].retried = true
+            return true
+        }
         voiceWrites.removeFirst()
-        guard failed.uuid == voiceImageUUID, let clip = failed.data.first else { return }
-        voiceWrites.removeAll { $0.uuid == voiceImageUUID && $0.data.first == clip }
+        if failed.uuid == voiceImageUUID, let clip = failed.data.first {
+            voiceWrites.removeAll { $0.uuid == voiceImageUUID && $0.data.first == clip }
+        }
+        return false
     }
 
     private func conclude(_ current: Transcription, _ result: String, _ extra: [String: Any] = [:]) {
@@ -637,8 +644,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 cardState = nil
             } else if flight.uuid == promptUUID {
                 cardPrompt = nil
-            } else {
-                dropVoiceWrite()
+            } else if !keepFailedVoiceWrite() {
                 push()
                 return
             }

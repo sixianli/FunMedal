@@ -63,14 +63,24 @@ static _Atomic bool decision_subscribed;
 static _Atomic bool audio_subscribed;
 static _Atomic bool pairing;
 static _Atomic uint32_t numcmp_conn = BLE_HS_CONN_HANDLE_NONE;
-static _Atomic int refusal = BLE_REFUSE_NONE;
+static _Atomic uint32_t refusal;
 
 static void advertise(void);
 
+static uint32_t refusal_pack(ble_refusal_t what, uint32_t times)
+{
+    return what == BLE_REFUSE_NONE || times == 0 ? 0 : times << 8 | (uint32_t)what;
+}
+
 static bool take_refusal(ble_refusal_t what)
 {
-    int expected = what;
-    return atomic_compare_exchange_strong(&refusal, &expected, BLE_REFUSE_NONE);
+    uint32_t current = atomic_load(&refusal);
+    while ((current & 0xff) == (uint32_t)what) {
+        if (atomic_compare_exchange_weak(&refusal, &current, refusal_pack(what, (current >> 8) - 1))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static int state_write(struct ble_gatt_access_ctxt *ctxt)
@@ -614,9 +624,9 @@ uint16_t ble_link_changed_handle(void)
     return changed_handle;
 }
 
-void ble_link_refuse_next(ble_refusal_t what)
+void ble_link_refuse_next(ble_refusal_t what, int times)
 {
-    atomic_store(&refusal, what);
+    atomic_store(&refusal, refusal_pack(what, (uint32_t)times));
 }
 
 esp_err_t ble_link_forget_layout(void)

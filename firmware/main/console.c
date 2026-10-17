@@ -319,6 +319,12 @@ static void key_command(char *args)
     }
 }
 
+static void print_ble_usage(void)
+{
+    console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | "
+                   "ble reject image|voice [<1-%d>] | ble reject none\n", BLE_REFUSE_MAX_TIMES);
+}
+
 static void ble_decision_command(void)
 {
     char *id_text = strtok(NULL, " ");
@@ -328,7 +334,7 @@ static void ble_decision_command(void)
     bool allow = word != NULL && strcmp(word, "allow") == 0;
     bool valid = id_text != NULL && *end == '\0' && end != id_text && (allow || (word != NULL && strcmp(word, "deny") == 0));
     if (!valid || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
+        print_ble_usage();
         return;
     }
     if (!ble_link_send_decision((uint32_t)id, allow)) {
@@ -342,7 +348,7 @@ static void ble_layout_command(void)
 {
     char *word = strtok(NULL, " ");
     if (word == NULL || strcmp(word, "forget") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
+        print_ble_usage();
         return;
     }
     esp_err_t err = ble_link_forget_layout();
@@ -369,13 +375,23 @@ static bool refusal_from_name(const char *name, ble_refusal_t *what)
 static void ble_reject_command(void)
 {
     char *name = strtok(NULL, " ");
-    ble_refusal_t what;
-    if (!refusal_from_name(name, &what) || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
+    char *count = strtok(NULL, " ");
+    char *end = NULL;
+    long times = count != NULL ? strtol(count, &end, 10) : 1;
+    ble_refusal_t what = BLE_REFUSE_NONE;
+    bool named = refusal_from_name(name, &what);
+    bool counted = count == NULL || (what != BLE_REFUSE_NONE && end != count && *end == '\0' && times >= 1 &&
+                                     times <= BLE_REFUSE_MAX_TIMES);
+    if (!named || !counted || strtok(NULL, " ") != NULL) {
+        print_ble_usage();
         return;
     }
-    ble_link_refuse_next(what);
-    console_printf("OK ble reject %s\n", name);
+    ble_link_refuse_next(what, (int)times);
+    if (what == BLE_REFUSE_NONE) {
+        console_printf("OK ble reject none\n");
+    } else {
+        console_printf("OK ble reject %s %ld\n", name, times);
+    }
 }
 
 static void ble_command(char *args)
@@ -394,7 +410,7 @@ static void ble_command(char *args)
         return;
     }
     if (what == NULL || strcmp(what, "unpair") != 0 || strtok(NULL, " ") != NULL) {
-        console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | ble reject image|voice|none\n");
+        print_ble_usage();
         return;
     }
     int rc = ble_link_unpair();
