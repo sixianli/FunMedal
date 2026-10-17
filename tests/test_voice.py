@@ -151,11 +151,24 @@ def hook_as(bridge, claude_pid, payload):
     assert result.returncode == 0, result
 
 
+def built_in_speaker():
+    named = os.environ.get("FM_SAY_DEVICE")
+    if named:
+        return named
+    listing = subprocess.run(["say", "-a", "?"], capture_output=True, text=True, check=True).stdout
+    names = [line.split(None, 1)[1].strip() for line in listing.splitlines() if len(line.split(None, 1)) == 2]
+    built_in = [name for name in names if name.endswith("Speakers") or "Built-in" in name]
+    if not built_in:
+        pytest.fail(f"no built-in speaker among {names}; set FM_SAY_DEVICE to the device that reaches the card")
+    return built_in[0]
+
+
 def talk(card, run_dir, hold_ms, start, speak=None):
+    device = built_in_speaker() if speak else None
     press(card, "up", f"hold {hold_ms}")
     pressed, pressed_t, _ = card.wait_for(lambda line: line == "KEY press up", 2.0, start)
     started, _, began = wait_voice(card, VOICE_START, 2.0, pressed)
-    speaker = subprocess.Popen(["say", "-v", SPEAKING_VOICE, speak]) if speak else None
+    speaker = subprocess.Popen(["say", "-a", device, "-v", SPEAKING_VOICE, speak]) if speak else None
     ended, ended_t, end = wait_voice(card, VOICE_END, hold_ms / 1000 + 3.0, started)
     if speaker:
         speaker.wait(10.0)
@@ -163,7 +176,7 @@ def talk(card, run_dir, hold_ms, start, speak=None):
     shot = snapshot(card, run_dir, "result")
     wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
     return {"clip": int(began.group(1)), "packets": int(end.group(2)), "result": result.group(2),
-            "result_after_end_s": result_t - ended_t, "shot": shot}
+            "result_after_end_s": result_t - ended_t, "speaker": device, "shot": shot}
 
 
 def voice_log(bridge, kind):

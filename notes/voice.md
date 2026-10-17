@@ -130,7 +130,7 @@ VOICE_IMAGE 特征值 `6d2f1007-…`，Mac 在写 `sent` 结果之前，分几�
 
 ## 测试要覆盖的情况
 
-测试在 [tests/test_voice.py](../tests/test_voice.py)，压缩和解压在 [tests/host/test_voice_codec.c](../tests/host/test_voice_codec.c)。“测试自己当频道”指测试程序连上桥接程序的套接字、发 `listen`，收桥接程序送来的文字。
+测试在 [tests/test_voice.py](../tests/test_voice.py)，压缩和解压在 [tests/host/test_voice_codec.c](../tests/host/test_voice_codec.c)。要朗读的测试固定用 Mac 自带的扬声器播放（`say -a`，找名字以 `Speakers` 结尾或含 `Built-in` 的设备），不跟系统的默认输出走：默认输出是耳机时，卡片听不到。别的设备可以用环境变量 `FM_SAY_DEVICE` 指定。“测试自己当频道”指测试程序连上桥接程序的套接字、发 `listen`，收桥接程序送来的文字。
 
 | 编号 | 情况 | 期望 | 怎么测 |
 | --- | --- | --- | --- |
