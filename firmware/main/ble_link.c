@@ -167,7 +167,7 @@ static int voice_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctx
         console_event("BLE reject voice format\n");
         return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
     }
-    bool image = result == VOICE_RESULT_SENT && voice_image_complete(&incoming_image, clip);
+    bool image = result == VOICE_RESULT_QUEUED && voice_image_complete(&incoming_image, clip);
     voice_on_result(clip, result, image ? incoming_image.pixels : NULL);
     voice_image_reset(&incoming_image);
     return 0;

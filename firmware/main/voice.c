@@ -29,7 +29,9 @@
 #define VOICE_TASK_PRIORITY 5
 #define NOTIFY_PRESS (1u << 0)
 #define NOTIFY_RESULT (1u << 1)
+#define NOTIFY_FOLLOW (1u << 2)
 #define NO_CLIP (-1)
+#define NO_FOLLOW (-1)
 
 static const char *TAG = "voice";
 static i2c_master_dev_handle_t codec;
@@ -40,6 +42,8 @@ static atomic_bool held;
 static atomic_bool ready;
 static atomic_int awaited_clip = NO_CLIP;
 static atomic_int arrived_result;
+static atomic_int followed_clip = NO_CLIP;
+static atomic_int follow_up = NO_FOLLOW;
 static uint8_t next_clip;
 
 static esp_err_t codec_write(uint8_t reg, uint8_t value)
@@ -199,13 +203,41 @@ static uint32_t wait_for(uint32_t wanted, uint32_t limit_ms)
     }
 }
 
+static int take_follow_up(uint8_t clip)
+{
+    int value = atomic_exchange(&follow_up, NO_FOLLOW);
+    return value != NO_FOLLOW && (value >> 8) == clip ? value & 0xff : NO_FOLLOW;
+}
+
 static uint32_t show_result(uint8_t clip, voice_result_t result)
 {
-    console_event("VOICE result %u %s\n", clip, voice_result_name(result));
-    app_set_voice(SCENE_VOICE_RESULT, result);
-    uint32_t bits = wait_for(NOTIFY_PRESS, RESULT_SHOW_MS);
-    app_set_voice(SCENE_VOICE_NONE, result);
-    return bits;
+    for (;;) {
+        console_event("VOICE result %u %s\n", clip, voice_result_name(result));
+        if (result != VOICE_RESULT_QUEUED) {
+            atomic_store(&followed_clip, NO_CLIP);
+        }
+        app_set_voice(SCENE_VOICE_RESULT, result);
+        TickType_t shown = xTaskGetTickCount();
+        TickType_t limit = pdMS_TO_TICKS(RESULT_SHOW_MS);
+        uint32_t bits = 0;
+        int next = take_follow_up(clip);
+        while (next == NO_FOLLOW) {
+            TickType_t waited = xTaskGetTickCount() - shown;
+            if (waited >= limit) {
+                break;
+            }
+            bits = wait_for(NOTIFY_PRESS | NOTIFY_FOLLOW, pdTICKS_TO_MS(limit - waited));
+            if (bits == 0 || (bits & NOTIFY_PRESS)) {
+                break;
+            }
+            next = take_follow_up(clip);
+        }
+        if (next == NO_FOLLOW) {
+            app_set_voice(SCENE_VOICE_NONE, result);
+            return bits & NOTIFY_PRESS;
+        }
+        result = (voice_result_t)next;
+    }
 }
 
 static voice_result_t await_result(void)
@@ -218,11 +250,13 @@ static voice_result_t await_result(void)
 static uint32_t run_clip(void)
 {
     uint8_t clip = next_clip++;
+    atomic_store(&followed_clip, NO_CLIP);
+    atomic_store(&follow_up, NO_FOLLOW);
     app_set_voice_image(NULL);
     if (!ble_link_ready()) {
         return show_result(clip, VOICE_RESULT_OFFLINE);
     }
-    app_set_voice(SCENE_VOICE_LISTENING, VOICE_RESULT_SENT);
+    app_set_voice(SCENE_VOICE_LISTENING, VOICE_RESULT_QUEUED);
     xSemaphoreTake(mic_lock, portMAX_DELAY);
     uint32_t dropped;
     voice_end_reason_t reason;
@@ -230,7 +264,7 @@ static uint32_t run_clip(void)
     xSemaphoreGive(mic_lock);
     if (packets < SHORT_PACKETS) {
         console_event("VOICE short\n");
-        app_set_voice(SCENE_VOICE_NONE, VOICE_RESULT_SENT);
+        app_set_voice(SCENE_VOICE_NONE, VOICE_RESULT_QUEUED);
         return 0;
     }
     if (!ble_link_ready()) {
@@ -244,8 +278,18 @@ static uint32_t run_clip(void)
     dropped += !ble_link_send_audio(end, voice_end_packet(clip, (uint16_t)packets, reason, end));
     console_event("VOICE end %u packets=%d dropped=%lu reason=%s\n", clip, packets, (unsigned long)dropped,
                   reason == VOICE_END_LIMIT ? "limit" : "release");
-    app_set_voice(SCENE_VOICE_TRANSCRIBING, VOICE_RESULT_SENT);
+    app_set_voice(SCENE_VOICE_TRANSCRIBING, VOICE_RESULT_QUEUED);
     return show_result(clip, await_result());
+}
+
+static uint32_t show_follow_up(void)
+{
+    int clip = atomic_load(&followed_clip);
+    if (clip == NO_CLIP) {
+        return 0;
+    }
+    int next = take_follow_up((uint8_t)clip);
+    return next == NO_FOLLOW ? 0 : show_result((uint8_t)clip, (voice_result_t)next);
 }
 
 static void voice_task(void *arg)
@@ -253,8 +297,14 @@ static void voice_task(void *arg)
     for (;;) {
         uint32_t bits = 0;
         xTaskNotifyWait(0, UINT32_MAX, &bits, portMAX_DELAY);
-        while ((bits & NOTIFY_PRESS) && atomic_load(&held)) {
-            bits = run_clip();
+        for (;;) {
+            if ((bits & NOTIFY_PRESS) && atomic_load(&held)) {
+                bits = run_clip();
+            } else if (bits & NOTIFY_FOLLOW) {
+                bits = show_follow_up();
+            } else {
+                break;
+            }
         }
     }
 }
@@ -309,14 +359,22 @@ void voice_release(void)
 
 void voice_on_result(uint8_t clip, voice_result_t result, const uint8_t *pixels)
 {
-    if (!atomic_load(&ready) || atomic_load(&awaited_clip) != clip) {
+    if (!atomic_load(&ready)) {
         return;
     }
-    if (pixels != NULL) {
-        app_set_voice_image(pixels);
+    if (atomic_load(&awaited_clip) == clip) {
+        if (pixels != NULL) {
+            app_set_voice_image(pixels);
+        }
+        if (result == VOICE_RESULT_QUEUED) {
+            atomic_store(&followed_clip, clip);
+        }
+        atomic_store(&arrived_result, (int)result);
+        xTaskNotify(voice_task_handle, NOTIFY_RESULT, eSetBits);
+    } else if (result != VOICE_RESULT_QUEUED && atomic_load(&followed_clip) == clip) {
+        atomic_store(&follow_up, (int)clip << 8 | (int)result);
+        xTaskNotify(voice_task_handle, NOTIFY_FOLLOW, eSetBits);
     }
-    atomic_store(&arrived_result, (int)result);
-    xTaskNotify(voice_task_handle, NOTIFY_RESULT, eSetBits);
 }
 
 bool voice_capture(int packets, int gain, voice_packet_sink_t sink, void *context, voice_capture_stats_t *stats)

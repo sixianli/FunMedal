@@ -23,6 +23,8 @@
 #define VOICE_TITLE_TOP 110
 #define VOICE_HINT_TOP 170
 #define VOICE_IMAGE_TOP 60
+#define VOICE_TEXT_LINES 2
+#define VOICE_NOT_SENT "没送进去"
 
 typedef struct {
     const char *name;
@@ -30,6 +32,11 @@ typedef struct {
     uint32_t background[PET_FRAMES];
     uint32_t text;
 } state_style_t;
+
+typedef struct {
+    const char *title;
+    const char *lines[VOICE_TEXT_LINES];
+} voice_text_t;
 
 typedef struct {
     const font_t *font;
@@ -62,14 +69,17 @@ static const char *const PASSKEY_HINT = "在 Mac 上输入这串数字";
 static const char *const LISTENING = "在听";
 static const char *const LISTENING_HINT = "松开就发送";
 static const char *const TRANSCRIBING = "转文字中";
-static const char *const SENT = "已发送";
-static const char *const NOT_SENT = "没发出去";
-static const char *const NOT_SENT_REASONS[] = {
-    [VOICE_RESULT_EMPTY] = "没听清",
-    [VOICE_RESULT_NO_SESSION] = "没有能接收的会话",
-    [VOICE_RESULT_DENIED] = "Mac 没有语音识别权限",
-    [VOICE_RESULT_OFFLINE] = "没连上 Mac",
-    [VOICE_RESULT_TIMEOUT] = "Mac 没有回音",
+static const voice_text_t VOICE_TEXTS[] = {
+    [VOICE_RESULT_QUEUED] = {"已排队", {NULL, NULL}},
+    [VOICE_RESULT_SUBMITTED] = {"已送进去", {NULL, NULL}},
+    [VOICE_RESULT_EMPTY] = {VOICE_NOT_SENT, {"没听清", NULL}},
+    [VOICE_RESULT_NO_SESSION] = {"未连接", {"没有会话在收语音", "在电脑上发一句话再试"}},
+    [VOICE_RESULT_DENIED] = {VOICE_NOT_SENT, {"Mac 没有语音识别权限", NULL}},
+    [VOICE_RESULT_CLEARED] = {VOICE_NOT_SENT, {"刚才那句被停止清掉了", "请再说一遍"}},
+    [VOICE_RESULT_STOPPED] = {VOICE_NOT_SENT, {"你按过停止", "请先在电脑上打一句话"}},
+    [VOICE_RESULT_REFUSED] = {VOICE_NOT_SENT, {"Claude Code 没收下这句", NULL}},
+    [VOICE_RESULT_OFFLINE] = {VOICE_NOT_SENT, {"没连上 Mac", NULL}},
+    [VOICE_RESULT_TIMEOUT] = {VOICE_NOT_SENT, {"Mac 没有回音", NULL}},
 };
 static const char *const VOICE_NAMES[] = {
     [SCENE_VOICE_NONE] = "none",
@@ -286,12 +296,15 @@ static void render_voice(const scene_t *scene, int y0, int rows, uint16_t *out)
         add_centered(&runs, &font_text, LISTENING_HINT, VOICE_HINT_TOP);
     } else if (scene->voice == SCENE_VOICE_TRANSCRIBING) {
         add_centered(&runs, &font_large, TRANSCRIBING, VOICE_TITLE_TOP);
-    } else if (scene->voice_result == VOICE_RESULT_SENT) {
+    } else if (scene->voice_result == VOICE_RESULT_QUEUED || scene->voice_result == VOICE_RESULT_SUBMITTED) {
         image = scene->voice_image != NULL;
-        add_centered(&runs, &font_large, SENT, image ? HEADER_TOP : VOICE_TITLE_TOP);
+        add_centered(&runs, &font_large, VOICE_TEXTS[scene->voice_result].title, image ? HEADER_TOP : VOICE_TITLE_TOP);
     } else {
-        add_centered(&runs, &font_large, NOT_SENT, VOICE_TITLE_TOP);
-        add_centered(&runs, &font_text, NOT_SENT_REASONS[scene->voice_result], VOICE_HINT_TOP);
+        const voice_text_t *text = &VOICE_TEXTS[scene->voice_result];
+        add_centered(&runs, &font_large, text->title, VOICE_TITLE_TOP);
+        for (int i = 0; i < VOICE_TEXT_LINES && text->lines[i] != NULL; i++) {
+            add_centered(&runs, &font_text, text->lines[i], VOICE_HINT_TOP + i * (font_text.line_height + 4));
+        }
     }
     render_runs(&runs, VOICE_BACKGROUND, VOICE_TEXT, y0, rows, out);
     if (image) {

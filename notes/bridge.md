@@ -37,7 +37,7 @@
 3. 常驻的桥接程序记着每个会话的状态，算出卡片该显示哪一种。变了就用 BLE（低功耗蓝牙）写给卡片。
 4. 卡片的 USB 串口只在测试时用：测试从这里读回卡片收到了什么、显示了什么，平时不需要接 USB。
 
-桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。FM-15 起还有 `channel` 模式，是 Claude Code 为每个会话启动的频道服务器，同样不碰蓝牙，见 [voice.md](voice.md)。
+桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。FM-15 起还有 `channel` 模式，是 Claude Code 为每个会话启动的频道服务器，同样不碰蓝牙，见 [voice.md](voice.md)。OB-8 起还有 `listen` 模式和 `said` 命令，都由插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）运行：`listen` 收按住说话认出的文字，`said` 交回这句话进没进会话，同样不碰蓝牙，见 [voice.md](voice.md) 的“Mac 端”。
 
 ## 卡片怎么收状态
 
@@ -168,7 +168,7 @@ FM-14 起，`status` 打印的 JSON 多了几项：
 
 写给卡片的请求只记编号，不记内容。
 
-FM-15 起 `status` 和记录里和语音有关的几项见 [voice.md](voice.md) 的“Mac 端”。
+FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 和 `voice_followed`）见 [voice.md](voice.md) 的“Mac 端”。
 
 ## 实测结果
 

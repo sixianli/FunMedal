@@ -6,7 +6,7 @@ FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240
 
 - **看一眼就知道状态**：卡片上的像素小人显示 Claude Code 正在干活、等你批准、做完了、出错了，还是空闲。
 - **在卡片上批准或拒绝**：Claude Code 要你批准一个操作时，卡片显示工具名和命令。长按右侧最上面的键批准，按一下右侧最下面的键拒绝。终端里的批准弹窗照样在，哪边先答算哪边。
-- **按住说话**：按住右侧中间的键说一句短指令，松开后 Mac 用离线语音识别转成文字，送进最近需要你的那个 Claude Code 会话（只算按第 7 步带频道启动的会话）。卡片显示送进去的那句话。
+- **按住说话**：按住右侧中间的键说一句短指令，松开后 Mac 用离线语音识别转成文字，送进最近需要你的那个 Claude Code 会话，就像你在电脑上打了这句话。卡片先显示“已排队”和认出的文字，送进去后显示“已送进去”，没送进去时说明原因。
 
 ## 需要什么
 
@@ -16,7 +16,7 @@ FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240
 | Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到蓝牙和离线语音识别，都是 macOS 自带的 |
 | Xcode 命令行工具 | 提供 `swiftc`（Swift 编译器），用来编译桥接程序 |
 | ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境，用来编译和烧录卡片固件，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
-| Claude Code | 要 2.1.292 或更新的版本，`install.sh` 会检查；本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话要用到 Channels（“频道”：一个 MCP 服务器往运行中的会话推消息），要求 2.1.80 以上，并且用 claude.ai 账号登录 |
+| Claude Code | 要 2.1.292 或更新的版本，`install.sh` 会检查；本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话靠插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）把话送进会话 |
 | Python 3 | 只有跑测试时需要 |
 
 ## 安装
@@ -69,7 +69,7 @@ sh install.sh
 
 - 查 Claude Code 的版本。低于 2.1.292 时它会停下，让你先把 Claude Code 升级到最新版。
 - 把编译好的桥接程序复制到 `~/Applications/FunMedalBridge.app`。每次重新编译后都要再运行一次 `install.sh`，把新版本复制过去。
-- 把这个仓库加为 Claude Code 的插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。插件里是 hooks（Claude Code 在各种事件发生时运行的外部命令），它们运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。
+- 把这个仓库加为 Claude Code 的插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。插件里是 hooks（Claude Code 在各种事件发生时运行的外部命令）和一个 mod（在 Claude Code 进程里运行的一段 JavaScript 程序），它们都运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。hooks 把会话的状态和批准请求交给桥接程序；mod 在每个会话开始时接上桥接程序，把卡片上说的话当作你打的字送进会话。
 
 插件直接从仓库目录加载，装好后不要挪动仓库；要挪，先卸载插件、重开会话。已经开着的 Claude Code 会话要重开，才会用上插件。
 
@@ -107,23 +107,6 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 open -n -W ~/Applications/FunMedalBridge.app --args speech-access
 ```
 
-### 6. 接上按住说话的频道
-
-把频道服务器写进一个单独的 MCP 配置文件，比如 `~/.config/funmedal/mcp.json`：
-
-```json
-{"mcpServers": {"funmedal": {"command": "<仓库路径>/mac/bridge/build/FunMedalBridge.app/Contents/MacOS/funmedal-bridge",
-                             "args": ["channel"]}}}
-```
-
-自己写的频道只能用开发参数加载。要用按住说话时，这样启动 Claude Code，并在警告里选“1. I am using this for local development”：
-
-```bash
-claude --mcp-config ~/.config/funmedal/mcp.json --dangerously-load-development-channels server:funmedal
-```
-
-不要把频道服务器写进 `~/.claude.json` 或项目的 `.mcp.json`：那样不带开发参数的会话也会启动它，桥接程序可能把话送进一个不接收频道消息的会话，原因见 [notes/voice.md](notes/voice.md) 的“怎么配置”。不用按住说话时照常启动 `claude`，状态显示和卡片批准照常能用。
-
 ## 怎么用
 
 | 卡片上 | 做什么 |
@@ -131,7 +114,7 @@ claude --mcp-config ~/.config/funmedal/mcp.json --dangerously-load-development-c
 | 看屏幕 | 小人的样子和下面的字告诉你 Claude Code 现在的状态 |
 | 等你批准时长按右侧最上面的键 | 批准屏幕上的那个操作 |
 | 等你批准时按一下右侧最下面的键 | 拒绝它，Claude 会收到“在卡片上拒绝了” |
-| 按住右侧中间的键说话，松开 | 把这句话送进带频道启动的会话里最近需要你的那个：你刚给它发过指令、它刚答完、或者它刚请你批准；按住不到 0.5 秒算误触，最长 15 秒 |
+| 按住右侧中间的键说话，松开 | 把这句话送进最近需要你的那个会话：你刚给它发过指令、它刚答完、或者它刚请你批准；按住不到 0.5 秒算误触，最长 15 秒 |
 
 左侧的键不接芯片的任何引脚，本项目的固件用不到它。
 
@@ -184,8 +167,8 @@ FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tes
 
 - 桥接程序每次重新编译后，macOS 都要你重新允许蓝牙和语音识别。
 - 卡片固件和桥接程序要一起更新：新的桥接程序找不到旧固件里没有的语音特征值时，会断开重连，状态显示和批准也用不了；记录里是 `characteristic_missing`。
-- 按住说话依赖 Claude Code 的开发频道参数，每次启动都要带上。
-- 按住说话时，Mac 把结果写给卡片如果连续两次蓝牙出错（桥接程序只重写一次），文字其实已经送进会话，卡片却会显示“没发出去 / Mac 没有回音”。看到这句时先看终端里会话有没有收到，再决定要不要重说，见 [notes/voice.md](notes/voice.md) 的“还没做的”。
+- 在电脑上按过停止（终端里按 Esc，桌面 App 里点停止）之后，Claude Code 2.1.299 起不收插件送来的话，卡片显示“没送进去 / 你按过停止”，要先在电脑上打一句话。停止时还排着的话会被清掉，卡片显示“没送进去 / 刚才那句被停止清掉了”。
+- 按住说话时，Mac 把结果写给卡片如果连续两次蓝牙出错（桥接程序只重写一次），文字其实已经送进会话，卡片却会显示“没送进去 / Mac 没有回音”。看到这句时先看终端里会话有没有收到，再决定要不要重说，见 [notes/voice.md](notes/voice.md) 的“还没做的”。
 - 卡片还不会睡眠省电，也不读电池电量；原厂的电子名片功能不保留，要用就写回原厂固件。
 - 附近有两张卡片时，桥接程序会连第一张搜到的，这种情况没有实测，见 [notes/bridge.md](notes/bridge.md) 的“还没做的”。
 

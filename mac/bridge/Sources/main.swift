@@ -101,8 +101,8 @@ func hold(_ listener: Listener, reader: LineReader, bridge: Bridge) {
     }
 }
 
-func ask(socket: String, op: String) -> Int32 {
-    guard let reply = UnixSocket.request(socket, ["op": op], timeoutSeconds: clientTimeoutSeconds) else {
+func ask(socket: String, _ message: [String: Any]) -> Int32 {
+    guard let reply = UnixSocket.request(socket, message, timeoutSeconds: clientTimeoutSeconds) else {
         FileHandle.standardError.write(Data("funmedal-bridge: no bridge is running on \(socket)\n".utf8))
         return 1
     }
@@ -115,14 +115,16 @@ func ask(socket: String, op: String) -> Int32 {
 
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: funmedal-bridge serve|hook|channel|status|quit|speech-access [--socket PATH] [--log PATH] "
-    + "[--wait-limit SECONDS] [--voice-locale LOCALE]"
+let usage = "usage: funmedal-bridge serve|hook|channel|listen|said|status|quit|speech-access [--socket PATH] "
+    + "[--log PATH] [--wait-limit SECONDS] [--voice-locale LOCALE] [--clip NUMBER] [--result WORD]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
 var logPath: String?
 var waitLimit = Hook.defaultWaitLimit
 var voiceLocale = Voice.localeIdentifier
+var saidClip: String?
+var saidResult: String?
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
     guard !arguments.isEmpty else { fail("\(option) needs a value", usageExit) }
@@ -135,6 +137,8 @@ while !arguments.isEmpty {
         }
         waitLimit = seconds
     case "--voice-locale": voiceLocale = arguments.removeFirst()
+    case "--clip": saidClip = arguments.removeFirst()
+    case "--result": saidResult = arguments.removeFirst()
     default: fail("unknown option \(option)", usageExit)
     }
 }
@@ -147,10 +151,17 @@ case "hook":
     exit(0)
 case "channel":
     Channel.run(socket: socketPath)
+case "listen":
+    Listen.run(socket: socketPath)
+case "said":
+    guard let saidClip, let clip = UInt8(saidClip), let saidResult, Bridge.saidResults.contains(saidResult) else {
+        fail("said needs --clip 0-255 and --result \(Bridge.saidResults.sorted().joined(separator: "|"))", usageExit)
+    }
+    exit(ask(socket: socketPath, ["op": "said", "clip": Int(clip), "result": saidResult]))
 case "speech-access":
     exit(Voice.access(reportTo: logPath, locale: voiceLocale))
 case "status", "quit":
-    exit(ask(socket: socketPath, op: mode))
+    exit(ask(socket: socketPath, ["op": mode]))
 default:
     fail("unknown mode \(mode)", usageExit)
 }

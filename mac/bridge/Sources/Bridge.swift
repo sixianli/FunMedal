@@ -63,10 +63,12 @@ final class Approval {
 final class Listener {
     let pid: Int
     let fd: Int32
+    let reportsResults: Bool
 
-    init(pid: Int, fd: Int32) {
+    init(pid: Int, fd: Int32, reportsResults: Bool) {
         self.pid = pid
         self.fd = fd
+        self.reportsResults = reportsResults
     }
 }
 
@@ -96,6 +98,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let attentionEvents: Set<String> = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop",
                                                "StopFailure"]
     static let activityLimit = 32
+    static let saidResults: Set<String> = ["submitted", "cleared", "stopped", "refused"]
 
     let queue = DispatchQueue(label: "funmedal.bridge")
     let socketPath: String
@@ -117,6 +120,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var inFlight: (uuid: CBUUID, value: String)?
     private var counts: [String: Int] = [:]
     private var listeners: [Listener] = []
+    private var waiting: [UInt8: Listener] = [:]
     private var lastActive: [Int: Date] = [:]
     private var transcription: Transcription?
     private var voiceWrites: [CardWrite] = []
@@ -189,6 +193,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 return approve(message, client: client)
             case "listen":
                 return listen(message, client: client)
+            case "said":
+                return Handled(reply: said(message), approval: nil, quit: false)
             case "status":
                 return Handled(reply: status(), approval: nil, quit: false)
             case "quit":
@@ -212,6 +218,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         queue.sync {
             listeners.removeAll { $0 === listener }
             log.write("unlisten", ["pid": listener.pid])
+            for clip in waiting.filter({ $0.value === listener }).keys.sorted() {
+                waiting[clip] = nil
+                follow(clip, "no_session", pid: listener.pid)
+            }
         }
     }
 
@@ -296,11 +306,30 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard let pid = message["claude_pid"] as? Int, pid > 0 else {
             return Handled(reply: reject("listen needs a claude_pid"))
         }
-        let listener = Listener(pid: pid, fd: client)
+        let listener = Listener(pid: pid, fd: client, reportsResults: message["reports_results"] as? Bool == true)
         listeners.append(listener)
-        log.write("listen", ["pid": pid])
+        log.write("listen", ["pid": pid, "reports_results": listener.reportsResults])
         if let data = Hook.line(["ok": true]) { _ = UnixSocket.writeAll(client, data) }
         return Handled(reply: nil, listener: listener)
+    }
+
+    private func said(_ message: [String: Any]) -> [String: Any] {
+        guard let number = message["clip"] as? Int, let clip = UInt8(exactly: number),
+              let result = message["result"] as? String, Bridge.saidResults.contains(result) else {
+            return reject("said needs a clip and one of \(Bridge.saidResults.sorted().joined(separator: ", "))")
+        }
+        guard let listener = waiting.removeValue(forKey: clip) else {
+            return reject("clip \(clip) is not waiting for a result")
+        }
+        follow(clip, result, pid: listener.pid)
+        return ["ok": true]
+    }
+
+    private func follow(_ clip: UInt8, _ result: String, pid: Int) {
+        voiceWrites.append(CardWrite(uuid: voiceUUID, data: Data("\(clip)\t\(result)".utf8),
+                                     what: ["what": "voice", "clip": Int(clip), "result": result]))
+        log.write("voice_followed", ["clip": Int(clip), "result": result, "pid": pid])
+        push()
     }
 
     private func target() -> Listener? {
@@ -379,7 +408,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             queueImage(image.pixels, clip: current.clip)
             fields["ink"] = image.ink
         }
-        conclude(current, "sent", fields)
+        if listener.reportsResults { waiting[current.clip] = listener }
+        conclude(current, "queued", fields)
     }
 
     private func queueImage(_ pixels: Data, clip: UInt8) {
@@ -485,6 +515,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "acks": counts["acks", default: 0],
             "connects": counts["connects", default: 0],
             "channels": listeners.map(\.pid),
+            "waiting": waiting.keys.sorted().map { Int($0) },
             "speech": Voice.name(SFSpeechRecognizer.authorizationStatus()),
             "voice": counts["voice", default: 0],
         ]

@@ -12,10 +12,14 @@ static const int16_t STEP_SIZES[89] = {
 };
 static const int8_t INDEX_CHANGE[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
 static const char *const RESULT_NAMES[] = {
-    [VOICE_RESULT_SENT] = "sent",
+    [VOICE_RESULT_QUEUED] = "queued",
+    [VOICE_RESULT_SUBMITTED] = "submitted",
     [VOICE_RESULT_EMPTY] = "empty",
     [VOICE_RESULT_NO_SESSION] = "no_session",
     [VOICE_RESULT_DENIED] = "denied",
+    [VOICE_RESULT_CLEARED] = "cleared",
+    [VOICE_RESULT_STOPPED] = "stopped",
+    [VOICE_RESULT_REFUSED] = "refused",
     [VOICE_RESULT_OFFLINE] = "offline",
     [VOICE_RESULT_TIMEOUT] = "timeout",
 };
@@ -116,7 +120,7 @@ bool voice_result_parse(const char *data, size_t len, uint8_t *clip, voice_resul
     }
     const char *word = tab + 1;
     size_t word_len = len - (size_t)(word - data);
-    for (int i = VOICE_RESULT_SENT; i <= VOICE_RESULT_DENIED; i++) {
+    for (int i = VOICE_RESULT_QUEUED; i <= VOICE_RESULT_REFUSED; i++) {
         if (strlen(RESULT_NAMES[i]) == word_len && memcmp(word, RESULT_NAMES[i], word_len) == 0) {
             *result = (voice_result_t)i;
             return true;

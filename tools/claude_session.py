@@ -29,10 +29,11 @@ def squeeze(text: str) -> str:
 
 
 class ClaudeSession:
-    def __init__(self, workdir: Path, settings: Path, out: Path, model: str = "haiku", plugin_dirs=(), env=None):
+    def __init__(self, workdir: Path, settings: Path, out: Path, model: str = "haiku", plugin_dirs=(), env=None,
+                 program: str = "claude"):
         self.workdir = Path(workdir)
         self.out = Path(out)
-        self.argv = ["claude", "--setting-sources", "project", "--settings", str(settings),
+        self.argv = [program, "--setting-sources", "project", "--settings", str(settings),
                      "--model", model, "--permission-mode", "default"]
         for folder in plugin_dirs:
             self.argv += ["--plugin-dir", str(folder)]

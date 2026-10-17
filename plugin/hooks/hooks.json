@@ -1,4 +1,7 @@
 {
+  "modules": [
+    "./voice.js"
+  ],
   "hooks": {
     "SessionStart": [
       {

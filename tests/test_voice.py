@@ -24,7 +24,7 @@ MIC_LINE = re.compile(r"MIC (\d+) ([0-9a-f]+)$")
 VOICE_START = re.compile(r"VOICE start (\d+)$")
 VOICE_END = re.compile(r"VOICE end (\d+) packets=(\d+) dropped=(\d+) reason=(\w+)$")
 VOICE_RESULT = re.compile(r"VOICE result (\d+) (\w+)$")
-CARD_RESULTS = {"sent", "empty", "no_session", "denied", "offline", "timeout"}
+CARD_RESULTS = {"queued", "empty", "no_session", "denied", "offline", "timeout"}
 VOICE_BACKGROUND = cardlink.rgb888_to_565_rgb(0x5A189A)
 PACKET_S = voice_audio.SAMPLES_PER_PACKET / voice_audio.SAMPLE_RATE
 SHORT_S = 0.5
@@ -568,10 +568,10 @@ def test_voice_spoken(case, card, bridge, run_dir):
                             "lines": voice_lines(card, start), "writes": voice_log(bridge, "write")})
     assert sorted(status["channels"]) == [1111, 2222], status
     assert spoke_before_release(got), got
-    assert got["result"] == "sent", got
+    assert got["result"] == "queued", got
     assert [m["clip"] for m in said["newer"]] == [got["clip"]] and said["older"] == [], said
     assert SPOKEN_KEYWORD in heard, heard
-    assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
+    assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "queued", 1111)], results
     assert results[0]["chars"] == len(heard) and image_ink == results[0]["ink"] > 0, (results, image_ink)
     assert heard not in log_text and SPOKEN not in log_text
 
@@ -605,11 +605,11 @@ def test_voice_after_restart(case, card, bridge, run_dir):
     assert len(voice_log(bridge, "start")) == 2, results
     assert status["channels"] == [2222, 1111, 3333], status
     assert spoke_before_release(got), got
-    assert got["result"] == "sent", got
+    assert got["result"] == "queued", got
     assert {name: [m["clip"] for m in messages] for name, messages in said.items()} == \
         {"older_first": [], "needed": [got["clip"]], "never_needed_last": []}, said
     assert SPOKEN_KEYWORD in said["needed"][0]["say"], said
-    assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "sent", 1111)], results
+    assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "queued", 1111)], results
 
 
 def card_writes(bridge, kind, what, clip):
@@ -688,21 +688,21 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
                             "talk": [{k: v for k, v in got.items() if k != "shot"} for got in (refused, recovered)]})
     assert cleared == "OK ble reject none", cleared
     assert rejects == [REFUSED_LINES[kind]] * times, rejects
-    assert results == {"refused": ["sent"], "recovered": ["sent"]}, results
+    assert results == {"refused": ["queued"], "recovered": ["queued"]}, results
     assert sorted(said) == sorted(clips.values()) and all(len(said[c]) == chars[c] > 0 for c in said), (said, chars)
     assert errors == {"refused": ["voice_image" if kind == "image" else "voice"] * times, "recovered": []}, errors
-    assert result_writes["recovered"] == ["sent"], result_writes
+    assert result_writes["recovered"] == ["queued"], result_writes
     refused_screen = screens["refused"]
     if way == "image":
-        assert image_writes["refused"] == [0] and result_writes["refused"] == ["sent"], (image_writes, result_writes)
-        assert refused["result"] == "sent", refused
+        assert image_writes["refused"] == [0] and result_writes["refused"] == ["queued"], (image_writes, result_writes)
+        assert refused["result"] == "queued", refused
         assert refused_screen["header_ink"] == 0 and refused_screen["title_ink"] > 200, screens
     else:
         assert len(image_writes["refused"]) > 1 and image_writes["refused"][0] == 0, image_writes
-        assert result_writes["refused"] == ["sent", "sent"], result_writes
+        assert result_writes["refused"] == ["queued", "queued"], result_writes
         assert len(retry_waits) == 1 and RETRY_WAIT_S[0] <= retry_waits[0] < RETRY_WAIT_S[1], retry_waits
     if way == "result":
-        assert refused["result"] == "sent" and refused["result_after_end_s"] < RETRIED_RESULT_S, refused
+        assert refused["result"] == "queued" and refused["result_after_end_s"] < RETRIED_RESULT_S, refused
         assert refused_screen["header_ink"] > 0 and refused_screen["image_ink"] == drawn[refused["clip"]] > 0, (
             screens, drawn)
     if way == "result-twice":
@@ -710,7 +710,7 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
         assert RESULT_WAIT_S - 0.5 <= refused["result_after_end_s"] <= RESULT_WAIT_S + 1.0, refused
         assert refused_screen["header_ink"] == 0 and refused_screen["title_ink"] > 200, screens
         assert refused_screen["hint_ink"] > 100, screens
-    assert recovered["result"] == "sent", recovered
+    assert recovered["result"] == "queued", recovered
     assert screens["recovered"]["header_ink"] > 0, screens
     assert screens["recovered"]["image_ink"] == drawn[recovered["clip"]] > 0, (screens, drawn)
 
@@ -741,5 +741,5 @@ def test_person_speaks(case, card, bridge, run_dir):
     write_summary(run_dir, {"note": "only the agreed test phrase is spoken", "tries": tries, "injected": injected,
                             "results": voice_log(bridge, "voice_result")})
     assert injected == [], injected
-    assert [attempt["result"] for attempt in tries] == ["sent"] * PERSON_TRIES, tries
+    assert [attempt["result"] for attempt in tries] == ["queued"] * PERSON_TRIES, tries
     assert all(SPOKEN_KEYWORD in attempt["heard"] for attempt in tries), tries

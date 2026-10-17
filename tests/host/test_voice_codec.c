@@ -220,20 +220,27 @@ static void expect_result(const char *what, const char *data, bool ok, uint8_t c
 
 static void results(void)
 {
-    expect_result("sent", "7\tsent", true, 7, VOICE_RESULT_SENT);
+    expect_result("queued", "7\tqueued", true, 7, VOICE_RESULT_QUEUED);
+    expect_result("submitted", "7\tsubmitted", true, 7, VOICE_RESULT_SUBMITTED);
     expect_result("empty", "0\tempty", true, 0, VOICE_RESULT_EMPTY);
     expect_result("no session", "255\tno_session", true, 255, VOICE_RESULT_NO_SESSION);
     expect_result("denied", "12\tdenied", true, 12, VOICE_RESULT_DENIED);
-    expect_result("clip above 255", "256\tsent", false, 0, VOICE_RESULT_SENT);
-    expect_result("no clip", "\tsent", false, 0, VOICE_RESULT_SENT);
-    expect_result("clip with a sign", "+1\tsent", false, 0, VOICE_RESULT_SENT);
-    expect_result("no tab", "1 sent", false, 0, VOICE_RESULT_SENT);
-    expect_result("unknown word", "1\tok", false, 0, VOICE_RESULT_SENT);
-    expect_result("card-only word", "1\toffline", false, 0, VOICE_RESULT_SENT);
-    expect_result("trailing bytes", "1\tsent\n", false, 0, VOICE_RESULT_SENT);
-    expect_result("empty value", "", false, 0, VOICE_RESULT_SENT);
-    const char *names[] = {"sent", "empty", "no_session", "denied", "offline", "timeout"};
-    for (int i = 0; i < 6; i++) {
+    expect_result("cleared", "3\tcleared", true, 3, VOICE_RESULT_CLEARED);
+    expect_result("stopped", "4\tstopped", true, 4, VOICE_RESULT_STOPPED);
+    expect_result("refused", "5\trefused", true, 5, VOICE_RESULT_REFUSED);
+    expect_result("the old word for queued", "7\tsent", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("clip above 255", "256\tqueued", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("no clip", "\tqueued", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("clip with a sign", "+1\tqueued", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("no tab", "1 queued", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("unknown word", "1\tok", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("card-only word offline", "1\toffline", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("card-only word timeout", "1\ttimeout", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("trailing bytes", "1\tqueued\n", false, 0, VOICE_RESULT_QUEUED);
+    expect_result("empty value", "", false, 0, VOICE_RESULT_QUEUED);
+    const char *names[] = {"queued", "submitted", "empty", "no_session", "denied",
+                           "cleared", "stopped", "refused", "offline", "timeout"};
+    for (int i = 0; i < 10; i++) {
         if (strcmp(voice_result_name((voice_result_t)i), names[i]) != 0) {
             fail("result name", names[i]);
         }

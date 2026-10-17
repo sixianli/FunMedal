@@ -236,6 +236,7 @@ def test_plugin_session(case, card, bridge, run_dir):
     assert summary["argv"][1:3] == ["--setting-sources", "project"], summary
     assert summary["argv"][summary["argv"].index("--plugin-dir") + 1] == str(PLUGIN), summary
     assert summary["status_through_env"]["pid"] == summary["bridge_pid"], summary
-    assert [h["command"] for h in summary["waiting_hooks"]] == [f"{INSTALLED_BRIDGE} hook"], summary
+    assert sorted(h["command"] for h in summary["waiting_hooks"]) == [f"{INSTALLED_BRIDGE} hook",
+                                                                       f"{INSTALLED_BRIDGE} listen"], summary
     assert summary["states"] == ["working", "waiting", "working", "done", "idle"], summary
     assert [(a["decision"], a["why"]) for a in summary["answers"]] == [("allow", "card")], summary

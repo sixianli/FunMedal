@@ -29,6 +29,8 @@ BRIDGE = APP / "Contents" / "MacOS" / "funmedal-bridge"
 INSTALLED_APP = Path.home() / "Applications" / "FunMedalBridge.app"
 INSTALLED_BRIDGE = INSTALLED_APP / "Contents" / "MacOS" / "funmedal-bridge"
 PLUGIN = ROOT / "plugin"
+APP_CLAUDES = Path.home() / "Library" / "Application Support" / "Claude" / "claude-code"
+CLAUDE_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+) ")
 HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
                "PostToolUseFailure", "Stop", "StopFailure", "SessionEnd"]
 HOOK_TIMEOUT_S = 5
@@ -314,18 +316,35 @@ def bridge(card, run_dir):
     instance.activity.unlink(missing_ok=True)
 
 
-def write_settings(path: Path):
-    path.write_text(json.dumps({"sandbox": {"enabled": False}}, indent=2) + "\n", encoding="utf-8")
+def write_settings(path: Path, extra=None):
+    path.write_text(json.dumps({"sandbox": {"enabled": False}, **(extra or {})}, indent=2) + "\n", encoding="utf-8")
+
+
+def claude_version(program):
+    done = subprocess.run([program, "--version"], capture_output=True, text=True, timeout=60)
+    found = CLAUDE_VERSION.match(done.stdout)
+    return tuple(int(part) for part in found.groups()) if done.returncode == 0 and found else None
+
+
+def newest_claude():
+    bundled = glob.glob(str(APP_CLAUDES / "*" / "*" / "claude.app" / "Contents" / "MacOS" / "claude"))
+    found = [(claude_version(program), program) for program in [shutil.which("claude"), *bundled] if program]
+    readable = [pair for pair in found if pair[0] is not None]
+    if not readable:
+        pytest.fail(f"no runnable Claude Code found among {found}")
+    version, program = max(readable)
+    return program, version
 
 
 @contextmanager
-def real_session(bridge, run_dir):
+def real_session(bridge, run_dir, settings_extra=None, program="claude"):
     require_installed_bridge()
     bridge.start()
     settings = run_dir / "settings.json"
-    write_settings(settings)
+    write_settings(settings, settings_extra)
     workdir = Path(tempfile.mkdtemp(prefix="fm-claude-"))
-    session = ClaudeSession(workdir, settings, run_dir, plugin_dirs=[PLUGIN], env={"FUNMEDAL_SOCKET": bridge.socket})
+    session = ClaudeSession(workdir, settings, run_dir, plugin_dirs=[PLUGIN], env={"FUNMEDAL_SOCKET": bridge.socket},
+                            program=program)
     session.start()
     try:
         yield session, workdir / "fm-marker.txt"
