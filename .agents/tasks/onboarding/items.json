@@ -118,6 +118,34 @@
         "on": "2026-10-17",
         "why": "G7 用户认为 Claude 想方案不够全面，要求和多个免费模型头脑风暴"
       }
+    },
+    {
+      "id": "OB-5",
+      "title": "桌面 App 复查：按过 Stop 之后 mod 送的话为什么被丢掉，清空对话或新开会话能不能恢复",
+      "goal_ref": [
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G11",
+          "question": "按过 Stop 之后 mod 送的话会被丢掉，下一步怎么办？"
+        },
+        {
+          "type": "doc",
+          "path": "notes/onboarding.md",
+          "heading": "按 Stop 之后丢话的复查"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "OB-3 发现按过 Stop 之后 mod 送的话都被丢掉，G11 用户选择再在桌面 App 测一次"
+      }
     }
   ]
 }

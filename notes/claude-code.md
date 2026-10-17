@@ -35,7 +35,7 @@
 
 ## 语音怎么变成指令
 
-- 往**已经在运行**的交互会话里塞一条新消息，做 FM-15 时官方文档里能找到的办法只有 Channels（桥发 `notifications/claude/channel`，Claude 会把它当成一条 `<channel>` 事件收到）。2026-10-17 起还有插件里的 mod（在 Claude Code 内部运行的一段 JavaScript）：它的 `$.prompt.submit({ text, asUser: true })` 能把文字当作用户的话送进会话，不需要开发参数，见 [onboarding.md](onboarding.md) 的“mod 实验”。在 Claude 桌面 App 里也能用，但按过 Stop 之后，这个会话里 mod 送的话都被丢掉，见同一文件的“桌面 App 里的 mod 实验”。
+- 往**已经在运行**的交互会话里塞一条新消息，做 FM-15 时官方文档里能找到的办法只有 Channels（桥发 `notifications/claude/channel`，Claude 会把它当成一条 `<channel>` 事件收到）。2026-10-17 起还有插件里的 mod（在 Claude Code 内部运行的一段 JavaScript）：它的 `$.prompt.submit({ text, asUser: true })` 能把文字当作用户的话送进会话，不需要开发参数，见 [onboarding.md](onboarding.md) 的“mod 实验”。在 Claude 桌面 App 里也能用，但按过 Stop 之后，这个会话里 mod 送的话都被丢掉，见同一文件的“桌面 App 里的 mod 实验”。这是 Claude Code 2.1.299 引擎自己的规则（2.1.292 还没有）：用户亲手打一句话之后才恢复；桌面 App 里的 `/clear` 还会结束整个 Claude Code 进程，mod 要等新进程启动才重新运行。见同一文件的“按 Stop 之后丢话的复查”。
 - 其他办法都不合适：Remote Control 只认 claude.ai 网页和手机 App，不是给第三方设备用的接口；`claude -p` 和 Agent SDK 只能控制桥自己启动的会话；`claude --resume <会话> "指令"` 会把终端接管过去，不适合脚本调用。
 - 新版本还有跨会话消息接口（`CLAUDE_CODE_MESSAGING_SOCKET`，v2.1.224 以上），但文档没写清楚消息格式，暂不采用。
 

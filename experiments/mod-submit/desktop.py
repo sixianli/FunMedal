@@ -1,5 +1,7 @@
 import argparse
 import json
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -20,7 +22,19 @@ TEXTS = {
     "after_reply": "桌面实验八：按过 Stop、又正常发过一句话之后送入。请只回复：收到八",
     "clear": "桌面实验四：清空对话之后送入。请只回复：收到四",
     "hold": "桌面实验五：会话开了 5 分钟之后送入。请只回复：收到五",
+    "re_idle": "复查一：新会话空闲时送入。请只回复：收到一",
+    "re_approval": "复查二：批准框挂着时送入，之后会按 Stop。请只回复：收到二",
+    "re_after_stop": "复查三：按过 Stop 之后、会话空闲时送入。请只回复：收到三",
+    "re_after_clear": "复查四：按过 Stop、又清空对话之后送入。请只回复：收到四",
+    "re_new_session": "复查五：另开的新会话里送入。请只回复：收到五",
+    "re_after_busy_stop": "复查六：Claude 干活时按 Stop（没有批准框）之后送入。请只回复：收到六",
+    "re_after_peer": "复查七：按过 Stop、另一个会话发来消息之后送入。请只回复：收到七",
+    "re_after_typed": "复查八：按过 Stop、你在输入框发过一句话之后送入。请只回复：收到八",
+    "re_after_restop": "复查九：恢复之后又按一次 Stop，再送入。请只回复：收到九",
+    "re_b_after_clear": "复查十：新会话里按过 Stop、又清空对话之后送入。请只回复：收到十",
 }
+RECHECK = ("re_idle", "re_approval", "re_after_stop", "re_after_peer", "re_after_typed", "re_after_restop",
+           "re_after_clear", "re_new_session", "re_after_busy_stop", "re_b_after_clear")
 
 
 def append(path: Path, row: dict) -> None:
@@ -94,6 +108,12 @@ def resolution(events: list[dict], label: str):
         events, event="submit.rejected", text=TEXTS[label])
 
 
+def entered(events: list[dict], label: str) -> bool:
+    r = resolution(events, label)
+    return bool(r and r["event"] == "submit.resolved" and not r.get("dropped")
+                and first(events, event="turn.start", text=TEXTS[label]))
+
+
 def transcript(session_id: str | None) -> dict:
     if not session_id:
         return {"found": False}
@@ -126,11 +146,6 @@ def report(args: argparse.Namespace) -> int:
     def rel(t):
         return None if t is None else round(t - base, 2)
 
-    def entered(label: str) -> bool:
-        r = resolution(events, label)
-        return bool(r and r["event"] == "submit.resolved" and not r.get("dropped")
-                    and first(events, event="turn.start", text=TEXTS[label]))
-
     desktop = json.loads(notes["desktop_session"]["detail"]) if "desktop_session" in notes else {}
     checks["mod_loads_in_desktop"] = bool(len(starts) == 1 and listener_pid and desktop.get("cwd")
                                           and start.get("cwd") == desktop["cwd"])
@@ -155,7 +170,7 @@ def report(args: argparse.Namespace) -> int:
         sent_t = sent["busy"]["t"]
         checks["busy_submit_waits_for_turn_end"] = bool(
             tool and tool.get("decision") == "allow" and busy_end and tool["t"] < sent_t < busy_end["t"]
-            and entered("busy") and r["t"] >= busy_end["t"] - 0.5)
+            and entered(events, "busy") and r["t"] >= busy_end["t"] - 0.5)
         observed["busy"] = {"tool_decision": tool and tool.get("decision"),
                             "busy_turn_ended_after_s": busy_end and round(busy_end["t"] - sent_t, 2),
                             "resolved_after_s": r and round(r["t"] - sent_t, 2)}
@@ -172,8 +187,8 @@ def report(args: argparse.Namespace) -> int:
                 "resolved_after_send_s": r and round(r["t"] - sent_t, 2),
                 "resolved_after_dialog_closed_s": r and round(r["t"] - closed_t, 2),
                 "dropped": r and r.get("dropped"), "drop_reason": r and r.get("drop_reason"),
-                "entered": entered(label)}
-        return (waited, entered(label)), seen
+                "entered": entered(events, label)}
+        return (waited, entered(events, label)), seen
 
     if "approval" in sent and "approval_prompt" in notes and "first_try_closed" in notes:
         closed = json.loads(notes["first_try_closed"]["detail"])["approved_at_utc"].replace("Z", "+00:00")
@@ -191,16 +206,16 @@ def report(args: argparse.Namespace) -> int:
 
     after_stop = [label for label in ("hold", "after_reply") if label in sent]
     if after_stop:
-        checks["submit_after_stop_enters"] = all(entered(label) for label in after_stop)
+        checks["submit_after_stop_enters"] = all(entered(events, label) for label in after_stop)
         observed["after_stop"] = {label: {"sent_after_mod_start_s": rel(sent[label]["t"]),
                                           "dropped": (resolution(events, label) or {}).get("dropped"),
                                           "drop_reason": (resolution(events, label) or {}).get("drop_reason"),
-                                          "entered": entered(label)} for label in after_stop}
+                                          "entered": entered(events, label)} for label in after_stop}
 
     if "clear" in sent:
         r = resolution(events, "clear")
         observed["after_clear"] = {"clear_requested": "clear_requested" in notes, "mod_start_count": len(starts),
-                                   "entered": entered("clear"),
+                                   "entered": entered(events, "clear"),
                                    "resolved_after_s": r and round(r["t"] - sent["clear"]["t"], 2)}
     if "clear_refused" in notes:
         observed["after_clear"] = {"not_run": notes["clear_refused"].get("detail")}
@@ -217,6 +232,75 @@ def report(args: argparse.Namespace) -> int:
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({k: v for k, v in summary.items() if k != "observed"} | {
         "observed": {k: v for k, v in observed.items() if k != "mod_events"}}, indent=2, ensure_ascii=False))
+    return 0 if summary["passed"] else 1
+
+
+def release(args: argparse.Namespace) -> int:
+    out = Path(args.out)
+    pids = (out / "listener.pid").read_text().split()
+    owner = (out / "listener.session").read_text().strip()
+    started = first(mod_events(out), event="mod.start", session_id=owner)
+    since = started["t"] if started else 0.0
+
+    def listener_end():
+        events = mod_events(out)
+        return first(events, after=since, event="listener.ended") or first(events, after=since, event="listener.failed")
+
+    ended = listener_end()
+    already_ended = ended is not None
+    if not already_ended:
+        os.kill(int(pids[1]), signal.SIGTERM)
+        deadline = time.time() + 15
+        while not ended and time.time() < deadline:
+            time.sleep(0.3)
+            ended = listener_end()
+    (out / "listener.session").unlink()
+    row = {"t": time.time(), "label": "released", "detail": json.dumps(
+        {"owner": owner, "tail_pid": int(pids[1]), "already_ended": already_ended,
+         "listener_end": ended and ended["event"]})}
+    append(out / "notes.jsonl", row)
+    print(json.dumps(row, ensure_ascii=False))
+    return 0 if ended else 1
+
+
+def recheck(args: argparse.Namespace) -> int:
+    out = Path(args.out)
+    events = mod_events(out)
+    sent = by_label(read_jsonl(out / "sent.jsonl"))
+    notes = by_label(read_jsonl(out / "notes.jsonl"))
+    starts = [e for e in events if e["event"] == "mod.start"]
+
+    def listening(t: float):
+        before = [e for e in starts if e["t"] <= t]
+        return before[-1]["session_id"] if before else None
+
+    probes = {}
+    for label in RECHECK:
+        if label not in sent:
+            continue
+        r = resolution(events, label)
+        probes[label] = {"session_id": listening(sent[label]["t"]), "event": r and r["event"],
+                         "resolved_after_s": r and round(r["t"] - sent[label]["t"], 2),
+                         "dropped": r and r.get("dropped"), "drop_reason": r and r.get("drop_reason"),
+                         "entered": entered(events, label)}
+    resolved = [e for e in events if e["event"] == "submit.resolved"]
+    dropped = [p for p in probes.values() if p["dropped"]]
+    checks = {"mod_records_drop_reason": bool(resolved) and all("drop_reason" in e for e in resolved),
+              "idle_before_stop_enters": entered(events, "re_idle"),
+              "dropped_probes_have_reason": all(p["drop_reason"] for p in dropped),
+              "new_session_enters": entered(events, "re_new_session")}
+    summary = {"meta": json.loads((out / "meta.json").read_text(encoding="utf-8")),
+               "reported": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "checks": checks,
+               "passed": all(checks.values()),
+               "observed": {"probes": probes,
+                            "sessions": [{k: e.get(k) for k in ("session_id", "cwd", "surfaces")} for e in starts],
+                            "skipped": [{k: e.get(k) for k in ("session_id", "owner")} for e in events
+                                        if e["event"] == "mod.start.skipped"],
+                            "listener_events": [e for e in events if e["event"].startswith("listener.")],
+                            "notes": notes, "mod_events": events}}
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps({k: v for k, v in summary.items() if k != "observed"} | {"probes": probes}, indent=2,
+                     ensure_ascii=False))
     return 0 if summary["passed"] else 1
 
 
@@ -245,6 +329,12 @@ def main() -> int:
     p = sub.add_parser("report")
     p.add_argument("out")
     p.set_defaults(run=report)
+    p = sub.add_parser("release")
+    p.add_argument("out")
+    p.set_defaults(run=release)
+    p = sub.add_parser("recheck")
+    p.add_argument("out")
+    p.set_defaults(run=recheck)
     args = parser.parse_args()
     return args.run(args)
 
