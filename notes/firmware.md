@@ -42,6 +42,19 @@ cd firmware && idf.py -p /dev/cu.usbmodem11301 build flash
 esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-backup/trae_card_<id>_fw1.0.3_full8MB_2026-10-16.bin
 ```
 
+## 编译好的固件文件（OB-15）
+
+使用者不装 ESP-IDF 也能刷固件（负责人 2026-10-17 定，见 [onboarding.md](onboarding.md)）：仓库里放着编译好的固件，只要装 `esptool` 就能刷。
+
+- **放在哪里**：`firmware/prebuilt/`，跟着仓库走（负责人 2026-10-18 选的，每更新一次，仓库历史多约 0.8 MB）。里面有启动程序 `bootloader.bin`、分区表 `partition-table.bin`、程序 `funmedal.bin`，写到哪个地址记在 `flash_args`，SHA-256 记在 `SHA256SUMS`，编译时所在的提交记在 `SOURCE`。
+- **怎么生成**：`sh tools/update-prebuilt.sh`，要先运行 ESP-IDF 的 `export.sh`。它只在 `firmware/` 下没有没提交的改动时才动手，用 `idf.py build` 编译，按 ESP-IDF 生成的 `build/flash_args` 复制三个文件，再写 `SHA256SUMS` 和 `SOURCE`。脚本放在 `tools/` 而不是 `firmware/`，因为 `firmware/` 下任何文件改了都算固件变了。
+- **怎么刷**：仓库根目录的 `flash.sh <端口>`，依次找 `esptool`、`esptool.py`、`.venv/bin/esptool`。先按 `SHA256SUMS` 核对编译好的文件；`firmware-backup/` 里有 `.bin` 时，核对每个都是整块 8 MB、和同名 `.sha256` 文件里的第一个字段对得上，没有时读两遍整块 Flash，两遍一样才存成 `firmware-backup/factory-full8MB.bin` 并写 `.sha256`；最后用 `write_flash` 把三个文件写到 `flash_args` 里的地址。任何一步失败都停下、退出码不是 0，读备份那一步失败或两遍不一样时不留下备份文件。
+- **为什么不合成一个文件**：`esptool merge_bin` 能把三个文件合成一个从地址 0 开始的文件，但中间的空隙会填满 0xFF。分区表里 NVS 区（存蓝牙配对的地方）在 0x9000–0xEFFF，正好在分区表（0x8000）和程序（0x10000）之间，合成的文件会把它擦掉，配对就没了。分开写只碰三个文件各自的位置。
+- **怎么保证和源码对得上**：`tests/test_flash.py` 的 `test_prebuilt_is_current` 检查三个文件和 `SHA256SUMS` 一致、`flash_args` 的地址对，并且 `SOURCE` 那个提交之后 `firmware/`（除了 `prebuilt/`）没有改动、也没有新文件。改了固件忘了重新生成，这一项就失败。编译结果不是逐字节可重现的（ESP-IDF 没开 `CONFIG_APP_REPRODUCIBLE_BUILD`），所以测试不重新编译来比对。
+- **会不会带出本机信息**：2026-10-18 生成的三个文件里搜不到用户名、`/Users`、仓库目录名和 ESP-IDF 的安装路径：ESP-IDF 默认把源码路径写成 `/IDF/…`。`tests/test_release.py` 发布前还会再查一遍仓库里的所有文件。
+- **实测**（2026-10-18）：用 ESP-IDF 自带的 esptool 4.12.0（不经过 `idf.py`）在真卡片上跑 `flash.sh`，已有备份所以只核对没读卡片，三个文件各报一次 `Hash of data verified`，0.8 MB 用了约 3 秒；卡片开机后报 `fw=funmedal-0.1`，配对还在（`sec=encrypted,authenticated,bonded`），桥接程序第一次就连上，版本对得上（`artifacts/ob15-after-20261018-123530/`）。备份、核对、出错停下的各种情况用假的 `esptool` 测（同一个测试文件）。
+- **没测的**：Homebrew 的 esptool 5.5.0 和用 `pip` 装的 esptool。esptool 5 把命令和选项改成 `write-flash`、`--flash-mode` 这种带短横线的写法；按乐鑫的[迁移说明](https://docs.espressif.com/projects/esptool/en/latest/esp32c3/migration-guide.html)，`flash.sh` 用的带下划线的旧写法在 v5 里还能用、会打出警告，下一个大版本才删掉。这一点没有在本机用 v5 验证。没有备份时真读两遍 8 MB 的那条路，也只用假的 `esptool` 测过。
+
 ## 程序结构
 
 固件里有 4 个并行的任务（FreeRTOS 里同时运行的程序单元，优先级数字越大越先运行）：

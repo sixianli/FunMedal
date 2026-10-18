@@ -146,7 +146,7 @@ enum Doctor {
     static func linkVersion(_ status: [String: Any]?, restart: String) -> Finding {
         let name = "固件版本"
         guard let status else { return Finding(mark: .unknown, name: name, detail: "桥接程序没在跑，查不到") }
-        let firmware = "照 README“安装”的第 2 步编译并烧录卡片固件，\(restart)"
+        let firmware = "照 README“安装”的第 1 步运行 sh flash.sh <端口>，刷上仓库里编译好的固件，\(restart)"
         let install = "在仓库目录运行 sh install.sh，\(restart)"
         guard let bridgeVersion = status["bridge_version"] as? Int else {
             return Finding(mark: .bad, name: name, detail: "正在跑的桥接程序太旧，不报版本", fix: install)

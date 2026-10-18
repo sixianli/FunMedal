@@ -15,35 +15,48 @@ FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240
 | 卡片 | 和本项目同款的 ESP32-C3 卡片，硬件细节和引脚见 [notes/hardware.md](notes/hardware.md)。别的板子引脚不同，不能直接用 |
 | Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到蓝牙和离线语音识别，都是 macOS 自带的 |
 | Xcode 命令行工具 | 提供 `swiftc`（Swift 编译器），用来编译桥接程序 |
-| ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境，用来编译和烧录卡片固件，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
+| esptool | 乐鑫的刷写工具，一个小 Python 程序，用来备份卡片和刷固件，装法见下面第 1 步 |
+| ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境（几 GB），只有想自己编译卡片固件时才需要，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
 | Claude Code | 要 2.1.292 或更新的版本，`install.sh` 会检查；本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话靠插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）把话送进会话 |
-| Python 3 | 只有跑测试时需要 |
+| Python 3 | 跑测试时需要；第 1 步把 `esptool` 装进仓库的 `.venv` 时也要 |
 
 ## 安装
 
 下面的命令都在仓库根目录运行。`<端口>` 是卡片用 USB 线连上 Mac 后出现的串口，比如 `/dev/cu.usbmodem11301`，用 `ls /dev/cu.usbmodem*` 能看到。
 
-### 1. 备份原厂固件
+### 1. 备份原厂固件，刷上 FunMedal 固件
 
-烧录本项目的固件会覆盖卡片上的原厂固件。先把整块 8 MB Flash（存程序和数据的存储芯片）读出来存好，以后想用回原厂功能时写回去。备份里有这张卡片独有的身份和配对数据，**不要上传到任何地方**；仓库的 `.gitignore` 已经排除了 `firmware-backup/`。
-
-```bash
-export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.sh
-```
+先装 `esptool`，下面两种装法选一种。用 Homebrew（Mac 上常用的软件安装工具）：
 
 ```bash
-mkdir -p firmware-backup && python -m esptool --chip esp32c3 -p <端口> read_flash 0 0x800000 firmware-backup/factory-full8MB.bin
+brew install esptool
 ```
 
+或者装进仓库目录下的 Python 虚拟环境 `.venv`：
+
 ```bash
-shasum -a 256 firmware-backup/factory-full8MB.bin > firmware-backup/factory-full8MB.bin.sha256
+python3 -m venv .venv && .venv/bin/pip install esptool
 ```
+
+然后运行：
+
+```bash
+sh flash.sh <端口>
+```
+
+`flash.sh` 依次做三件事，任何一步出错就停下、不写卡片：
+
+1. **备份**：刷固件会覆盖卡片上的原厂固件，所以 `firmware-backup/` 里还没有备份时，先把整块 8 MB Flash（存程序和数据的存储芯片）读两遍，两遍完全一样才存成 `firmware-backup/factory-full8MB.bin`，旁边写一个记着 SHA-256（文件的指纹，内容变一个字节它就变）的 `.sha256` 文件。以后想用回原厂功能时写回去，见下文“恢复原厂固件”。备份里有这张卡片独有的身份和配对数据，**不要上传到任何地方**；仓库的 `.gitignore` 已经排除了 `firmware-backup/`。
+2. **核对**：已经有备份时不再读卡片，只核对 `firmware-backup/` 里每个 `.bin` 都是整块 8 MB、和它的 `.sha256` 对得上。`firmware/prebuilt/` 里编译好的固件文件也先按 `SHA256SUMS` 核对一遍。
+3. **刷写**：把 `firmware/prebuilt/` 里编译好的三个文件（启动程序、分区表、FunMedal 程序）写到各自的位置，`esptool` 写完自己核对一遍。存蓝牙配对的区域不动，所以以后更新固件不用重新配对。
 
 原厂固件闲置 5 分钟会进入深度睡眠，USB 串口随之消失。连不上时按一下右侧任意一个键把它唤醒，再运行命令。
 
-### 2. 编译并烧录卡片固件
+刷完卡片会重启，屏幕上出现像素小人。编译好的文件来自哪个提交，写在 `firmware/prebuilt/SOURCE` 里。固件的结构和串口命令见 [notes/firmware.md](notes/firmware.md)。
 
-第一条命令每开一个新终端都要先运行一次，它让当前终端能用 ESP-IDF。
+### 2. 想自己编译固件时
+
+不想用编译好的文件，可以装 ESP-IDF 自己编译。先照第 1 步运行一次 `sh flash.sh <端口>`，让它做好备份。下面第一条命令每开一个新终端都要先运行一次，它让当前终端能用 ESP-IDF。
 
 ```bash
 export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.sh
@@ -53,7 +66,7 @@ export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.
 cd firmware && idf.py -p <端口> build flash
 ```
 
-烧录完卡片会重启，屏幕上出现像素小人。固件的结构和串口命令见 [notes/firmware.md](notes/firmware.md)。
+改了固件、提交之后，用 `sh tools/update-prebuilt.sh` 重新生成 `firmware/prebuilt/`（同样要先运行上面的 `export …`），再提交它。`firmware/` 下有没提交的改动时，这个脚本不动手。忘了更新的话，`tests/test_flash.py` 会报编译好的文件和源码对不上。
 
 ### 3. 编译桥接程序，装上 Claude Code 插件
 
@@ -136,19 +149,19 @@ sh uninstall.sh
 
 ## 恢复原厂固件
 
-把第 1 步的备份从地址 0 整个写回。新开的终端要先运行第 1 步那条 `export …` 命令，才能用 `esptool`（乐鑫的烧录工具）。先校验备份没坏：
+把第 1 步的备份从地址 0 整个写回，用的是第 1 步装的 `esptool`；装在 `.venv` 里的，把下面的 `esptool` 换成 `.venv/bin/esptool`。先校验备份没坏：
 
 ```bash
 shasum -a 256 -c firmware-backup/factory-full8MB.bin.sha256
 ```
 
 ```bash
-python -m esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/factory-full8MB.bin
+esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/factory-full8MB.bin
 ```
 
 写完卡片自动重启，跑回原厂固件。写回会把 FunMedal 存在卡片上的蓝牙配对一起覆盖掉。
 
-想再换回 FunMedal：照第 2 步烧录，然后先在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`，再退出桥接程序、重新启动它（命令见第 3、4 步），照第 4 步重新配对。不先忽略的话，Mac 还拿旧的配对去连，卡片已经不认，桥接程序连不上，它的记录里每次都是 `Peer removed pairing information`（macOS 的意思是“对方删掉了配对信息”）。
+想再换回 FunMedal：运行 `sh flash.sh <端口>`，然后先在 Mac 的“系统设置 → 蓝牙”里忽略 `FunMedal`，再退出桥接程序、重新启动它（命令见第 3、4 步），照第 4 步重新配对。不先忽略的话，Mac 还拿旧的配对去连，卡片已经不认，桥接程序连不上，它的记录里每次都是 `Peer removed pairing information`（macOS 的意思是“对方删掉了配对信息”）。
 
 2026-10-17 在一张卡片上完整走过一遍：8 MB 写入用了约 16 秒，`esptool` 核对写入的内容无误；原厂固件的开机日志里有 `Project name: trae_card` 和 `App version: 1.0.3`，一直启动到 `99-ready`；再照第 2 步烧回 FunMedal、在 Mac 上忽略卡片、照第 4 步配对，第一次就配上。那一分钟里没有人看屏幕，原厂固件能开机的依据只有串口日志。
 
