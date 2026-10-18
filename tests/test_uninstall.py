@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from bridge_harness import ROOT, artifacts, require_bridge_app, run_dir, write_summary  # noqa: F401
-from test_plugin import PLUGIN_ID, USER_FILES, installed_copy, own_env, sha256
+from test_plugin import (PLUGIN_ID, USER_FILES, installed_copy, link_desktop_claude, own_env, require_desktop_claude,
+                         run_labeled, sha256)
 
 ARTIFACTS_PREFIX = "ob12"
 ARTIFACTS_SUBDIR = "uninstall"
@@ -18,12 +19,13 @@ NOTHING_LISTED = json.dumps([{"id": "other@elsewhere"}])
 OTHER_MARKETPLACES = json.dumps([{"name": "claude-plugins-official"}])
 FAKE_CLAUDE = """#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_CLAUDE_LOG"
+if [ "$*" = "--version" ]; then printf '%s\\n' "2.1.299 (Claude Code)"; exit 0; fi
 if [ -n "$FAKE_CLAUDE_FAIL" ] && [ "$*" = "$FAKE_CLAUDE_FAIL" ]; then exit 1; fi
 if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; fi
 if [ "$*" = "plugin marketplace list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_MARKETPLACES"; fi
 exit 0
 """
-LIST_CALLS = ["plugin list --json", "plugin marketplace list --json"]
+LIST_CALLS = ["--version", "plugin list --json", "plugin marketplace list --json"]
 REMOVE_CALLS = [f"plugin uninstall {PLUGIN_ID}", f"plugin marketplace remove {MARKETPLACE}"]
 
 
@@ -74,7 +76,7 @@ def test_uninstall_removes_what_is_there(case, way, run_dir, tmp_path):
 
 
 FAILURES = {
-    "plugin-list": ("plugin list --json", ["plugin list --json"]),
+    "plugin-list": ("plugin list --json", ["--version", "plugin list --json"]),
     "marketplace-list": ("plugin marketplace list --json", LIST_CALLS),
     "uninstall": (f"plugin uninstall {PLUGIN_ID}", LIST_CALLS + [f"plugin uninstall {PLUGIN_ID}"]),
 }
@@ -133,5 +135,49 @@ def test_uninstall_with_real_claude(case, run_dir, tmp_path):
     assert PLUGIN_ID not in [p["id"] for p in json.loads(summary["plugins"])], summary
     assert MARKETPLACE not in [m["name"] for m in json.loads(summary["marketplaces"])], summary
     assert summary["settings"][".claude/settings.json"] is not None, summary
+    assert all("funmedal" not in (text or "").lower() for text in summary["settings"].values()), summary
+    assert summary["owner_files_unchanged"], summary
+
+
+@pytest.mark.parametrize("case", ["[OB-17] with no claude command, uninstall.sh removes the plugin and its marketplace "
+                                  "through the Claude desktop app's newest bundled Claude Code"])
+def test_uninstall_with_desktop_fake(case, run_dir, tmp_path):
+    result = run_labeled(tmp_path, UNINSTALL, desktop={"2.1.280": "2.1.280 (Claude Code)",
+                                                       "2.1.299": "2.1.299 (Claude Code)"},
+                         extra_env={"FAKE_CLAUDE_PLUGINS": PLUGIN_LISTED, "FAKE_CLAUDE_MARKETPLACES": MARKETPLACE_LISTED})
+    write_summary(run_dir, result)
+    assert result["exit"] == 0, result
+    chosen = "desktop 2.1.299"
+    assert result["work_calls"] == [f"{chosen}: plugin list --json", f"{chosen}: plugin marketplace list --json",
+                                    f"{chosen}: plugin uninstall {PLUGIN_ID}",
+                                    f"{chosen}: plugin marketplace remove {MARKETPLACE}"], result
+    assert next_steps_in_order(result["stdout"], result["home"]), result
+
+
+@pytest.mark.parametrize("case", ["[OB-17] with no claude command and only the Claude desktop app, uninstall.sh after "
+                                  "install.sh leaves no trace of FunMedal in the settings"])
+def test_uninstall_with_desktop_claude_only(case, run_dir, tmp_path):
+    require_bridge_app()
+    app_bundle, version = require_desktop_claude()
+    home = tmp_path / "home"
+    home.mkdir()
+    linked = link_desktop_claude(home, app_bundle, version)
+    env = own_env(home) | {"PATH": "/usr/bin:/bin"}
+    owner = [os.path.expanduser(f"~/{p}") for p in USER_FILES]
+    before = {p: sha256(Path(p)) for p in owner}
+    runs = []
+    for script in ("install.sh", "uninstall.sh"):
+        done = subprocess.run(["/bin/sh", str(ROOT / script)], env=env, capture_output=True, text=True, timeout=120)
+        runs.append({"script": script, "exit": done.returncode, "stdout": done.stdout, "stderr": done.stderr})
+    plugins = subprocess.run([str(linked), "plugin", "list", "--json"], env=env, capture_output=True, text=True,
+                             timeout=60)
+    settings = {p: (home / p).read_text(encoding="utf-8") if (home / p).exists() else None for p in USER_FILES}
+    after = {p: sha256(Path(p)) for p in owner}
+    summary = {"desktop_claude": str(app_bundle), "runs": runs, "plugins": plugins.stdout,
+               "plugins_exit": plugins.returncode, "settings": settings, "owner_files_unchanged": before == after}
+    write_summary(run_dir, summary)
+    assert [r["exit"] for r in runs] == [0, 0], summary
+    assert summary["plugins_exit"] == 0, summary
+    assert PLUGIN_ID not in [p["id"] for p in json.loads(summary["plugins"])], summary
     assert all("funmedal" not in (text or "").lower() for text in summary["settings"].values()), summary
     assert summary["owner_files_unchanged"], summary

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from bridge_harness import (BRIDGE, HOOK_EVENTS, HOOK_TIMEOUT_S, INSTALLED_BRIDGE, PERMISSION_HOOK_TIMEOUT_S,  # noqa: F401
-                            PLUGIN, ROOT, artifacts, bridge, bridge_cli, card, card_states, event, press, real_session,
+from bridge_harness import (APP_CLAUDES, BRIDGE, HOOK_EVENTS, HOOK_TIMEOUT_S, INSTALLED_BRIDGE,  # noqa: F401
+                            PERMISSION_HOOK_TIMEOUT_S, PLUGIN, ROOT, artifacts, bridge, bridge_cli, card, card_states,
+                            claude_version, event, press, real_session,
                             request_touch, require_bridge_app, run_dir, wait_prompt, wait_session_ready, wait_until,
                             write_summary)
 from claude_session import INHERITED_PREFIXES
@@ -26,6 +27,71 @@ if [ "$*" = "--version" ]; then printf '%s\\n' "$FAKE_CLAUDE_VERSION"; fi
 if [ -n "$FAKE_CLAUDE_FAIL" ] && [ "$*" = "$FAKE_CLAUDE_FAIL" ]; then exit 1; fi
 exit 0
 """
+
+
+LABELED_CLAUDE = """#!/bin/sh
+printf '%s\\n' "{label}: $*" >> "$FAKE_CLAUDE_LOG"
+if [ "$*" = "--version" ]; then {version_answer}; fi
+if [ -n "$FAKE_CLAUDE_FAIL" ] && [ "$*" = "$FAKE_CLAUDE_FAIL" ]; then exit 1; fi
+if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; fi
+if [ "$*" = "plugin marketplace list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_MARKETPLACES"; fi
+exit 0
+"""
+TERMINAL = "terminal"
+
+
+def desktop_claude_path(home, version_dir):
+    return (home / "Library" / "Application Support" / "Claude" / "claude-code" / version_dir / "a1b2c3d4e5f6"
+            / "claude.app" / "Contents" / "MacOS" / "claude")
+
+
+def write_labeled_claude(path, label, version):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    answer = f"printf '%s\\n' '{version}'" if version else "echo 'error: incomplete download' >&2; exit 1"
+    path.write_text(LABELED_CLAUDE.format(label=label, version_answer=answer), encoding="utf-8")
+    path.chmod(0o755)
+
+
+def fake_claudes(tmp_path, terminal=None, desktop=None):
+    home = tmp_path / "home"
+    home.mkdir()
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    if terminal is not None:
+        write_labeled_claude(tools / "claude", TERMINAL, terminal)
+    for version_dir, version in (desktop or {}).items():
+        write_labeled_claude(desktop_claude_path(home, version_dir), f"desktop {version_dir}", version)
+    return home, tools
+
+
+def run_labeled(tmp_path, script, terminal=None, desktop=None, extra_env=None):
+    home, tools = fake_claudes(tmp_path, terminal, desktop)
+    calls = tmp_path / "claude-calls.txt"
+    env = {"HOME": str(home), "PATH": f"{tools}:/usr/bin:/bin", "LC_CTYPE": "C.UTF-8", "FAKE_CLAUDE_LOG": str(calls),
+           "FAKE_CLAUDE_FAIL": "", **(extra_env or {})}
+    result = subprocess.run(["/bin/sh", str(script)], env=env, capture_output=True, text=True, timeout=60)
+    made = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+    return {"terminal": terminal, "desktop": desktop, "home": str(home), "exit": result.returncode,
+            "stdout": result.stdout, "stderr": result.stderr, "calls": made,
+            "work_calls": [c for c in made if not c.endswith(": --version")],
+            "installed_sha256": sha256(installed_copy(home))}
+
+
+def require_desktop_claude():
+    bundled = sorted(APP_CLAUDES.glob("*/*/claude.app/Contents/MacOS/claude"))
+    readable = [(claude_version(str(p)), p) for p in bundled]
+    readable = [pair for pair in readable if pair[0] is not None]
+    if not readable:
+        pytest.fail(f"no runnable Claude Code from the Claude desktop app under {APP_CLAUDES}")
+    version, program = max(readable)
+    return program.parents[2], version
+
+
+def link_desktop_claude(home, app_bundle, version):
+    target = desktop_claude_path(home, ".".join(map(str, version))).parents[2]
+    target.parent.mkdir(parents=True)
+    target.symlink_to(app_bundle)
+    return target / "Contents" / "MacOS" / "claude"
 
 
 def sha256(path):
@@ -155,6 +221,65 @@ def test_install_accepts_new_claude(case, way, version, run_dir, tmp_path):
     assert result["installed_sha256"] == sha256(BRIDGE), result
 
 
+CLAUDE_CHOICES = {
+    "desktop-only": (None, {"2.1.280": "2.1.280 (Claude Code)", "2.1.299": "2.1.299 (Claude Code)"},
+                     "desktop 2.1.299", []),
+    "desktop-number-order": (None, {"2.1.999": "2.1.999 (Claude Code)", "2.1.1000": "2.1.1000 (Claude Code)"},
+                             "desktop 2.1.1000", []),
+    "desktop-newest-broken": (None, {"2.1.299": "2.1.299 (Claude Code)", "2.1.305": None}, "desktop 2.1.299", []),
+    "terminal-old": ("2.1.291 (Claude Code)", {"2.1.299": "2.1.299 (Claude Code)"}, "desktop 2.1.299",
+                     ["2.1.291", "claude update"]),
+    "desktop-old": ("2.1.302 (Claude Code)", {"2.1.290": "2.1.290 (Claude Code)"}, TERMINAL,
+                    ["2.1.290", "Check for Updates"]),
+    "both-new": ("2.1.302 (Claude Code)", {"2.1.299": "2.1.299 (Claude Code)"}, TERMINAL, []),
+    "dev-build": ("2.1.299 (Claude Code)", {"2.1.300": "2.1.300-dev.20261001.t101500 (Claude Code)"},
+                  "desktop 2.1.300", []),
+}
+
+
+@pytest.mark.parametrize("case, way", [
+    ("[OB-17] install.sh with only the Claude desktop app uses its newest bundled Claude Code and ignores older "
+     "folders the app keeps", "desktop-only"),
+    ("[OB-17] install.sh compares bundled versions by number, not as text", "desktop-number-order"),
+    ("[OB-17] install.sh skips a bundled Claude Code that cannot report its version", "desktop-newest-broken"),
+    ("[OB-17] install.sh with an old terminal claude installs through the desktop app and says the terminal one is "
+     "too old", "terminal-old"),
+    ("[OB-17] install.sh with an old desktop app installs through the terminal claude and says the desktop one is "
+     "too old", "desktop-old"),
+    ("[OB-17] install.sh with both new enough uses the newer one and warns about nothing", "both-new"),
+    ("[OB-17] install.sh reads a version with a build suffix the same way doctor does", "dev-build"),
+])
+def test_install_picks_claude(case, way, run_dir, tmp_path):
+    require_bridge_app()
+    terminal, desktop, chosen, warned = CLAUDE_CHOICES[way]
+    result = run_labeled(tmp_path, ROOT / "install.sh", terminal, desktop)
+    write_summary(run_dir, result)
+    assert result["exit"] == 0, result
+    assert result["work_calls"] == [f"{chosen}: plugin marketplace add {ROOT}",
+                                    f"{chosen}: plugin install {PLUGIN_ID}"], result
+    assert result["installed_sha256"] == sha256(BRIDGE), result
+    assert ("注意" in result["stdout"]) == bool(warned), result
+    assert all(word in result["stdout"] for word in warned), result
+
+
+@pytest.mark.parametrize("case, way, terminal, desktop, words", [
+    ("[OB-17] install.sh refuses when the only Claude Code is a desktop app older than 2.1.292 and says how to update "
+     "the app", "desktop-old", None, {"2.1.291": "2.1.291 (Claude Code)"}, ["2.1.291", "Check for Updates"]),
+    ("[OB-17] install.sh refuses when both copies are older than 2.1.292 and says how to update each",
+     "both-old", "2.1.200 (Claude Code)", {"2.1.291": "2.1.291 (Claude Code)"}, ["claude update", "Check for Updates"]),
+    ("[OB-17] install.sh with no Claude Code at all tells a desktop app user to open a Code session first", "none",
+     None, {}, ["桌面 App", "Code"]),
+])
+def test_install_refuses_without_new_claude(case, way, terminal, desktop, words, run_dir, tmp_path):
+    result = run_labeled(tmp_path, ROOT / "install.sh", terminal, desktop)
+    write_summary(run_dir, result)
+    assert result["exit"] != 0, result
+    assert NEEDED_VERSION in result["stderr"], result
+    assert all(word in result["stderr"] for word in words), result
+    assert result["work_calls"] == [], result
+    assert result["installed_sha256"] is None, result
+
+
 @pytest.mark.parametrize("case", ["[OB-7] install.sh stops when installing the plugin fails"])
 def test_install_reports_failed_plugin_install(case, run_dir, tmp_path):
     require_bridge_app()
@@ -169,6 +294,8 @@ def test_install_needs_built_bridge(case, run_dir, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     shutil.copy(ROOT / "install.sh", repo / "install.sh")
+    (repo / "tools").mkdir()
+    shutil.copy(ROOT / "tools" / "find-claude.sh", repo / "tools" / "find-claude.sh")
     result = run_install(tmp_path, f"{NEEDED_VERSION} (Claude Code)", script=repo / "install.sh")
     write_summary(run_dir, result)
     assert result["exit"] != 0, result
@@ -201,6 +328,41 @@ def test_install_with_real_claude(case, run_dir, tmp_path):
     entry = summary["plugin"]
     assert entry is not None and entry["enabled"] and entry["scope"] == "user", summary
     assert entry["readFromFolder"] == str(PLUGIN), summary
+    assert summary["installed_sha256"] == summary["built_sha256"], summary
+    assert summary["owner_files_unchanged"], summary
+
+
+@pytest.mark.parametrize("case", ["[OB-17] with no claude command, install.sh installs the plugin through the Claude "
+                                  "desktop app's own Claude Code and can run again"])
+def test_install_with_desktop_claude_only(case, run_dir, tmp_path):
+    require_bridge_app()
+    app_bundle, version = require_desktop_claude()
+    home = tmp_path / "home"
+    home.mkdir()
+    linked = link_desktop_claude(home, app_bundle, version)
+    env = own_env(home) | {"PATH": "/usr/bin:/bin"}
+    owner = [os.path.expanduser(f"~/{p}") for p in USER_FILES]
+    before = {p: sha256(Path(p)) for p in owner}
+    runs = []
+    for _ in range(2):
+        done = subprocess.run(["/bin/sh", str(ROOT / "install.sh")], env=env, capture_output=True, text=True,
+                              timeout=120)
+        runs.append({"exit": done.returncode, "stdout": done.stdout, "stderr": done.stderr})
+    listed = subprocess.run([str(linked), "plugin", "list", "--json"], env=env, capture_output=True, text=True,
+                            timeout=60)
+    plugins = {p["id"]: p for p in json.loads(listed.stdout)} if listed.returncode == 0 else {}
+    after = {p: sha256(Path(p)) for p in owner}
+    summary = {"desktop_claude": str(app_bundle), "version": version, "runs": runs, "plugin": plugins.get(PLUGIN_ID),
+               "installed_sha256": sha256(installed_copy(home)), "built_sha256": sha256(BRIDGE),
+               "settings": json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8")),
+               "owner_files_unchanged": before == after}
+    write_summary(run_dir, summary)
+    assert shutil.which("claude", path=env["PATH"]) is None, summary
+    assert [r["exit"] for r in runs] == [0, 0], summary
+    entry = summary["plugin"]
+    assert entry is not None and entry["enabled"] and entry["scope"] == "user", summary
+    assert entry["readFromFolder"] == str(PLUGIN), summary
+    assert summary["settings"]["enabledPlugins"] == {PLUGIN_ID: True}, summary
     assert summary["installed_sha256"] == summary["built_sha256"], summary
     assert summary["owner_files_unchanged"], summary
 

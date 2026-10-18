@@ -4,19 +4,22 @@ PLUGIN=funmedal@funmedal
 MARKETPLACE=funmedal
 BRIDGE_APP="$HOME/Applications/FunMedalBridge.app"
 
-if ! command -v claude >/dev/null 2>&1; then
-    echo "uninstall.sh: 没找到 claude 命令，卸不了插件。先确认 Claude Code 装着、claude 命令能用，再运行这个脚本。" >&2
+. "$(cd "$(dirname "$0")" && pwd -P)/tools/find-claude.sh"
+
+find_claude
+if [ -z "$CLAUDE" ]; then
+    echo "uninstall.sh: 终端的 claude 命令和 Claude 桌面 App 自带的 Claude Code 都没找到，卸不了插件。先确认其中一个能用，再运行这个脚本。" >&2
     exit 1
 fi
-PLUGINS=$(claude plugin list --json)
-MARKETPLACES=$(claude plugin marketplace list --json)
+PLUGINS=$("$CLAUDE" plugin list --json)
+MARKETPLACES=$("$CLAUDE" plugin marketplace list --json)
 if printf '%s\n' "$PLUGINS" | grep -q "\"id\": *\"$PLUGIN\""; then
-    claude plugin uninstall "$PLUGIN"
+    "$CLAUDE" plugin uninstall "$PLUGIN"
 else
     echo "uninstall.sh: 插件 $PLUGIN 没装，跳过。"
 fi
 if printf '%s\n' "$MARKETPLACES" | grep -q "\"name\": *\"$MARKETPLACE\""; then
-    claude plugin marketplace remove "$MARKETPLACE"
+    "$CLAUDE" plugin marketplace remove "$MARKETPLACE"
 else
     echo "uninstall.sh: 插件市场 $MARKETPLACE 不在，跳过。"
 fi

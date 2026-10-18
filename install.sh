@@ -2,26 +2,20 @@
 set -eu
 cd "$(dirname "$0")"
 ROOT=$(pwd -P)
-NEEDED=2.1.292
 BUILT="$ROOT/mac/bridge/build/FunMedalBridge.app"
 TARGET="$HOME/Applications/FunMedalBridge.app"
+. "$ROOT/tools/find-claude.sh"
 
-if ! command -v claude >/dev/null 2>&1; then
-    echo "install.sh: 没找到 claude 命令。先装好 Claude Code $NEEDED 或更新的版本，再运行这个脚本。" >&2
+find_claude
+if [ -z "$CLAUDE" ]; then
+    echo "install.sh: 没找到能读出版本号的 Claude Code。FunMedal 要 Claude Code $CLAUDE_NEEDED 或更新的版本，下面两种有一种就行：只用 Claude 桌面 App 时，打开它，在 Code 页开一个会话（桌面 App 会先准备好它自带的 Claude Code），再运行这个脚本；用终端版时，先装好终端版 Claude Code，确认终端里能运行 claude。" >&2
     exit 1
 fi
-FOUND=$(claude --version 2>/dev/null | awk 'NR == 1 { print $1 }')
-if ! printf '%s\n' "$FOUND" | awk -F. -v needed="$NEEDED" '
-    NF != 3 || $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ { exit 1 }
-    {
-        split(needed, want, ".")
-        for (i = 1; i <= 3; i++) {
-            if ($i + 0 > want[i] + 0) exit 0
-            if ($i + 0 < want[i] + 0) exit 1
-        }
-        exit 0
-    }'; then
-    echo "install.sh: Claude Code 的版本是 ${FOUND:-（读不出来）}，FunMedal 要 $NEEDED 或更新。先把 Claude Code 升级到最新版（例如运行 claude update），再运行这个脚本。" >&2
+if ! version_at_least "$CLAUDE_VERSION" "$CLAUDE_NEEDED"; then
+    HINTS=
+    [ -z "$TERMINAL_VERSION" ] || HINTS="$(claude_upgrade_hint terminal)"
+    [ -z "$DESKTOP_VERSION" ] || HINTS="${HINTS:+${HINTS}；}$(claude_upgrade_hint desktop)"
+    echo "install.sh: 找到的 Claude Code 里最新的是 $(claude_side_name "$CLAUDE_SIDE")的 ${CLAUDE_VERSION}，FunMedal 要 $CLAUDE_NEEDED 或更新。先升级（${HINTS}），再运行这个脚本。" >&2
     exit 1
 fi
 if [ ! -x "$BUILT/Contents/MacOS/funmedal-bridge" ]; then
@@ -32,6 +26,9 @@ mkdir -p "$HOME/Applications"
 rm -rf "$TARGET"
 ditto "$BUILT" "$TARGET"
 echo "install.sh: 桥接程序已复制到 $TARGET"
-claude plugin marketplace add "$ROOT"
-claude plugin install funmedal@funmedal
+"$CLAUDE" plugin marketplace add "$ROOT"
+"$CLAUDE" plugin install funmedal@funmedal
 echo "install.sh: 装好了。已经开着的 Claude Code 会话要重开，才会用上插件。"
+if [ -n "$OTHER_VERSION" ] && ! version_at_least "$OTHER_VERSION" "$CLAUDE_NEEDED"; then
+    echo "install.sh: 注意：$(claude_side_name "$OTHER_SIDE")的 Claude Code 是 ${OTHER_VERSION}，低于 ${CLAUDE_NEEDED}，用它开的会话里 FunMedal 不能正常工作。要用它的话先升级：$(claude_upgrade_hint "$OTHER_SIDE")。"
+fi

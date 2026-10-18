@@ -23,6 +23,16 @@ enum Doctor {
         }
     }
 
+    enum Side {
+        case terminal
+        case desktop
+    }
+
+    struct ClaudeCopy {
+        let program: String
+        let version: [Int]?
+    }
+
     struct Ran {
         let code: Int32
         let out: String
@@ -35,7 +45,8 @@ enum Doctor {
         let restart = "再重启桥接程序：先运行 \"\(app)/Contents/MacOS/funmedal-bridge\" quit，"
             + "再运行 open -g \"\(app)\" --args serve"
         let status = UnixSocket.request(socket, ["op": "status"], timeoutSeconds: clientTimeoutSeconds)
-        let claude = findClaude()
+        let terminal = findClaude().map { ClaudeCopy(program: $0, version: readVersion($0)) }
+        let desktop = desktopClaude(home: home)
         let findings = [
             bridgeRunning(status, socket: socket, app: app),
             bluetooth(status, restart: restart),
@@ -43,9 +54,10 @@ enum Doctor {
             signature(app: app),
             card(status, restart: restart),
             linkVersion(status, restart: restart),
-            plugin(claude),
+            plugin(newest(terminal, desktop)),
             hooksSwitch(home: home),
-            claudeVersion(claude),
+            claudeVersion(.terminal, terminal, other: desktop, home: home),
+            claudeVersion(.desktop, desktop, other: terminal, home: home),
         ]
         for finding in findings {
             print(finding.line)
@@ -169,12 +181,12 @@ enum Doctor {
         return Finding(mark: .bad, name: name, detail: "卡片 \(cardVersion)，桥接程序 \(bridgeVersion)，桥接程序旧了", fix: install)
     }
 
-    static func plugin(_ claude: String?) -> Finding {
+    static func plugin(_ claude: ClaudeCopy?) -> Finding {
         let name = "插件"
-        guard let claude else { return Finding(mark: .unknown, name: name, detail: "没找到 claude 命令，查不了") }
-        guard let listed = execute(claude, ["plugin", "list", "--json"]), listed.code == 0,
+        guard let claude else { return Finding(mark: .unknown, name: name, detail: "没找到能用的 Claude Code，查不了") }
+        guard let listed = execute(claude.program, ["plugin", "list", "--json"]), listed.code == 0,
               let plugins = (try? JSONSerialization.jsonObject(with: Data(listed.out.utf8))) as? [[String: Any]] else {
-            return Finding(mark: .unknown, name: name, detail: "claude plugin list --json 没给出结果")
+            return Finding(mark: .unknown, name: name, detail: "\(claude.program) plugin list --json 没给出结果")
         }
         guard let mine = plugins.first(where: { $0["id"] as? String == pluginID }) else {
             return Finding(mark: .bad, name: name, detail: "\(pluginID) 没装", fix: "在仓库目录运行 sh install.sh")
@@ -183,7 +195,8 @@ enum Doctor {
             return Finding(mark: .good, name: name, detail: "\(pluginID) 装着，也开着")
         }
         return Finding(mark: .bad, name: name, detail: "\(pluginID) 装着，但关着",
-                       fix: "运行 claude plugin enable \(pluginID)，再开新的会话")
+                       fix: "在桌面 App 里点 + → Plugins → Manage plugins 把它打开，或在终端运行 claude plugin enable \(pluginID)；"
+                           + "再开新的会话")
     }
 
     static func hooksSwitch(home: String) -> Finding {
@@ -202,23 +215,65 @@ enum Doctor {
         return Finding(mark: .good, name: name, detail: "没被关掉（只查了 \(path)）")
     }
 
-    static func claudeVersion(_ claude: String?) -> Finding {
-        let name = "Claude Code 版本"
+    static func claudeVersion(_ side: Side, _ mine: ClaudeCopy?, other: ClaudeCopy?, home: String) -> Finding {
         let needed = neededClaude.map(String.init).joined(separator: ".")
-        guard let claude else {
-            return Finding(mark: .bad, name: name, detail: "没找到 claude 命令",
-                           fix: "安装 Claude Code，并确认终端里能运行 claude")
+        let name = side == .terminal ? "Claude Code 版本（终端）" : "Claude Code 版本（桌面 App）"
+        let searched = side == .terminal ? "在 PATH 里找过 claude" : "在 \(desktopClaudes(home: home)) 里找过"
+        guard let mine else {
+            if other != nil {
+                let enough = side == .terminal ? "只用桌面 App 时不需要" : "只用终端版时不需要"
+                return Finding(mark: .good, name: name, detail: "没找到（\(searched)）；\(enough)")
+            }
+            return Finding(mark: .bad, name: name, detail: "没找到（\(searched)）",
+                           fix: "只用 Claude 桌面 App 时，打开它，在 Code 页开一个会话，桌面 App 会先准备好它自带的 Claude Code；"
+                               + "用终端版时，安装 Claude Code，并确认终端里能运行 claude")
         }
-        guard let ran = execute(claude, ["--version"]), ran.code == 0,
-              let found = ran.out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) else {
-            return Finding(mark: .unknown, name: name, detail: "claude --version 没给出版本号")
+        guard let version = mine.version else {
+            return Finding(mark: .unknown, name: name, detail: "\(mine.program) --version 没给出版本号")
         }
-        let version = String(ran.out[found])
-        let parts = version.split(separator: ".").compactMap { Int($0) }
-        if parts.lexicographicallyPrecedes(neededClaude) {
-            return Finding(mark: .bad, name: name, detail: "\(version)，低于 \(needed)", fix: "把 Claude Code 升级到最新版")
+        let text = version.map(String.init).joined(separator: ".")
+        guard !version.lexicographicallyPrecedes(neededClaude) else {
+            let upgrade = side == .terminal ? "运行 claude update" : "在桌面 App 菜单 Claude → Check for Updates 里升级，再开一个新的 Code 会话"
+            if let otherVersion = other?.version, !otherVersion.lexicographicallyPrecedes(neededClaude) {
+                return Finding(mark: .note, name: name, detail: "\(text)，低于 \(needed)；另一边的 Claude Code 够新，用它开会话不受影响",
+                               fix: upgrade)
+            }
+            return Finding(mark: .bad, name: name, detail: "\(text)，低于 \(needed)", fix: upgrade)
         }
-        return Finding(mark: .good, name: name, detail: version)
+        return Finding(mark: .good, name: name, detail: side == .terminal ? text : "\(text)（新开的会话用这个版本）")
+    }
+
+    static func newest(_ terminal: ClaudeCopy?, _ desktop: ClaudeCopy?) -> ClaudeCopy? {
+        guard let desktopVersion = desktop?.version else { return terminal?.version == nil ? nil : terminal }
+        guard let terminalVersion = terminal?.version else { return desktop }
+        return terminalVersion.lexicographicallyPrecedes(desktopVersion) ? desktop : terminal
+    }
+
+    static func desktopClaudes(home: String) -> String {
+        (home as NSString).appendingPathComponent("Library/Application Support/Claude/claude-code")
+    }
+
+    static func desktopClaude(home: String) -> ClaudeCopy? {
+        let files = FileManager.default
+        let root = desktopClaudes(home: home)
+        var found: [ClaudeCopy] = []
+        for version in (try? files.contentsOfDirectory(atPath: root)) ?? [] {
+            let versionDirectory = (root as NSString).appendingPathComponent(version)
+            for build in (try? files.contentsOfDirectory(atPath: versionDirectory)) ?? [] {
+                let program = [versionDirectory, build, "claude.app/Contents/MacOS/claude"].joined(separator: "/")
+                if files.isExecutableFile(atPath: program) {
+                    found.append(ClaudeCopy(program: program, version: readVersion(program)))
+                }
+            }
+        }
+        let readable = found.compactMap { copy in copy.version.map { (copy, $0) } }
+        return readable.max { $0.1.lexicographicallyPrecedes($1.1) }?.0 ?? found.first
+    }
+
+    static func readVersion(_ program: String) -> [Int]? {
+        guard let ran = execute(program, ["--version"]), ran.code == 0,
+              let found = ran.out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) else { return nil }
+        return ran.out[found].split(separator: ".").compactMap { Int($0) }
     }
 
     static func findClaude() -> String? {

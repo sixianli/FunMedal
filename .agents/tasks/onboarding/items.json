@@ -415,6 +415,29 @@
         "on": "2026-10-17",
         "why": "G17 负责人定不留旧版本备用路"
       }
+    },
+    {
+      "id": "OB-17",
+      "title": "只用桌面 App 的用户：没有终端 claude 命令也能装插件；doctor 查桌面 App 自带的 Claude Code 版本",
+      "goal_ref": [
+        "G36",
+        "G37"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-17"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-18",
+        "why": "负责人改用桌面 App（G36），选了现在补上（G37）"
+      }
     }
   ]
 }

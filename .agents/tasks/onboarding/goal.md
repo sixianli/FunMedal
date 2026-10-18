@@ -187,3 +187,12 @@
 ## G36 2026-10-18 用户原话
 
 > 我现在不用claude code cli而是使用claude code desktop macOS app
+
+## G37 2026-10-18 用户选择
+
+问题：既然你主要用桌面 App，要不要现在把“只装了桌面 App 也能装、自检也查对版本”补上？这会在 onboarding 任务里加一项新工作。
+> 现在补上 (Recommended)：doctor 改成同时查桌面 App 自带的 Claude Code 版本；先查清楚没有终端 claude 命令时插件能不能装、怎么装，再改 install.sh 和 README。做完跑完整测试再交给你。
+
+## G38 2026-10-18 用户原话
+
+> 服务还没好吗？没好的话就不使用免费模型使用open code go里面的模型

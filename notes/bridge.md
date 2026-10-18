@@ -208,7 +208,7 @@ FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 
 
 ## doctor 自检
 
-`funmedal-bridge doctor` 依次查 9 项，每项打印一行：`<结论> <项目>：<情况>`，结论不是“好”时后面接 `。改法：<怎么做>`。结论有四种：“好”；“注意”（能用，但有你该知道的事）；“不好”；“不知道”（查不了，后面写原因）。有一项“不好”时退出码是 1，否则是 0。
+`funmedal-bridge doctor` 依次查 10 项，每项打印一行：`<结论> <项目>：<情况>`，结论不是“好”时后面接 `。改法：<怎么做>`。结论有四种：“好”；“注意”（能用，但有你该知道的事）；“不好”；“不知道”（查不了，后面写原因）。有一项“不好”时退出码是 1，否则是 0。
 
 | 项目 | 从哪里查 | 怎么判断 |
 | --- | --- | --- |
@@ -218,15 +218,18 @@ FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 
 | 签名 | 对 `~/Applications/FunMedalBridge.app` 运行 `codesign --verify` 和 `codesign -dv` | 用证书签名是“好”；临时签名是“注意”，因为每次重新安装 macOS 都要再问一次授权，改法是拿一张 Apple Development 证书后重新编译、安装；没装、没签名或签名坏了是“不好” |
 | 卡片 | `status` 里的 `card` | `connected` 是“好”；`mismatch`、`pairing_failed` 和其他没连上的情况是“不好”，`pairing_failed` 的改法是重启桥接程序后重新配对；`off` 是“不知道”，看蓝牙那一行 |
 | 固件版本 | `status` 里的 `card_version` 和 `bridge_version`，见上文“先核对版本” | 一样是“好”；不一样、卡片没有版本号、正在跑的桥接程序太旧不报版本都是“不好”，并说该更新哪一边；卡片没连上是“不知道” |
-| 插件 | `claude plugin list --json` | `funmedal@funmedal` 装着且开着是“好”；没装、关着是“不好” |
+| 插件 | 用下面两行里版本较新、能读出版本的那份 Claude Code 运行 `plugin list --json` | `funmedal@funmedal` 装着且开着是“好”；没装、关着是“不好”，关着时改法同时写桌面 App 的“+ → Plugins → Manage plugins”和终端的 `claude plugin enable`；两份都找不到是“不知道” |
 | hooks 开关 | `~/.claude/settings.json` 里的 `disableAllHooks` | 是 `true` 时“不好”，其他情况（包括没有这个文件）是“好” |
-| Claude Code 版本 | `claude --version` | 不低于 2.1.292 是“好”，和 `install.sh` 的要求一样 |
+| Claude Code 版本（终端） | PATH 上的 `claude --version` | 不低于 2.1.292 是“好”，和 `install.sh` 的要求一样；读不出版本号是“不知道”；低于 2.1.292 时，另一行够新就是“注意”（用另一份开会话不受影响），否则是“不好”；没找到时，另一行找到了就是“好”，两行都没找到是“不好” |
+| Claude Code 版本（桌面 App） | `~/Library/Application Support/Claude/claude-code/<版本>/<编号>/claude.app/Contents/MacOS/claude` 里能读出版本的、版本最高的那份运行 `--version` | 判断同上一行。桌面 App 升级后旧版本目录还留着，所以只看最高的那份；2026-10-18 本机 10 月 17 日以后启动的桌面会话都用目录里最高的 2.1.299 |
 
 蓝牙和语音识别的授权必须问正在跑的桥接程序：macOS 按程序记授权，在终端里运行的 `doctor` 自己去读，读到的是终端的授权，不是桥接程序的。所以桥接程序没在跑时，这两项和卡片、固件版本一起显示“不知道”。
 
 **没查的**：`disableAllHooks` 只看用户设置文件，不看项目里的设置和公司统一下发的设置；`--safe-mode` 启动的会话、`allowManagedModsOnly` 限制也查不出来（见 [onboarding.md](onboarding.md) 里“mod 会被关掉”那一条）。
 
 **测试**：[tests/test_doctor.py](../tests/test_doctor.py) 用一个假的桥接程序套接字（按测试给的内容回答 `status`）、一个假的 `claude` 命令和临时家目录，先造“全都正常”的环境，再每次只弄坏一处，一共 20 种情况，检查每一行的结论、改法和退出码（`artifacts/ob11-20261018-015646/`）。把比较卡片和桥接程序版本的判断故意写反后，相关的 2 项失败（`artifacts/ob11-bug-back-20261018-015732/`）。签名的“好”造不出来：要先定下用哪种证书签名。OB-10 之后，仓库编译的桥接程序用证书签名，假程序直接复制它，“全都正常”里签名一项就从“注意”改成了“好”；临时签名另算一种情况（`app-adhoc`），是“注意”并给出改法。2026-10-18 在本机真实环境里跑过两次（`artifacts/ob11-real-20261018-015809/`）：常驻程序没在跑时，桥接程序一项“不好”、4 项“不知道”；启动常驻程序后，只剩固件版本“不好”，因为装着的常驻程序是 OB-13 之前编译的，不报版本号，`doctor` 提示重新运行 `install.sh`。
+
+OB-17 起版本拆成终端和桌面 App 两行，测试另加 9 种情况（`test_doctor_desktop`）：假家目录里按桌面 App 的目录结构放假的 `claude`，查只有桌面 App、桌面目录里最高那份坏了、两边都够新、一边太旧另一边够新、只有一份旧的桌面版、终端读不出版本号、两边都没有、桌面用户的插件关着。故意把“另一边够新时报注意”改成“不好”后，两个相关用例失败（`artifacts/focus-ob17-bug-back-20261018-172832/`）。
 
 ## 签名（OB-10）
 

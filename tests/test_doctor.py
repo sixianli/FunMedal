@@ -12,19 +12,27 @@ from pathlib import Path
 import pytest
 
 from bridge_harness import APP, BRIDGE, artifacts, require_bridge_app, run_dir, write_summary  # noqa: F401
+from test_plugin import desktop_claude_path
 
 ARTIFACTS_PREFIX = "ob11"
 ARTIFACTS_SUBDIR = "doctor"
-CHECKS = ["桥接程序", "蓝牙", "语音识别", "签名", "卡片", "固件版本", "插件", "hooks 开关", "Claude Code 版本"]
+TERMINAL_LINE = "Claude Code 版本（终端）"
+DESKTOP_LINE = "Claude Code 版本（桌面 App）"
+CHECKS = ["桥接程序", "蓝牙", "语音识别", "签名", "卡片", "固件版本", "插件", "hooks 开关", TERMINAL_LINE, DESKTOP_LINE]
 LINE = re.compile(r"^(好|注意|不好|不知道) (.+?)：(.*)$")
 GOOD_STATUS = {"ok": True, "pid": 4242, "bluetooth": "poweredOn", "authorization": "allowedAlways",
                "speech": "authorized", "card": "connected", "card_version": 2, "bridge_version": 2}
 GOOD_PLUGINS = [{"id": "funmedal@funmedal", "enabled": True}, {"id": "other@elsewhere", "enabled": True}]
 GOOD = {"status": GOOD_STATUS, "version": "2.1.292 (Claude Code)", "plugins": GOOD_PLUGINS, "settings": {},
-        "app": "copy", "claude": True}
+        "app": "copy", "claude": True, "desktop": {}}
 GOOD_MARKS = {name: "好" for name in CHECKS}
 FAKE_CLAUDE = """#!/bin/sh
 if [ "$*" = "--version" ]; then printf '%s\\n' "$FAKE_CLAUDE_VERSION"; exit 0; fi
+if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; exit 0; fi
+exit 1
+"""
+DESKTOP_FAKE = """#!/bin/sh
+if [ "$*" = "--version" ]; then {answer}; fi
 if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; exit 0; fi
 exit 1
 """
@@ -87,6 +95,12 @@ def run_doctor(tmp_path, setup):
         fake = tools / "claude"
         fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         fake.chmod(0o755)
+    for version_dir, version in setup["desktop"].items():
+        program = desktop_claude_path(home, version_dir)
+        program.parent.mkdir(parents=True)
+        answer = f"printf '%s\\n' '{version}'; exit 0" if version else "exit 1"
+        program.write_text(DESKTOP_FAKE.format(answer=answer), encoding="utf-8")
+        program.chmod(0o755)
     env = {"HOME": str(home), "PATH": f"{tools}:/usr/bin:/bin", "LC_CTYPE": "C.UTF-8",
            "FAKE_CLAUDE_VERSION": setup["version"], "FAKE_CLAUDE_PLUGINS": json.dumps(setup["plugins"])}
     fake_bridge = FakeBridge(setup["status"]) if setup["status"] is not None else None
@@ -144,8 +158,9 @@ SITUATIONS = {
                         "claude plugin enable funmedal@funmedal"),
     "hooks-disabled": (changed(settings={"disableAllHooks": True}), {"hooks 开关": "不好"}, "disableAllHooks"),
     "hooks-no-settings": (changed(settings=None), {}, None),
-    "claude-old": (changed(version="2.1.291 (Claude Code)"), {"Claude Code 版本": "不好"}, "升级"),
-    "claude-missing": (changed(claude=False), {"插件": "不知道", "Claude Code 版本": "不好"}, "Claude Code"),
+    "claude-old": (changed(version="2.1.291 (Claude Code)"), {TERMINAL_LINE: "不好"}, "claude update"),
+    "claude-missing": (changed(claude=False), {"插件": "不知道", TERMINAL_LINE: "不好", DESKTOP_LINE: "不好"},
+                       "Code 页开一个会话"),
 }
 
 
@@ -206,3 +221,55 @@ def check_situation(way, run_dir, tmp_path):
         assert any(fix in result["details"][name] for name in bad), result
     if setup["status"] is not None:
         assert result["asked"] == [{"op": "status"}], result
+
+
+NEW_DESKTOP = {"2.1.299": "2.1.299 (Claude Code)"}
+DESKTOP_SITUATIONS = {
+    "desktop-only": (changed(claude=False, desktop={"2.1.280": "2.1.280 (Claude Code)"} | NEW_DESKTOP), {},
+                     {TERMINAL_LINE: "没找到", DESKTOP_LINE: "2.1.299", "插件": "装着，也开着"}),
+    "desktop-newest-broken": (changed(claude=False, desktop=NEW_DESKTOP | {"2.1.305": None}), {},
+                              {DESKTOP_LINE: "2.1.299"}),
+    "both-new": (changed(version="2.1.302 (Claude Code)", desktop=NEW_DESKTOP), {},
+                 {TERMINAL_LINE: "2.1.302", DESKTOP_LINE: "2.1.299"}),
+    "terminal-old": (changed(version="2.1.291 (Claude Code)", desktop=NEW_DESKTOP), {TERMINAL_LINE: "注意"},
+                     {TERMINAL_LINE: "claude update", DESKTOP_LINE: "2.1.299"}),
+    "desktop-old": (changed(version="2.1.302 (Claude Code)", desktop={"2.1.290": "2.1.290 (Claude Code)"}),
+                    {DESKTOP_LINE: "注意"}, {DESKTOP_LINE: "Check for Updates"}),
+    "desktop-old-only": (changed(claude=False, desktop={"2.1.290": "2.1.290 (Claude Code)"}), {DESKTOP_LINE: "不好"},
+                         {DESKTOP_LINE: "Check for Updates", TERMINAL_LINE: "没找到"}),
+    "terminal-unreadable": (changed(version="error: broken install", desktop=NEW_DESKTOP), {TERMINAL_LINE: "不知道"},
+                            {TERMINAL_LINE: "版本号"}),
+    "nothing": (changed(claude=False), {"插件": "不知道", TERMINAL_LINE: "不好", DESKTOP_LINE: "不好"},
+                {DESKTOP_LINE: "Code 页开一个会话"}),
+    "desktop-plugin-disabled": (changed(claude=False, desktop=NEW_DESKTOP,
+                                        plugins=[{"id": "funmedal@funmedal", "enabled": False}]),
+                                {"插件": "不好"}, {"插件": "Manage plugins"}),
+}
+
+
+@pytest.mark.parametrize("case, way", [
+    ("[OB-17] doctor with only the Claude desktop app reads its newest bundled Claude Code, ignores older folders, "
+     "checks the plugin through it and does not ask for a terminal claude", "desktop-only"),
+    ("[OB-17] doctor skips a bundled Claude Code that cannot report its version", "desktop-newest-broken"),
+    ("[OB-17] doctor reports the terminal and desktop app versions on separate lines", "both-new"),
+    ("[OB-17] doctor notes an old terminal claude without failing when the desktop app is new enough",
+     "terminal-old"),
+    ("[OB-17] doctor notes an old desktop app without failing when the terminal claude is new enough", "desktop-old"),
+    ("[OB-17] doctor fails when the only Claude Code is an old desktop app and says how to update it",
+     "desktop-old-only"),
+    ("[OB-17] doctor cannot judge a terminal claude that gives no version", "terminal-unreadable"),
+    ("[OB-17] doctor with neither a terminal claude nor the desktop app's Claude Code says to open a Code session",
+     "nothing"),
+    ("[OB-17] doctor tells a desktop app user where to turn the plugin back on", "desktop-plugin-disabled"),
+])
+def test_doctor_desktop(case, way, run_dir, tmp_path):
+    require_bridge_app()
+    setup, changed_marks, words = DESKTOP_SITUATIONS[way]
+    result = run_doctor(tmp_path, setup)
+    write_summary(run_dir, result)
+    expected = GOOD_MARKS | changed_marks
+    assert result["order"] == CHECKS and result["unparsed"] == [], result
+    assert result["marks"] == expected, result
+    assert result["exit"] == (1 if "不好" in expected.values() else 0), result
+    assert all("改法：" in result["details"][name] for name, mark in expected.items() if mark in ("不好", "注意")), result
+    assert all(word in result["details"][name] for name, word in words.items()), result

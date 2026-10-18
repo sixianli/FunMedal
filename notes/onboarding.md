@@ -545,3 +545,54 @@ mod 是插件里的一段 JavaScript 程序，Claude Code 每开一个会话，�
   - `2026-10-17-brainstorm-<模型>-reply-2.md`、`-stop-2.md`：第二轮说明和结论。
   - `runs/`：每次运行的事件记录（`.jsonl`）、错误输出和退出码。
 - 工作区和 OpenCode 服务器都放在这次会话的临时目录里，不保留。要重做，重新导出 `11d9dbd`，按上面的说明再跑一遍。
+
+## 只用桌面 App 的人怎么装（OB-17）
+
+2026-10-18 负责人说：“我现在不用claude code cli而是使用claude code desktop macOS app”，随后选了现在补上“只装了桌面 App 也能装、自检也查对版本”（`.agents/tasks/onboarding/goal.md` 的 G36、G37）。原来的 `install.sh`、`uninstall.sh` 和 `doctor` 都只认终端里的 `claude` 命令（终端版 Claude Code）：只装了 Claude 桌面 App 的人第一步就被拦下，`doctor` 查的版本也不是桌面 App 在用的那份。
+
+### 结论
+
+1. **桌面 App 自带一份完整的 Claude Code，可以在会话外直接运行。** 它在 `~/Library/Application Support/Claude/claude-code/<版本>/<编号>/claude.app/Contents/MacOS/claude`，桌面 App 自己下载和升级它，升级后旧版本目录还留着（本机同时有 2.1.295 和 2.1.299）。2026-10-18 本机实测：在一个假家目录里、PATH 上没有 `claude` 时，用它运行 `plugin marketplace add <仓库>` 和 `plugin install funmedal@funmedal` 都成功，写进假家目录 `settings.json` 的正好是 `extraKnownMarketplaces` 和 `enabledPlugins` 两项，和终端版装出来的一样。
+2. **三个脚本用同一个办法找 Claude Code。** 候选是 PATH 上的 `claude` 和桌面 App 目录里能读出版本号的最高那份；装、卸都用两者中版本较新的那份。终端版和桌面 App 读同一个 `~/.claude/settings.json`，所以用哪一份装，两边的会话都会加载插件。`install.sh`、`uninstall.sh` 共用 `tools/find-claude.sh`；`doctor` 是 Swift 写的，用同样的规则另写一遍，两边各有测试。
+3. **不直接改写 `settings.json`。** 只要有任何一份能用的 Claude Code，官方的 `plugin` 命令就能装；一份都没有时，写了设置也没有程序去读。刚装好桌面 App、还没开过 Code 会话的人，`install.sh` 提示先在 Code 页开一个会话。
+4. **`doctor` 的版本检查拆成两行**：终端一行、桌面 App 一行。“不好”只用在 FunMedal 现在用不了的时候：一边太旧而另一边够新时，太旧的那行是“注意”；一边没找到而另一边找到了，没找到的那行是“好”，写明在哪里找过；两边都没找到才是“不好”。
+
+### 怎么做的
+
+- **先和三个模型分两轮想。** 第一轮各自想、看不到 Claude 的方案；第二轮看方案挑错。免费模型从 16:17 到 16:49 一直报 HTTP 500，负责人说改用 OpenCode Go 里的模型（G38），所以用的是三个免费模型对应的 Go 版本：`opencode-go/deepseek-v4.1-flash#high`、`opencode-go/glm-5.3-flash#high`、`opencode-go/mimo-v2.6-flash`（这个模型的 Go 版本没有 `high` 档，用默认档）。第一轮 16:51–17:12，第二轮 17:15–17:26，六次运行的退出码都是 0。
+- **再写测试，后写代码。** 新测试都带 `[OB-17]` 标签，在 `tests/test_plugin.py`、`tests/test_uninstall.py`、`tests/test_doctor.py` 里。用假程序的测试在假家目录里按桌面 App 的目录结构放假的 `claude`，每个假程序把自己是谁、被调用了什么记下来；端到端测试把本机真实的桌面 App 自带程序链接进假家目录、PATH 上不放 `claude`，真的装一遍、卸一遍，并确认负责人自己的三个设置文件没变。改代码前新测试都失败（`artifacts/focus-ob17-before-20261018-172026/`、`artifacts/focus-ob17-doctor-before-20261018-172416/`）。
+- **故意改坏两处**：把比较版本的规则改成按字面比较，`2.1.1000` 和 `2.1.999` 那个用例失败；把 `doctor` 里“另一边够新时报注意”改成“不好”，两个相关用例失败（`artifacts/focus-ob17-bug-back-20261018-172832/`）。
+
+### 核对后采纳的补充
+
+| 补充 | 谁提的 |
+| --- | --- |
+| 读不出版本号的那份（例如只下载了一半）跳过，换下一份 | 三个模型 |
+| 装好后另一份低于 2.1.292 时，打一行“注意”，说明怎么升级那一份 | GLM、MiMo |
+| 一边太旧、另一边够新时，`doctor` 报“注意”而不是“不好”，免得只用桌面 App 的人每次自检都失败 | GLM |
+| 刚装好桌面 App 的人，提示写“先在 Code 页开一个会话”，而不是“先装桌面 App” | 三个模型 |
+| 带 `-dev` 这类后缀的版本号，脚本和 `doctor` 都取开头的三段数字，两边结论一致 | MiMo |
+| `doctor` 写“没找到”而不是“没装”：它只知道自己在哪里找过 | MiMo |
+| 插件关着时，改法同时写桌面 App 的入口和终端命令 | DeepSeek |
+
+另外，Claude 写测试时发现 macOS 自带的 `/bin/sh`（bash 3.2）的一个毛病：UTF-8 环境下，变量名后面紧跟中文标点（例如 `$V，`）时，中文字符的第一个字节会丢掉，输出变成乱码。脚本里这种地方都改成了 `${V}，`。
+
+### 核对后没有采纳的说法
+
+- **“取版本较新的那份，会装到用户不用的那一边”**（DeepSeek、MiMo）：两边读同一个 `settings.json`，装到哪里都一样；真正的风险是另一边太旧，已经用“注意”行提醒。
+- **保留“直接写 `settings.json`”作后备**（DeepSeek）：理由见结论第 3 条。
+- **按正在运行的进程判断桌面版本**（DeepSeek、MiMo）：本机 10 月 17 日以后启动的桌面会话都用目录里最高的 2.1.299，和按目录判断一致；旧会话本来就要重开才会用上新插件。
+- **给候选程序的 `--version` 加超时**（DeepSeek、MiMo）：原来的脚本也没有超时，还没见过它卡住；先不加。
+
+### 还没确认的事
+
+- 刚装好桌面 App、从没开过 Code 会话时，`claude-code/` 目录在不在。官方文档没写；提示语按“不在”写，在的话也不会出错。
+- 桌面 App 自带 Claude Code 的目录结构是本机看到的，官方文档没写；它变了的话，脚本和 `doctor` 都会找不到桌面那份，`doctor` 报“没找到”。
+
+### 按 MISSION.md 逐条回答
+
+见 `.agents/tasks/onboarding/plan.md` 里 OB-17 那一条：它补的是 Claude Code 电脑端的不足里“装”这一步，让只用桌面 App 的人也能装上、自检也查对版本，不加新功能。
+
+### 原始文件
+
+- 本机 `.agents/handoff/2026-10-18-desktop/`，没有进 git：三个模型两轮的说明（`brief-1`、`reply-2`）、结论（`stop-1`、`stop-2`）、第二轮给模型看的方案 `current-plan.md`，以及 `runs/` 里每次运行的事件记录和退出码（`oc-1`、`oc-2` 是免费模型报 HTTP 500 的那两次）。
