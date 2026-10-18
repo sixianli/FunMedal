@@ -73,6 +73,8 @@
 - 2026-10-18 13:29 提交 7624e37 上的完整测试 151 过 4 失败（`artifacts/full-20261018-130025/`），4 项都是 Mac 朗读后卡片的识别结果为 `empty`（识别不出字），集中在 13:11 到 13:14。音量是 50%，和 11:22 那次一样；11:22 那次 18 句里 3 句 `empty`，这次 18 句里 11 句。识别出来的字数一直很少：朗读的句子约 27 个字，两次识别出的都只有 1 到 17 个字，23 句里 10 句只有 1 到 2 个字。所以 50% 音量下从 Mac 扬声器到卡片麦克风这条路本来就勉强，`empty` 多少看当时屋里的声音，不是 OB-14、OB-15 的改动造成的（两项都没改语音代码）。重跑这 4 项 5 过 1 失败（`artifacts/voice-rerun-20261018-131631/`）。
 - 2026-10-18 13:29 还失败的 `test_mod_delivers` 是测试自己的毛病：`speak()` 识别为空时会重说，最后的断言却把重说前的 `empty` 也算进 `voice_results`，所以只要重说过一次就判失败。改成重说过的那几句必须都是 `empty`，其余的照旧必须是两句 `queued`。新断言放到失败那次的 `summary.json` 上判通过、旧断言判失败；改完重跑通过（`artifacts/ob8-moddelivers-20261018-132631/`，这次没有重说）。`test_voice.py` 里朗读的测试不重说，`empty` 直接判失败，这次没改。
 
+- 2026-10-18 13:44 提交 887e3da 上的完整测试 154 过 1 失败（`artifacts/full-20261018-133017/`），这次语音的几项在 50% 音量下都过了（G33）。失败的是 OB-15 的 `test_real_card`：卡片的 `sec` 报的是此刻这条连接的加密状态，没有连接时是 `none`（`firmware/main/ble_link.c` 的 `ble_link_security`），测试却在桥接程序退出之后才读。13:00 那次卡片还没察觉断开所以读到 `bonded`，这次察觉了。刷写、启动、连接和版本都正常。改成桥接程序还连着时读，重跑 `tests/test_flash.py` 12 过（`artifacts/ob15-realcard-20261018-134408/`）。
+
 ## 决定
 - 2026-10-17 17:56 模型：G4 禁止的是付费按量的 `opencode/*` 模型。G7 要求多用几个免费模型，G8 用户框定了三个：opencode/deepseek-v4.1-flash-free、opencode/glm-5.3-flash-free、opencode/mimo-v2.6-flash-free。本条目只用这三个，其它模型不用。
 - 2026-10-17 18:04 第一轮的档位：头脑风暴是开放的设计问题，按规则用高档位，DeepSeek 和 GLM 用 `#high`，MiMo 没有高档位，用默认。18:03–18:04 三个会话同时启动：ses_eb6e5b29affepH2uYiVvc2AdJL（DeepSeek）、ses_eb6e59b48ffeg9Jk34b7GGPSof（GLM）、ses_eb6e58aedffeK8N3TrwaL0y5T1（MiMo）。
