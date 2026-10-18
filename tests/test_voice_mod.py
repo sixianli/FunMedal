@@ -14,7 +14,7 @@ import pytest
 from bridge_harness import (BRIDGE, artifacts, bridge, bridge_cli, card, ink, newest_claude, press,  # noqa: F401
                             real_session, run_dir, snapshot, wait_session_ready, wait_until, write_summary)
 from test_voice import (HEADER_ROWS, HINT_ROWS, IMAGE_COLUMNS, IMAGE_ROWS, RESULT_SHOW_S, RESULT_WAIT_S, SPEAKING_VOICE,
-                        TITLE_ROWS, VOICE_BACKGROUND, FakeChannel, built_in_speaker, wait_voice_screen, wake_speaker)
+                        TITLE_ROWS, VOICE_BACKGROUND, FakeListener, built_in_speaker, wait_voice_screen, wake_speaker)
 
 ARTIFACTS_PREFIX = "ob8"
 ARTIFACTS_SUBDIR = "voice-mod"
@@ -29,7 +29,7 @@ BUSY_COMMAND = f"cat {BUSY_PIPE}"
 PLUGIN_ORIGIN = {"kind": "plugin", "name": "funmedal", "asUser": True}
 ESCAPE = "\x1b"
 USAGE_EXIT = 64
-CHANNEL_QUIET_S = 3.0
+FOLLOW_UP_S = 5.0
 SPEAK_TRIES = 3
 LISTEN_PARENT = """
 import subprocess, sys, time
@@ -325,30 +325,30 @@ def test_mod_through_stop_and_exit(case, card, bridge, run_dir):
     assert len(prompts) == 1 and len(prompts[0]) == chars_of(bridge, clips["recovered"]) > 0, summary
 
 
-@pytest.mark.parametrize("case", ["[OB-8] a channel server never reports a result, so the bridge waits on nothing "
-                                  "for it and the card gets no follow-up when the channel goes away"])
-def test_channel_gets_no_follow_up(case, card, bridge, run_dir):
+@pytest.mark.parametrize("case", ["[OB-16] a listener that registers without promising results is still waited "
+                                  "on, so the card gets a not-connected follow-up when it goes away before reporting"])
+def test_every_listener_is_waited_on(case, card, bridge, run_dir):
     bridge.start()
-    channel = FakeChannel(bridge.socket, 1111)
-    summary = {}
+    listener = FakeListener(bridge.socket, 1111)
     try:
         heard = speak(card)
         waiting_open = bridge.status()["waiting"]
-        said_lines = channel.collect()
-    finally:
-        channel.close()
-    try:
-        wait_until(lambda: log_kind(bridge, "unlisten"), 5.0, "channel unlistened")
+        said_lines = listener.collect()
         later = card.mark()
-        time.sleep(CHANNEL_QUIET_S)
-        summary = {"heard": heard, "waiting_open": waiting_open, "said_clips": [m["clip"] for m in said_lines],
-                   "waiting_closed": bridge.status()["waiting"], "followed": followed(bridge),
-                   "card_after_close": results_since(card, later, heard["clip"])}
     finally:
+        listener.close()
+    clip = heard["clip"]
+    summary = {"heard": heard, "waiting_open": waiting_open, "said_clips": [m["clip"] for m in said_lines]}
+    try:
+        wait_until(lambda: log_kind(bridge, "unlisten"), 5.0, "listener unlistened")
+        summary["follow_up"] = next_result(card, clip, later, FOLLOW_UP_S)["result"]
+    finally:
+        summary |= {"waiting_closed": bridge.status()["waiting"], "followed": followed(bridge),
+                    "card_after_close": results_since(card, later, clip)}
         write_summary(run_dir, summary)
-    assert summary["heard"]["first"] == "queued" and summary["said_clips"] == [summary["heard"]["clip"]], summary
-    assert summary["waiting_open"] == [] and summary["waiting_closed"] == [], summary
-    assert summary["followed"] == [] and summary["card_after_close"] == [], summary
+    assert heard["first"] == "queued" and summary["said_clips"] == [clip], summary
+    assert summary["waiting_open"] == [clip] and summary["waiting_closed"] == [], summary
+    assert summary["followed"] == [(clip, "no_session")] and summary["card_after_close"] == ["no_session"], summary
 
 
 @pytest.mark.parametrize("case", ["[OB-8] the listen mode registers under its parent process and exits when that "

@@ -290,4 +290,4 @@ def test_fresh_clone_builds(case, run_dir):
         write_summary(run_dir, record)
     assert record["bridge"] == 0 and record["bridge_built"], record
     assert record["firmware"] == 0 and record["firmware_bytes"] > 0, record
-    assert "channel" in record["bridge_usage"] and not record["backup_in_clone"], record
+    assert "listen" in record["bridge_usage"] and not record["backup_in_clone"], record

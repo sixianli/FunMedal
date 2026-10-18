@@ -1,6 +1,5 @@
 import json
 import os
-import queue
 import re
 import socket
 import subprocess
@@ -36,14 +35,6 @@ MIN_STACK_FREE_BYTES = 1024
 KEY_GAP_LIMIT_MS = 30
 TITLE_ROWS = (100, 150)
 HINT_ROWS = (165, 195)
-CHANNEL_PROTOCOL = "2025-06-18"
-CHANNEL_RETRY_S = 2.0
-CHANNEL_NAME = "funmedal"
-METHOD_NOT_FOUND = -32601
-INITIALIZE = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-              "params": {"protocolVersion": "2025-11-25", "capabilities": {},
-                         "clientInfo": {"name": "claude-code", "version": "2.1.292"}}}
-INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
 SPOKEN = "请帮我把所有测试跑一遍，然后告诉我结果"
 SPOKEN_KEYWORD = "测试"
 SPEAKING_VOICE = "Tingting"
@@ -104,44 +95,7 @@ class FakeBridgeSocket:
             os.unlink(self.path)
 
 
-class ChannelRun:
-    def __init__(self, socket_path):
-        self.proc = subprocess.Popen([str(BRIDGE), "channel", "--socket", socket_path], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.out = queue.Queue()
-        self.transcript = []
-        threading.Thread(target=self._read, daemon=True).start()
-
-    def _read(self):
-        for line in self.proc.stdout:
-            try:
-                message = json.loads(line)
-            except ValueError:
-                message = {"unparsed": line.decode(errors="replace")}
-            self.transcript.append({"dir": "out", "msg": message})
-            self.out.put(message)
-
-    def send(self, message):
-        self.transcript.append({"dir": "in", "msg": message})
-        self.proc.stdin.write((json.dumps(message) + "\n").encode())
-        self.proc.stdin.flush()
-
-    def next(self, timeout=5.0):
-        return self.out.get(timeout=timeout)
-
-    def finish(self, timeout=5.0):
-        started = time.monotonic()
-        self.proc.stdin.close()
-        code = self.proc.wait(timeout)
-        return code, time.monotonic() - started
-
-    def stop(self):
-        if self.proc.poll() is None:
-            self.proc.kill()
-        self.proc.wait()
-
-
-class FakeChannel:
+class FakeListener:
     def __init__(self, bridge_socket, claude_pid):
         self.pid = claude_pid
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -231,15 +185,6 @@ def spoke_before_release(got):
 
 def voice_log(bridge, kind):
     return [e for e in bridge.log_entries() if e.get("kind") == kind]
-
-
-def say_line(text, clip):
-    return (json.dumps({"say": text, "clip": clip}, ensure_ascii=False) + "\n").encode()
-
-
-def pushed(text):
-    return {"jsonrpc": "2.0", "method": "notifications/claude/channel",
-            "params": {"content": text, "meta": {"chat_id": "card"}}}
 
 
 def capture(card, packets, gain):
@@ -380,96 +325,6 @@ def test_talk_over_approval(case, card, bridge, run_dir):
     assert behavior(answered["stdout"]) == {"behavior": "allow"}, answered
 
 
-@pytest.mark.parametrize("case", ["[FM-15] the channel server registers as a Claude Code channel and pushes text in"])
-def test_channel_server(case, run_dir):
-    require_bridge_app()
-    fake = FakeBridgeSocket()
-    fake.listen()
-    channel = ChannelRun(fake.path)
-    record = {}
-    try:
-        channel.send(INITIALIZE)
-        record["init"] = channel.next()
-        record["early_connect"] = fake.arrives(1.0)
-        channel.send(INITIALIZED)
-        client, lines = fake.accept(5.0)
-        record["listen"] = json.loads(lines.readline())
-        client.sendall(b'{"ok":true}\n')
-        client.sendall(say_line(SPOKEN, 5))
-        record["pushed"] = channel.next()
-        for request_id, method in ((2, "ping"), (3, "server/discover"), (4, "tools/list")):
-            channel.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}})
-        channel.send({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 9}})
-        channel.send({"jsonrpc": "2.0", "id": 5, "method": "ping"})
-        record["replies"] = [channel.next() for _ in range(4)]
-        record["exit"], record["exit_s"] = channel.finish()
-        record["bridge_saw_close"] = lines.read() == b""
-        lines.close()
-        client.close()
-    finally:
-        channel.stop()
-        fake.close()
-        record["transcript"] = channel.transcript
-        record["stderr"] = channel.proc.stderr.read().decode()
-        write_summary(run_dir, record)
-    result = record["init"]["result"]
-    assert record["init"]["id"] == 1 and result["protocolVersion"] == CHANNEL_PROTOCOL, record["init"]
-    assert result["capabilities"] == {"experimental": {"claude/channel": {}}}, result
-    assert result["serverInfo"]["name"] == CHANNEL_NAME and result["instructions"], result
-    assert not record["early_connect"], record
-    assert record["listen"] == {"op": "listen", "claude_pid": os.getpid()}, record["listen"]
-    assert record["pushed"] == pushed(SPOKEN), record["pushed"]
-    replies = record["replies"]
-    assert replies[0] == {"jsonrpc": "2.0", "id": 2, "result": {}}, replies
-    assert [(r["id"], r["error"]["code"]) for r in replies[1:3]] == [(3, METHOD_NOT_FOUND), (4, METHOD_NOT_FOUND)]
-    assert replies[3] == {"jsonrpc": "2.0", "id": 5, "result": {}}, replies
-    assert record["exit"] == 0 and record["exit_s"] < 2.0 and record["bridge_saw_close"], record
-
-
-@pytest.mark.parametrize("case", ["[FM-15] the channel server reaches a bridge that starts later or restarts"])
-def test_channel_reconnects(case, run_dir):
-    require_bridge_app()
-    fake = FakeBridgeSocket()
-    channel = ChannelRun(fake.path)
-    record = {}
-    try:
-        channel.send(INITIALIZE)
-        channel.next()
-        channel.send(INITIALIZED)
-        time.sleep(1.0)
-        channel.send({"jsonrpc": "2.0", "id": 2, "method": "ping"})
-        record["ping_without_bridge"] = channel.next()
-        fake.listen()
-        began = time.monotonic()
-        client, lines = fake.accept(CHANNEL_RETRY_S + 3.0)
-        record["first_after_s"] = time.monotonic() - began
-        record["first"] = json.loads(lines.readline())
-        client.sendall(b'{"ok":true}\n')
-        lines.close()
-        client.close()
-        began = time.monotonic()
-        client, lines = fake.accept(CHANNEL_RETRY_S + 3.0)
-        record["again_after_s"] = time.monotonic() - began
-        record["again"] = json.loads(lines.readline())
-        client.sendall(b'{"ok":true}\n')
-        client.sendall(say_line(SPOKEN, 6))
-        record["pushed"] = channel.next()
-        record["exit"], _ = channel.finish()
-        lines.close()
-        client.close()
-    finally:
-        channel.stop()
-        fake.close()
-        record["transcript"] = channel.transcript
-        write_summary(run_dir, record)
-    listen = {"op": "listen", "claude_pid": os.getpid()}
-    assert record["ping_without_bridge"] == {"jsonrpc": "2.0", "id": 2, "result": {}}, record
-    assert record["first"] == listen and record["again"] == listen, record
-    assert record["first_after_s"] <= CHANNEL_RETRY_S + 1.0, record
-    assert record["again_after_s"] <= CHANNEL_RETRY_S + 1.0, record
-    assert record["pushed"] == pushed(SPOKEN) and record["exit"] == 0, record
-
-
 @pytest.mark.parametrize("case,way,claude_pid", [
     ("[FM-15] hook reports the Claude Code process named in CLAUDE_PID", "named", "4242"),
     ("[FM-15] hook reports its parent process when CLAUDE_PID is missing", "missing", None),
@@ -511,7 +366,7 @@ def test_hook_reports_claude_process(case, way, claude_pid, run_dir):
     assert all(m["claude_pid"] == expected for m in sent), (expected, sent)
 
 
-@pytest.mark.parametrize("case", ["[FM-15] with no channel connected the card says no session can take the words"])
+@pytest.mark.parametrize("case", ["[FM-15] with no listener connected the card says no session can take the words"])
 def test_voice_no_session(case, card, bridge, run_dir):
     start = start_and_mark(bridge, card)
     before = bridge.status()
@@ -529,7 +384,7 @@ def test_voice_no_session(case, card, bridge, run_dir):
 @pytest.mark.parametrize("case", ["[FM-15] saying nothing comes back as not heard"])
 def test_voice_silence(case, card, bridge, run_dir):
     start = start_and_mark(bridge, card)
-    listener = FakeChannel(bridge.socket, 1111)
+    listener = FakeListener(bridge.socket, 1111)
     try:
         got = talk(card, run_dir, 2000, start)
         said = listener.collect()
@@ -546,7 +401,7 @@ def test_voice_silence(case, card, bridge, run_dir):
 @pytest.mark.parametrize("case", ["[FM-15] spoken words reach the session that last needed the user and show on the card"])
 def test_voice_spoken(case, card, bridge, run_dir):
     start = start_and_mark(bridge, card)
-    newer, older = FakeChannel(bridge.socket, 1111), FakeChannel(bridge.socket, 2222)
+    newer, older = FakeListener(bridge.socket, 1111), FakeListener(bridge.socket, 2222)
     try:
         hook_as(bridge, 2222, event("SessionStart", "a", source="startup"))
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
@@ -579,25 +434,25 @@ def test_voice_spoken(case, card, bridge, run_dir):
 @pytest.mark.parametrize("case", ["[FM-15] after the bridge restarts, words still go to the session that last needed the user"])
 def test_voice_after_restart(case, card, bridge, run_dir):
     start_and_mark(bridge, card)
-    before = [FakeChannel(bridge.socket, 2222), FakeChannel(bridge.socket, 1111)]
+    before = [FakeListener(bridge.socket, 2222), FakeListener(bridge.socket, 1111)]
     try:
         hook_as(bridge, 2222, event("SessionStart", "a", source="startup"))
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
         hook_as(bridge, 1111, event("Stop", "b", stop_hook_active=False))
     finally:
-        for channel in before:
-            channel.close()
+        for listener in before:
+            listener.close()
     bridge.quit()
     start = start_and_mark(bridge, card)
-    after = {"older_first": FakeChannel(bridge.socket, 2222), "needed": FakeChannel(bridge.socket, 1111),
-             "never_needed_last": FakeChannel(bridge.socket, 3333)}
+    after = {"older_first": FakeListener(bridge.socket, 2222), "needed": FakeListener(bridge.socket, 1111),
+             "never_needed_last": FakeListener(bridge.socket, 3333)}
     try:
         status = bridge.status()
         got = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN)
-        said = {name: channel.collect() for name, channel in after.items()}
+        said = {name: listener.collect() for name, listener in after.items()}
     finally:
-        for channel in after.values():
-            channel.close()
+        for listener in after.values():
+            listener.close()
     results = voice_log(bridge, "voice_result")
     write_summary(run_dir, {"status": status, "talk": {k: v for k, v in got.items() if k != "shot"},
                             "said": said, "results": results, "lines": voice_lines(card, start),
@@ -612,8 +467,8 @@ def test_voice_after_restart(case, card, bridge, run_dir):
     assert [(r["clip"], r["result"], r["pid"]) for r in results] == [(got["clip"], "queued", 1111)], results
 
 
-def card_writes(bridge, kind, what, clip):
-    return [e for e in voice_log(bridge, kind) if e.get("what") == what and e.get("clip") == clip]
+def card_writes(bridge, kind, what, clip, before=float("inf")):
+    return [e for e in voice_log(bridge, kind) if e.get("what") == what and e.get("clip") == clip and e["t"] < before]
 
 
 def result_screen(shot):
@@ -624,9 +479,9 @@ def result_screen(shot):
             "image_ink": ink(pixels, IMAGE_ROWS, VOICE_BACKGROUND, IMAGE_COLUMNS)}
 
 
-def retry_gaps(bridge, clip):
+def retry_gaps(bridge, clip, before):
     entries = [e for e in bridge.log_entries() if e.get("what") == "voice" and e.get("clip") == clip
-               and e.get("kind") in ("write", "write_error")]
+               and e.get("kind") in ("write", "write_error") and e["t"] < before]
     return [round(later["t"] - entry["t"], 3) for entry, later in zip(entries, entries[1:])
             if entry["kind"] == "write_error" and later["kind"] == "write"]
 
@@ -652,33 +507,34 @@ def test_reject_command_usage(case, card, run_dir):
 def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
     kind, times = REFUSALS[way]
     start = start_and_mark(bridge, card)
-    channel = FakeChannel(bridge.socket, 1111)
+    listener = FakeListener(bridge.socket, 1111)
     try:
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
         armed = card.request(f"ble reject {kind} {times}")
         assert armed == f"OK ble reject {kind} {times}", armed
         refused = talk(card, run_dir, SPOKEN_HOLD_MS, start, speak=SPOKEN, shot_name="refused")
         recovered = talk(card, run_dir, SPOKEN_HOLD_MS, card.mark(), speak=SPOKEN, shot_name="recovered")
-        said = {message["clip"]: message["say"] for message in channel.collect()}
+        said = {message["clip"]: message["say"] for message in listener.collect()}
     finally:
         try:
-            channel.close()
+            listener.close()
         finally:
             cleared = card.request("ble reject none")
+    closed_at = wait_until(lambda: [e["t"] for e in voice_log(bridge, "unlisten")], 5.0, "listener unlistened")[0]
     clips = {"refused": refused["clip"], "recovered": recovered["clip"]}
     results = {name: [r["result"] for r in voice_log(bridge, "voice_result") if r["clip"] == clip]
                for name, clip in clips.items()}
     chars = {r["clip"]: r.get("chars") for r in voice_log(bridge, "voice_result")}
     errors = {name: [e["what"] for e in voice_log(bridge, "write_error") if e.get("clip") == clip]
               for name, clip in clips.items()}
-    image_writes = {name: [e["offset"] for e in card_writes(bridge, "write", "voice_image", clip)]
+    image_writes = {name: [e["offset"] for e in card_writes(bridge, "write", "voice_image", clip, closed_at)]
                     for name, clip in clips.items()}
-    result_writes = {name: [e["result"] for e in card_writes(bridge, "write", "voice", clip)]
+    result_writes = {name: [e["result"] for e in card_writes(bridge, "write", "voice", clip, closed_at)]
                      for name, clip in clips.items()}
     drawn = {r["clip"]: r.get("ink") for r in voice_log(bridge, "voice_result")}
     screens = {"refused": result_screen(refused["shot"]), "recovered": result_screen(recovered["shot"])}
     rejects = card_lines(card, start, "BLE reject")
-    retry_waits = retry_gaps(bridge, refused["clip"])
+    retry_waits = retry_gaps(bridge, refused["clip"], closed_at)
     write_summary(run_dir, {"armed": armed, "cleared": cleared, "retry_waits_s": retry_waits, "clips": clips,
                             "card_results": [refused["result"], recovered["result"]],
                             "bridge_results": results, "write_errors": errors, "image_writes": image_writes,
@@ -720,7 +576,7 @@ def test_card_refuses_voice_write(way, case, card, bridge, run_dir):
 def test_person_speaks(case, card, bridge, run_dir):
     seconds = float(PERSON_SECONDS)
     start = start_and_mark(bridge, card)
-    channel = FakeChannel(bridge.socket, 1111)
+    listener = FakeListener(bridge.socket, 1111)
     tries = []
     try:
         hook_as(bridge, 1111, event("UserPromptSubmit", "b", prompt="x"))
@@ -732,9 +588,9 @@ def test_person_speaks(case, card, bridge, run_dir):
             mark, _, result = wait_voice(card, VOICE_RESULT, RESULT_WAIT_S + 3.0, ended)
             wait_voice_screen(card, "none", RESULT_SHOW_S + 3.0)
             tries.append({"clip": int(began.group(1)), "packets": int(end.group(2)), "result": result.group(2)})
-        said = {message["clip"]: message["say"] for message in channel.collect()}
+        said = {message["clip"]: message["say"] for message in listener.collect()}
     finally:
-        channel.close()
+        listener.close()
     for attempt in tries:
         attempt["heard"] = said.get(attempt["clip"], "")
     injected = card_lines(card, start, "OK key")

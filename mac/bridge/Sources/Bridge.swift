@@ -64,12 +64,10 @@ final class Approval {
 final class Listener {
     let pid: Int
     let fd: Int32
-    let reportsResults: Bool
 
-    init(pid: Int, fd: Int32, reportsResults: Bool) {
+    init(pid: Int, fd: Int32) {
         self.pid = pid
         self.fd = fd
-        self.reportsResults = reportsResults
     }
 }
 
@@ -319,9 +317,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard let pid = message["claude_pid"] as? Int, pid > 0 else {
             return Handled(reply: reject("listen needs a claude_pid"))
         }
-        let listener = Listener(pid: pid, fd: client, reportsResults: message["reports_results"] as? Bool == true)
+        let listener = Listener(pid: pid, fd: client)
         listeners.append(listener)
-        log.write("listen", ["pid": pid, "reports_results": listener.reportsResults])
+        log.write("listen", ["pid": pid])
         if let data = Hook.line(["ok": true]) { _ = UnixSocket.writeAll(client, data) }
         return Handled(reply: nil, listener: listener)
     }
@@ -418,7 +416,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             queueImage(image.pixels, clip: current.clip)
             fields["ink"] = image.ink
         }
-        if listener.reportsResults { waiting[current.clip] = listener }
+        waiting[current.clip] = listener
         conclude(current, "queued", fields)
     }
 

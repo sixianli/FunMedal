@@ -115,7 +115,7 @@ func ask(socket: String, _ message: [String: Any]) -> Int32 {
 
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: funmedal-bridge serve|hook|channel|listen|said|status|quit|speech-access|doctor [--socket PATH] "
+let usage = "usage: funmedal-bridge serve|hook|listen|said|status|quit|speech-access|doctor [--socket PATH] "
     + "[--log PATH] [--wait-limit SECONDS] [--voice-locale LOCALE] [--clip NUMBER] [--result WORD] "
     + "[--link-version NUMBER]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
@@ -156,8 +156,6 @@ case "serve":
 case "hook":
     Hook.run(socket: socketPath, waitLimit: waitLimit, logPath: logPath)
     exit(0)
-case "channel":
-    Channel.run(socket: socketPath)
 case "listen":
     Listen.run(socket: socketPath)
 case "said":
