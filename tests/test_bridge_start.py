@@ -244,6 +244,8 @@ def test_real_session_starts_bridge(case, card, bridge, run_dir):
             summary = {"started": started, "connected": connected, "listening": listening, "hooked": hooked,
                        "processes": processes, "states": card_states(card, start), "after_exit": bridge.status()}
     finally:
+        if not summary:
+            summary = {"bridge_when_failed": bridge.status()}
         write_summary(run_dir, summary)
     started = summary["started"]
     assert [(p["pid"], p["ppid"]) for p in summary["processes"]] == [(started["pid"], 1)], summary
