@@ -110,6 +110,16 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 
 左侧的键不接芯片的任何引脚，本项目的固件用不到它。
 
+## 出问题时
+
+卡片不显示状态、批准或按住说话没反应时，先运行：
+
+```bash
+~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge doctor
+```
+
+它依次查 9 项：桥接程序在不在跑、蓝牙和语音识别是否允许、桥接程序的签名、卡片连没连上、卡片固件和桥接程序的版本配不配、插件装没装、hooks 有没有被 `disableAllHooks` 关掉、Claude Code 的版本够不够。每项一行，开头是“好”“注意”“不好”或“不知道”，不是“好”的行后面写改法。有一项“不好”时退出码是 1。蓝牙、语音识别、卡片和版本这 4 项要问正在跑的桥接程序，它没在跑时显示“不知道”，先照第一行把它启动起来再查。
+
 ## 卸载
 
 ```bash

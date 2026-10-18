@@ -37,7 +37,7 @@
 3. 常驻的桥接程序记着每个会话的状态，算出卡片该显示哪一种。变了就用 BLE（低功耗蓝牙）写给卡片。
 4. 卡片的 USB 串口只在测试时用：测试从这里读回卡片收到了什么、显示了什么，平时不需要接 USB。
 
-桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。FM-15 起还有 `channel` 模式，是 Claude Code 为每个会话启动的频道服务器，同样不碰蓝牙，见 [voice.md](voice.md)。OB-8 起还有 `listen` 模式和 `said` 命令，都由插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）运行：`listen` 收按住说话认出的文字，`said` 交回这句话进没进会话，同样不碰蓝牙，见 [voice.md](voice.md) 的“Mac 端”。
+桥接程序是一个 Swift 写的 Mac 应用包（`.app`），没有窗口，也不在程序坞里显示。它必须由 `open`（macOS 打开应用的命令）启动，否则 macOS 会因为它用蓝牙而把它结束（见 [ble-link.md](ble-link.md) 第 4 条影响）。`hook` 模式不碰蓝牙，所以可以由 Claude Code 直接运行。FM-15 起还有 `channel` 模式，是 Claude Code 为每个会话启动的频道服务器，同样不碰蓝牙，见 [voice.md](voice.md)。OB-8 起还有 `listen` 模式和 `said` 命令，都由插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）运行：`listen` 收按住说话认出的文字，`said` 交回这句话进没进会话，同样不碰蓝牙，见 [voice.md](voice.md) 的“Mac 端”。OB-11 起还有 `doctor` 命令，用来排查装好后哪里不对，见下文“doctor 自检”。
 
 ## 卡片怎么收状态
 
@@ -103,7 +103,7 @@
 
 - **一样**：记一行 `version`（`card`、`bridge`、`match` 是 `true`），然后照旧订阅、写状态。
 - **不一样**：记一行 `version`（`match` 是 `false`），断开，不再重连。`status` 里 `card` 是 `mismatch`。卡片那边收到写回的版本号后，整屏换成红底白字的“版本不配 / 卡片 2 · Mac 3”，下面写该更新哪一边：Mac 的版本大时是“请更新卡片固件”，卡片的版本大时是“请更新 Mac 上的桥接程序”，最后一行是“然后重启桥接程序”。这个画面一直保留，直到版本一样的桥接程序连上来。
-- **找不到 VERSION**（OB-13 之前的固件）：同样算不一样，`version` 那一行的 `card` 是 `null`。旧固件没有这个画面，卡片停在原来的显示上。2026-10-18 把 OB-13 之前的固件只写进程序分区（配对信息不动）测过一次：桥接程序连上 1 次，记一行 `version`（`card` 是 `null`），断开时 `reconnect` 是 `false`，15 秒后 `status` 仍是 `mismatch`、`connects` 仍是 1。测完写回了新固件（`artifacts/ob13-oldfirmware-20261018-101801/`）。这一项是手动做的，没有写成自动测试，因为每次都要换两次固件。
+- **找不到 VERSION**（OB-13 之前的固件）：同样算不一样，`version` 那一行的 `card` 是 `null`。旧固件没有这个画面，卡片停在原来的显示上。2026-10-18 把 OB-13 之前的固件只写进程序分区（配对信息不动）测过一次：桥接程序连上 1 次，记一行 `version`（`card` 是 `null`），断开时 `reconnect` 是 `false`，15 秒后 `status` 仍是 `mismatch`、`connects` 仍是 1；`doctor` 报“卡片固件太旧，没有版本号”。测完写回了新固件（`artifacts/ob13-oldfirmware-20261018-101801/`）。这一项是手动做的，没有写成自动测试，因为每次都要换两次固件。
 - **读到的不是 1 到 9999 的数字**：记一行 `version_unreadable`（字节数和错误），断开后照常重连。
 
 不重连是有意的：版本对不上时，重连多少次结果都一样，只会让卡片反复断开。想重试，就更新落后的那一边后退出再启动桥接程序；关掉再打开 Mac 的蓝牙也会让它重新搜一次。
@@ -204,6 +204,28 @@ FM-14 起，`status` 打印的 JSON 多了几项：
 写给卡片的请求只记编号，不记内容。
 
 FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 和 `voice_followed`）见 [voice.md](voice.md) 的“Mac 端”。
+
+## doctor 自检
+
+`funmedal-bridge doctor` 依次查 9 项，每项打印一行：`<结论> <项目>：<情况>`，结论不是“好”时后面接 `。改法：<怎么做>`。结论有四种：“好”；“注意”（能用，但有你该知道的事）；“不好”；“不知道”（查不了，后面写原因）。有一项“不好”时退出码是 1，否则是 0。
+
+| 项目 | 从哪里查 | 怎么判断 |
+| --- | --- | --- |
+| 桥接程序 | 向套接字（默认路径，或 `--socket` 指定的）发 `status` | 有回应是“好”，没有是“不好” |
+| 蓝牙 | `status` 里的 `authorization` 和 `bluetooth` | `allowedAlways` 且 `poweredOn` 是“好”；拒绝、还没回答授权框、蓝牙关着都是“不好” |
+| 语音识别 | `status` 里的 `speech` | `authorized` 是“好”；拒绝或还没问过是“不好” |
+| 签名 | 对 `~/Applications/FunMedalBridge.app` 运行 `codesign --verify` 和 `codesign -dv` | 用证书签名是“好”；临时签名是“注意”，因为每次重新安装 macOS 都要再问一次授权；没装、没签名或签名坏了是“不好” |
+| 卡片 | `status` 里的 `card` | `connected` 是“好”；`mismatch` 和其他没连上的情况是“不好”；`off` 是“不知道”，看蓝牙那一行 |
+| 固件版本 | `status` 里的 `card_version` 和 `bridge_version`，见上文“先核对版本” | 一样是“好”；不一样、卡片没有版本号、正在跑的桥接程序太旧不报版本都是“不好”，并说该更新哪一边；卡片没连上是“不知道” |
+| 插件 | `claude plugin list --json` | `funmedal@funmedal` 装着且开着是“好”；没装、关着是“不好” |
+| hooks 开关 | `~/.claude/settings.json` 里的 `disableAllHooks` | 是 `true` 时“不好”，其他情况（包括没有这个文件）是“好” |
+| Claude Code 版本 | `claude --version` | 不低于 2.1.292 是“好”，和 `install.sh` 的要求一样 |
+
+蓝牙和语音识别的授权必须问正在跑的桥接程序：macOS 按程序记授权，在终端里运行的 `doctor` 自己去读，读到的是终端的授权，不是桥接程序的。所以桥接程序没在跑时，这两项和卡片、固件版本一起显示“不知道”。
+
+**没查的**：`disableAllHooks` 只看用户设置文件，不看项目里的设置和公司统一下发的设置；`--safe-mode` 启动的会话、`allowManagedModsOnly` 限制也查不出来（见 [onboarding.md](onboarding.md) 里“mod 会被关掉”那一条）。
+
+**测试**：[tests/test_doctor.py](../tests/test_doctor.py) 用一个假的桥接程序套接字（按测试给的内容回答 `status`）、一个假的 `claude` 命令和临时家目录，先造“全都正常”的环境，再每次只弄坏一处，一共 20 种情况，检查每一行的结论、改法和退出码（`artifacts/ob11-20261018-015646/`）。把比较卡片和桥接程序版本的判断故意写反后，相关的 2 项失败（`artifacts/ob11-bug-back-20261018-015732/`）。签名的“好”造不出来：要先定下用哪种证书签名。2026-10-18 在本机真实环境里跑过两次（`artifacts/ob11-real-20261018-015809/`）：常驻程序没在跑时，桥接程序一项“不好”、4 项“不知道”；启动常驻程序后，只剩固件版本“不好”，因为装着的常驻程序是 OB-13 之前编译的，不报版本号，`doctor` 提示重新运行 `install.sh`。
 
 ## 实测结果
 
