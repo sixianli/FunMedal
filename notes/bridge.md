@@ -134,7 +134,7 @@ OB-9 起，`hook` 模式收到 `SessionStart` 时，如果套接字连不上（�
 
 ## 怎么配置
 
-1. **编译**：运行下面的命令，生成 `mac/bridge/build/FunMedalBridge.app`。需要 Xcode 命令行工具里的 `swiftc`（Swift 编译器）。本机没有开发者证书，脚本用临时签名（`codesign --sign -`，只在本机有效的签名）。
+1. **编译**：运行下面的命令，生成 `mac/bridge/build/FunMedalBridge.app`。需要 Xcode 命令行工具里的 `swiftc`（Swift 编译器）。脚本用钥匙串里第一张 Apple Development 证书签名，一张都没有时用临时签名（`codesign --sign -`，只在本机有效、不用证书的签名），见下文“签名（OB-10）”。
 
    ```bash
    sh mac/bridge/build.sh
@@ -215,7 +215,7 @@ FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 
 | 桥接程序 | 向套接字（默认路径，或 `--socket` 指定的）发 `status` | 有回应是“好”，没有是“不好” |
 | 蓝牙 | `status` 里的 `authorization` 和 `bluetooth` | `allowedAlways` 且 `poweredOn` 是“好”；拒绝、还没回答授权框、蓝牙关着都是“不好” |
 | 语音识别 | `status` 里的 `speech` | `authorized` 是“好”；拒绝或还没问过是“不好” |
-| 签名 | 对 `~/Applications/FunMedalBridge.app` 运行 `codesign --verify` 和 `codesign -dv` | 用证书签名是“好”；临时签名是“注意”，因为每次重新安装 macOS 都要再问一次授权；没装、没签名或签名坏了是“不好” |
+| 签名 | 对 `~/Applications/FunMedalBridge.app` 运行 `codesign --verify` 和 `codesign -dv` | 用证书签名是“好”；临时签名是“注意”，因为每次重新安装 macOS 都要再问一次授权，改法是拿一张 Apple Development 证书后重新编译、安装；没装、没签名或签名坏了是“不好” |
 | 卡片 | `status` 里的 `card` | `connected` 是“好”；`mismatch`、`pairing_failed` 和其他没连上的情况是“不好”，`pairing_failed` 的改法是重启桥接程序后重新配对；`off` 是“不知道”，看蓝牙那一行 |
 | 固件版本 | `status` 里的 `card_version` 和 `bridge_version`，见上文“先核对版本” | 一样是“好”；不一样、卡片没有版本号、正在跑的桥接程序太旧不报版本都是“不好”，并说该更新哪一边；卡片没连上是“不知道” |
 | 插件 | `claude plugin list --json` | `funmedal@funmedal` 装着且开着是“好”；没装、关着是“不好” |
@@ -226,7 +226,17 @@ FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 
 
 **没查的**：`disableAllHooks` 只看用户设置文件，不看项目里的设置和公司统一下发的设置；`--safe-mode` 启动的会话、`allowManagedModsOnly` 限制也查不出来（见 [onboarding.md](onboarding.md) 里“mod 会被关掉”那一条）。
 
-**测试**：[tests/test_doctor.py](../tests/test_doctor.py) 用一个假的桥接程序套接字（按测试给的内容回答 `status`）、一个假的 `claude` 命令和临时家目录，先造“全都正常”的环境，再每次只弄坏一处，一共 20 种情况，检查每一行的结论、改法和退出码（`artifacts/ob11-20261018-015646/`）。把比较卡片和桥接程序版本的判断故意写反后，相关的 2 项失败（`artifacts/ob11-bug-back-20261018-015732/`）。签名的“好”造不出来：要先定下用哪种证书签名。2026-10-18 在本机真实环境里跑过两次（`artifacts/ob11-real-20261018-015809/`）：常驻程序没在跑时，桥接程序一项“不好”、4 项“不知道”；启动常驻程序后，只剩固件版本“不好”，因为装着的常驻程序是 OB-13 之前编译的，不报版本号，`doctor` 提示重新运行 `install.sh`。
+**测试**：[tests/test_doctor.py](../tests/test_doctor.py) 用一个假的桥接程序套接字（按测试给的内容回答 `status`）、一个假的 `claude` 命令和临时家目录，先造“全都正常”的环境，再每次只弄坏一处，一共 20 种情况，检查每一行的结论、改法和退出码（`artifacts/ob11-20261018-015646/`）。把比较卡片和桥接程序版本的判断故意写反后，相关的 2 项失败（`artifacts/ob11-bug-back-20261018-015732/`）。签名的“好”造不出来：要先定下用哪种证书签名。OB-10 之后，仓库编译的桥接程序用证书签名，假程序直接复制它，“全都正常”里签名一项就从“注意”改成了“好”；临时签名另算一种情况（`app-adhoc`），是“注意”并给出改法。2026-10-18 在本机真实环境里跑过两次（`artifacts/ob11-real-20261018-015809/`）：常驻程序没在跑时，桥接程序一项“不好”、4 项“不知道”；启动常驻程序后，只剩固件版本“不好”，因为装着的常驻程序是 OB-13 之前编译的，不报版本号，`doctor` 提示重新运行 `install.sh`。
+
+## 签名（OB-10）
+
+macOS 记蓝牙和语音识别授权时，记的是程序编号加签名里的“认定规则”（designated requirement，macOS 用来判断“是不是同一个程序”的条件，`codesign -d -r- <App 路径>` 能打印出来）。下次启动时，程序满足这条规则才算同一个程序，授权才照旧有效（苹果技术说明 TN3127）。
+
+- **临时签名**：认定规则是程序内容的哈希 `cdhash`。改一个字重新编译，哈希就变，macOS 当它是新程序，再问一次授权。2026-10-18 改之前跑 `tests/test_signing.py`：仓库编译的那份是 `cdhash H"48e3…"`，只在 `Info.plist` 里多加一个键再编译的那份是 `cdhash H"5fbe…"`（`artifacts/ob10-before-20261018-143023/`）。
+- **Apple Development 证书**：认定规则是“程序编号是 `com.funmedal.bridge`、证书由苹果签发、证书上的名字是 `Apple Development: <名字>`、中间证书是苹果的开发者证书”，和程序内容无关。本机钥匙串里有两张同名的证书（2027-04 和 2027-05 到期），分别签出的认定规则一字不差。
+- **实测（2026-10-18）**：换成证书签名后，第一次启动常驻程序又弹了语音识别和蓝牙授权框，负责人点了允许。之后 `tests/test_signing.py` 编译一份内容不同的桥接程序（内容哈希 `42489…`，仓库那份是 `493c…`），认定规则相同，启动后直接是 `allowedAlways` 和 `authorized`，连上卡片，没有弹框（`artifacts/ob10-after-20261018-143509/`）。再用另一张同名证书签一份内容不同的，3 秒内同样直接拿到授权并连上卡片（`artifacts/ob10-second-cert-20261018-143620/record.txt`，手动做的，没写成测试）。
+- **没走过的**：README 第 3 步在 Xcode 里拿证书的几步，本机没有走过，因为钥匙串里已经有证书，本机也没装 Xcode；证书到期后换新证书会不会再问授权，也没测过，同名的新证书认定规则不变，按道理不会再问。
+- `build.sh` 用 `security find-identity -v -p codesigning` 列出的第一张 Apple Development 证书。名字不同的证书签出的规则不同，换用另一个 Apple ID 的证书后，第一次启动会再问一次授权。
 
 ## 实测结果
 

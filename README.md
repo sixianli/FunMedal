@@ -15,6 +15,7 @@ FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240
 | 卡片 | 和本项目同款的 ESP32-C3 卡片，硬件细节和引脚见 [notes/hardware.md](notes/hardware.md)。别的板子引脚不同，不能直接用 |
 | Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到蓝牙和离线语音识别，都是 macOS 自带的 |
 | Xcode 命令行工具 | 提供 `swiftc`（Swift 编译器），用来编译桥接程序 |
+| Apple Development 证书 | 苹果发给开发者的签名证书，用免费的 Apple ID 就能拿到，不用付费的开发者会员。编译脚本用它给桥接程序签名，这样重新编译后 macOS 不用再问授权；没有也能用，只是每次重新编译后都要再点一次允许。拿法见下面第 3 步 |
 | esptool | 乐鑫的刷写工具，一个小 Python 程序，用来备份卡片和刷固件，装法见下面第 1 步 |
 | ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境（几 GB），只有想自己编译卡片固件时才需要，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
 | Claude Code | 要 2.1.292 或更新的版本，`install.sh` 会检查；本项目用终端版 2.1.292 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话靠插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）把话送进会话 |
@@ -70,9 +71,21 @@ cd firmware && idf.py -p <端口> build flash
 
 ### 3. 编译桥接程序，装上 Claude Code 插件
 
+先看钥匙串里有没有 Apple Development 证书：
+
+```bash
+security find-identity -v -p codesigning
+```
+
+列出的行里有 `"Apple Development: …"` 就是有。没有的话，从 App Store 装上免费的 Xcode，打开它，在菜单“Xcode → Settings”的“Accounts”里点左下角的“+”加上你的 Apple ID；选中这个账号，点“Manage Certificates…”，再点“+”选“Apple Development”。
+
+然后编译：
+
 ```bash
 sh mac/bridge/build.sh
 ```
+
+`build.sh` 用钥匙串里第一张 Apple Development 证书签名；一张都没有时，它说明一句，改用临时签名（只在本机有效、不用证书的签名）。
 
 ```bash
 sh install.sh
@@ -94,7 +107,7 @@ hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进�
 open -g ~/Applications/FunMedalBridge.app --args serve
 ```
 
-桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。它第一次启动时，macOS 会先后问是否允许它使用语音识别和蓝牙，都选允许。**每次重新编译后 macOS 都会再问一次**，因为脚本用的是只在本机有效的临时签名，macOS 把内容变了的程序当成新程序。
+桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。它第一次启动时，macOS 会先后问是否允许它使用语音识别和蓝牙，都选允许。macOS 认程序时看的是签名里的“认定规则”：用证书签名时，规则是程序编号加证书上的名字，和程序内容无关，所以之后重新编译、重新安装都不会再问；换一张同名的证书也不会。用临时签名时，规则是程序内容的哈希，**每次重新编译后 macOS 都会再问一次**。从临时签名换成证书签名后，第一次启动也会再问一次。
 
 ### 4. 蓝牙配对
 

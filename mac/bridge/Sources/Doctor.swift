@@ -117,7 +117,8 @@ enum Doctor {
         let lines = shown.err.split(separator: "\n").map(String.init)
         if lines.contains("Signature=adhoc") {
             return Finding(mark: .note, name: name,
-                           detail: "临时签名：每次重新安装后，macOS 都会再问一次蓝牙和语音识别授权")
+                           detail: "临时签名：每次重新安装后，macOS 都会再问一次蓝牙和语音识别授权",
+                           fix: "照 README“安装”的第 3 步拿一张 Apple Development 证书，再运行 sh mac/bridge/build.sh 和 sh install.sh")
         }
         let authority = lines.first { $0.hasPrefix("Authority=") }.map { String($0.dropFirst("Authority=".count)) }
         return Finding(mark: .good, name: name, detail: "用证书签名（\(authority ?? "证书名称未知")）")

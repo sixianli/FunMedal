@@ -257,7 +257,7 @@
       "done_when": [
         {
           "type": "user",
-          "ref": null,
+          "ref": "G35",
           "question": "桥接程序用哪种证书签名：在钥匙串里自建一张，还是用免费 Apple ID 拿苹果的开发证书？"
         },
         {

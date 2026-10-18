@@ -21,8 +21,8 @@ GOOD_STATUS = {"ok": True, "pid": 4242, "bluetooth": "poweredOn", "authorization
                "speech": "authorized", "card": "connected", "card_version": 2, "bridge_version": 2}
 GOOD_PLUGINS = [{"id": "funmedal@funmedal", "enabled": True}, {"id": "other@elsewhere", "enabled": True}]
 GOOD = {"status": GOOD_STATUS, "version": "2.1.292 (Claude Code)", "plugins": GOOD_PLUGINS, "settings": {},
-        "app": "adhoc", "claude": True}
-GOOD_MARKS = {name: "好" for name in CHECKS} | {"签名": "注意"}
+        "app": "copy", "claude": True}
+GOOD_MARKS = {name: "好" for name in CHECKS}
 FAKE_CLAUDE = """#!/bin/sh
 if [ "$*" = "--version" ]; then printf '%s\\n' "$FAKE_CLAUDE_VERSION"; exit 0; fi
 if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; exit 0; fi
@@ -71,6 +71,8 @@ def make_app(home, kind):
     shutil.copytree(APP, target)
     if kind == "unsigned":
         subprocess.run(["/usr/bin/codesign", "--remove-signature", str(target)], check=True, capture_output=True)
+    if kind == "adhoc":
+        subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(target)], check=True, capture_output=True)
 
 
 def run_doctor(tmp_path, setup):
@@ -124,6 +126,7 @@ SITUATIONS = {
     "speech-unanswered": (changed(status_fields={"speech": "not_determined"}), {"语音识别": "不好"}, "speech-access"),
     "app-missing": (changed(app="missing"), {"签名": "不好"}, "install.sh"),
     "app-unsigned": (changed(app="unsigned"), {"签名": "不好"}, "install.sh"),
+    "app-adhoc": (changed(app="adhoc"), {"签名": "注意"}, "Apple Development"),
     "card-away": (changed(status_fields={"card": "scanning", "card_version": None}),
                   {"卡片": "不好", "固件版本": "不知道"}, "README"),
     "firmware-behind": (changed(status_fields={"card": "mismatch", "card_version": 1}),
@@ -177,6 +180,15 @@ def test_doctor(case, way, run_dir, tmp_path):
      "pairing-failed"),
 ])
 def test_doctor_pairing(case, way, run_dir, tmp_path):
+    check_situation(way, run_dir, tmp_path)
+
+
+@pytest.mark.parametrize("case, way", [
+    ("[OB-10] doctor reports a bridge signed with a certificate as good", "all-good"),
+    ("[OB-10] doctor notes an ad-hoc signed bridge and says how to sign it with an Apple Development certificate",
+     "app-adhoc"),
+])
+def test_doctor_signing(case, way, run_dir, tmp_path):
     check_situation(way, run_dir, tmp_path)
 
 

@@ -103,7 +103,8 @@ class HookRun:
 
 
 class Bridge:
-    def __init__(self, workdir: Path):
+    def __init__(self, workdir: Path, app: Path = APP):
+        self.app = app
         self.socket = os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}{uuid.uuid4().hex[:8]}.sock")
         self.activity = Path(self.socket).with_suffix(".activity.json")
         self.log = workdir / "bridge.jsonl"
@@ -111,7 +112,7 @@ class Bridge:
         self.runs: list[HookRun] = []
 
     def launch(self, *extra):
-        subprocess.run(["open", "-n", "-g", str(APP), "--args", "serve", "--socket", self.socket,
+        subprocess.run(["open", "-n", "-g", str(self.app), "--args", "serve", "--socket", self.socket,
                         "--log", str(self.log), *extra], check=True)
         self.started = True
 
