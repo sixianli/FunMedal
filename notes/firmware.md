@@ -36,7 +36,7 @@ export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.
 cd firmware && idf.py -p /dev/cu.usbmodem11301 build flash
 ```
 
-恢复原厂固件：备份是整块 8 MB Flash（存程序和数据的存储芯片）的完整拷贝，从地址 0 整个写回即可。先用 `shasum -a 256 -c` 校验备份没坏。下面这条写回命令还没有真正跑过：
+恢复原厂固件：备份是整块 8 MB Flash（存程序和数据的存储芯片）的完整拷贝，从地址 0 整个写回即可。先用 `shasum -a 256 -c` 校验备份没坏。2026-10-17 写回过一次，原厂固件一直启动到 `99-ready`（`notes/hardware.md` “原厂固件完整备份”那一条）。README “恢复原厂固件”也是从地址 0 写回，只是命令名换成 `esptool`，备份文件名换成 `flash.sh` 存的 `factory-full8MB.bin`。那次用的命令是：
 
 ```bash
 esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-backup/trae_card_<id>_fw1.0.3_full8MB_2026-10-16.bin
