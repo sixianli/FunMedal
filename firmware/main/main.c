@@ -9,6 +9,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "key_input.h"
+#include "link_version.h"
 #include "nvs_flash.h"
 #include "voice.h"
 
@@ -175,6 +176,30 @@ void app_set_pairing(scene_pairing_t pairing, uint32_t code)
     scene.pair_code = code;
     xSemaphoreGive(lock);
     xTaskNotifyGive(display_task_handle);
+}
+
+scene_link_t app_set_link(uint16_t peer)
+{
+    scene_link_t link = scene_link_for(LINK_VERSION, peer);
+    xSemaphoreTake(lock, portMAX_DELAY);
+    scene.link = link;
+    scene.link_peer = peer;
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+    return link;
+}
+
+void app_link_in_use(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool cleared = scene.link == SCENE_LINK_UPDATE_FIRMWARE || scene.link == SCENE_LINK_UPDATE_BRIDGE;
+    if (cleared) {
+        scene.link = SCENE_LINK_NONE;
+    }
+    xSemaphoreGive(lock);
+    if (cleared) {
+        xTaskNotifyGive(display_task_handle);
+    }
 }
 
 static bool mark_decision(uint32_t id, scene_decision_t decision)

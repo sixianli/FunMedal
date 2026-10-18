@@ -18,7 +18,7 @@ func defaultSocket() -> String {
     return support.appendingPathComponent("FunMedal/bridge.sock").path
 }
 
-func serve(socket: String, logPath: String?, locale: String) -> Never {
+func serve(socket: String, logPath: String?, locale: String, linkVersion: Int) -> Never {
     guard UnixSocket.address(socket) != nil else { fail("socket path is too long: \(socket)", setupFailedExit) }
     let directory = (socket as NSString).deletingLastPathComponent
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true,
@@ -33,7 +33,7 @@ func serve(socket: String, logPath: String?, locale: String) -> Never {
         fail("cannot listen on \(socket): \(String(cString: strerror(errno)))", setupFailedExit)
     }
     let log = EventLog(path: logPath)
-    let bridge = Bridge(socketPath: socket, log: log, locale: locale)
+    let bridge = Bridge(socketPath: socket, log: log, locale: locale, linkVersion: linkVersion)
     log.write("start", ["pid": Int(getpid()), "socket": socket])
     let acceptor = Thread {
         while true {
@@ -116,7 +116,8 @@ func ask(socket: String, _ message: [String: Any]) -> Int32 {
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
 let usage = "usage: funmedal-bridge serve|hook|channel|listen|said|status|quit|speech-access [--socket PATH] "
-    + "[--log PATH] [--wait-limit SECONDS] [--voice-locale LOCALE] [--clip NUMBER] [--result WORD]"
+    + "[--log PATH] [--wait-limit SECONDS] [--voice-locale LOCALE] [--clip NUMBER] [--result WORD] "
+    + "[--link-version NUMBER]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
@@ -125,6 +126,7 @@ var waitLimit = Hook.defaultWaitLimit
 var voiceLocale = Voice.localeIdentifier
 var saidClip: String?
 var saidResult: String?
+var linkVersion = Bridge.linkVersion
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
     guard !arguments.isEmpty else { fail("\(option) needs a value", usageExit) }
@@ -139,13 +141,18 @@ while !arguments.isEmpty {
     case "--voice-locale": voiceLocale = arguments.removeFirst()
     case "--clip": saidClip = arguments.removeFirst()
     case "--result": saidResult = arguments.removeFirst()
+    case "--link-version":
+        guard let version = Int(arguments.removeFirst()), Bridge.linkVersions.contains(version) else {
+            fail("--link-version needs a number from 1 to 9999", usageExit)
+        }
+        linkVersion = version
     default: fail("unknown option \(option)", usageExit)
     }
 }
 
 switch mode {
 case "serve":
-    serve(socket: socketPath, logPath: logPath, locale: voiceLocale)
+    serve(socket: socketPath, logPath: logPath, locale: voiceLocale, linkVersion: linkVersion)
 case "hook":
     Hook.run(socket: socketPath, waitLimit: waitLimit, logPath: logPath)
     exit(0)

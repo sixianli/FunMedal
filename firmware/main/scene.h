@@ -36,6 +36,13 @@ typedef enum {
     SCENE_VOICE_RESULT,
 } scene_voice_t;
 
+typedef enum {
+    SCENE_LINK_NONE,
+    SCENE_LINK_MATCH,
+    SCENE_LINK_UPDATE_FIRMWARE,
+    SCENE_LINK_UPDATE_BRIDGE,
+} scene_link_t;
+
 typedef struct {
     pet_state_t state;
     uint8_t frame;
@@ -49,6 +56,8 @@ typedef struct {
     scene_voice_t voice;
     voice_result_t voice_result;
     const uint8_t *voice_image;
+    scene_link_t link;
+    uint16_t link_peer;
 } scene_t;
 
 void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out);
@@ -57,6 +66,8 @@ uint32_t scene_text_rgb(pet_state_t state);
 const char *scene_state_name(pet_state_t state);
 const char *scene_state_label(pet_state_t state);
 const char *scene_voice_name(scene_voice_t voice);
+const char *scene_link_name(scene_link_t link);
+scene_link_t scene_link_for(uint16_t own, uint16_t peer);
 bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state);
 bool scene_state_from_name(const char *name, pet_state_t *state);
 uint16_t scene_rgb565_wire(uint32_t rgb);

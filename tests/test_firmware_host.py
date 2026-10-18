@@ -11,6 +11,7 @@ KEY_CAPTURE = ROOT / "notes" / "data" / "key-adc-2026-10-16.txt"
 FONT_SOURCES = [FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_large.c", FIRMWARE_MAIN / "font_text.c"]
 PROMPT_SOURCES = [FIRMWARE_MAIN / "prompt.c", *FONT_SOURCES]
 VOICE_SOURCES = [FIRMWARE_MAIN / "voice_codec.c"]
+LINK_SOURCES = [FIRMWARE_MAIN / "link_version.c"]
 SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "pet_art.c", *PROMPT_SOURCES, *VOICE_SOURCES]
 C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 GLYPH_ENTRY = re.compile(r"\{0x([0-9a-f]+), \d+, \d+\}")
@@ -95,3 +96,13 @@ def test_fonts_cover_screen_text(case):
     assert set("0123456789/") - large == set()
     missing_text = (printable | {"\u2026"}) - small
     assert missing_text == set(), sorted(missing_text)
+
+
+@pytest.mark.parametrize("case", ["[OB-13] the link version value must be a plain decimal number from 1 to 9999"])
+def test_link_version_parsing_on_host(case, tmp_path):
+    binary = tmp_path / "test_link_version"
+    build(ROOT / "tests" / "host" / "test_link_version.c", binary, LINK_SOURCES)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout

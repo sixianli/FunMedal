@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "font.h"
+#include "link_version.h"
 
 #define MAX_RUN_GLYPHS 64
 #define MAX_RUNS 16
@@ -25,6 +26,11 @@
 #define VOICE_IMAGE_TOP 60
 #define VOICE_TEXT_LINES 2
 #define VOICE_NOT_SENT "没送进去"
+#define LINK_BACKGROUND 0x9d0208
+#define LINK_TEXT 0xffffff
+#define LINK_TITLE_TOP 60
+#define LINK_VERSIONS_TOP 120
+#define LINK_HINT_TOP 170
 
 typedef struct {
     const char *name;
@@ -81,6 +87,19 @@ static const voice_text_t VOICE_TEXTS[] = {
     [VOICE_RESULT_OFFLINE] = {VOICE_NOT_SENT, {"没连上 Mac", NULL}},
     [VOICE_RESULT_TIMEOUT] = {VOICE_NOT_SENT, {"Mac 没有回音", NULL}},
 };
+static const char *const LINK_TITLE = "版本不配";
+static const char *const LINK_VERSIONS = "卡片 %u · Mac %u";
+static const char *const LINK_HINTS[] = {
+    [SCENE_LINK_UPDATE_FIRMWARE] = "请更新卡片固件",
+    [SCENE_LINK_UPDATE_BRIDGE] = "请更新 Mac 上的桥接程序",
+};
+static const char *const LINK_RESTART = "然后重启桥接程序";
+static const char *const LINK_NAMES[] = {
+    [SCENE_LINK_NONE] = "none",
+    [SCENE_LINK_MATCH] = "match",
+    [SCENE_LINK_UPDATE_FIRMWARE] = "update_firmware",
+    [SCENE_LINK_UPDATE_BRIDGE] = "update_bridge",
+};
 static const char *const VOICE_NAMES[] = {
     [SCENE_VOICE_NONE] = "none",
     [SCENE_VOICE_LISTENING] = "listening",
@@ -128,6 +147,24 @@ const char *scene_state_label(pet_state_t state)
 const char *scene_voice_name(scene_voice_t voice)
 {
     return VOICE_NAMES[voice];
+}
+
+const char *scene_link_name(scene_link_t link)
+{
+    return LINK_NAMES[link];
+}
+
+scene_link_t scene_link_for(uint16_t own, uint16_t peer)
+{
+    if (peer == own) {
+        return SCENE_LINK_MATCH;
+    }
+    return peer > own ? SCENE_LINK_UPDATE_FIRMWARE : SCENE_LINK_UPDATE_BRIDGE;
+}
+
+static bool link_mismatch(const scene_t *scene)
+{
+    return scene->link == SCENE_LINK_UPDATE_FIRMWARE || scene->link == SCENE_LINK_UPDATE_BRIDGE;
 }
 
 bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state)
@@ -270,6 +307,18 @@ static void render_pairing(const scene_t *scene, int y0, int rows, uint16_t *out
     render_runs(&runs, PAIRING_BACKGROUND, PAIRING_TEXT, y0, rows, out);
 }
 
+static void render_link(const scene_t *scene, int y0, int rows, uint16_t *out)
+{
+    char versions[40];
+    snprintf(versions, sizeof(versions), LINK_VERSIONS, (unsigned)LINK_VERSION, (unsigned)scene->link_peer);
+    runs_t runs = {.count = 0};
+    add_centered(&runs, &font_large, LINK_TITLE, LINK_TITLE_TOP);
+    add_centered(&runs, &font_text, versions, LINK_VERSIONS_TOP);
+    add_centered(&runs, &font_text, LINK_HINTS[scene->link], LINK_HINT_TOP);
+    add_centered(&runs, &font_text, LINK_RESTART, LINK_HINT_TOP + font_text.line_height + 4);
+    render_runs(&runs, LINK_BACKGROUND, LINK_TEXT, y0, rows, out);
+}
+
 static void draw_voice_image(const uint8_t *pixels, int y0, int rows, uint16_t *out)
 {
     uint16_t ink = scene_rgb565_wire(VOICE_TEXT);
@@ -386,6 +435,8 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
     }
     if (scene->pairing != SCENE_PAIRING_NONE) {
         render_pairing(scene, y0, rows, out);
+    } else if (link_mismatch(scene)) {
+        render_link(scene, y0, rows, out);
     } else if (scene->voice != SCENE_VOICE_NONE) {
         render_voice(scene, y0, rows, out);
     } else if (scene->prompt.active) {

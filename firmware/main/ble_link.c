@@ -19,6 +19,7 @@
 #include "nvs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "link_version.h"
 #include "voice.h"
 
 #define LINK_UUID(n) BLE_UUID128_INIT(0x64, 0x65, 0x4d, 0x6e, 0x75, 0x46, 0x4b, 0x9a, \
@@ -49,6 +50,7 @@ static const ble_uuid128_t decision_uuid = LINK_UUID(0x04);
 static const ble_uuid128_t audio_uuid = LINK_UUID(0x05);
 static const ble_uuid128_t voice_uuid = LINK_UUID(0x06);
 static const ble_uuid128_t voice_image_uuid = LINK_UUID(0x07);
+static const ble_uuid128_t version_uuid = LINK_UUID(0x08);
 
 static uint8_t own_addr_type;
 static uint16_t decision_handle;
@@ -98,6 +100,7 @@ static int state_write(struct ble_gatt_access_ctxt *ctxt)
     }
     atomic_fetch_add(&state_writes, 1);
     console_event("BLE state %s\n", scene_state_name(state));
+    app_link_in_use();
     app_set_state(state);
     return 0;
 }
@@ -138,6 +141,28 @@ static int prompt_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ct
         return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
     }
     app_set_prompt(&prompt);
+    return 0;
+}
+
+static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        char own[LINK_VERSION_TEXT_MAX];
+        int len = link_version_text(LINK_VERSION, own, sizeof(own));
+        return os_mbuf_append(ctxt->om, own, (uint16_t)len) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    char value[LINK_VERSION_TEXT_MAX];
+    uint16_t len = 0;
+    uint16_t peer = 0;
+    if (ble_hs_mbuf_to_flat(ctxt->om, value, sizeof(value), &len) != 0 || !link_version_parse(value, len, &peer)) {
+        console_event("BLE reject version\n");
+        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    scene_link_t link = app_set_link(peer);
+    console_event("LINK peer=%u own=%u match=%d\n", (unsigned)peer, (unsigned)LINK_VERSION, link == SCENE_LINK_MATCH);
     return 0;
 }
 
@@ -233,6 +258,11 @@ static const struct ble_gatt_svc_def services[] = {
                 .uuid = &voice_image_uuid.u,
                 .access_cb = voice_image_access,
                 .flags = SECURE_FLAGS_WRITE,
+            },
+            {
+                .uuid = &version_uuid.u,
+                .access_cb = version_access,
+                .flags = SECURE_FLAGS_READ | SECURE_FLAGS_WRITE,
             },
             {0},
         },

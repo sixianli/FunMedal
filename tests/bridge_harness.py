@@ -110,10 +110,13 @@ class Bridge:
         self.started = False
         self.runs: list[HookRun] = []
 
-    def start(self, timeout=60.0):
+    def launch(self, *extra):
         subprocess.run(["open", "-n", "-g", str(APP), "--args", "serve", "--socket", self.socket,
-                        "--log", str(self.log)], check=True)
+                        "--log", str(self.log), *extra], check=True)
         self.started = True
+
+    def start(self, timeout=60.0):
+        self.launch()
         try:
             return wait_until(lambda: (s := self.status()) and s["card"] == "connected"
                               and s["card_state"] == s["desired"] and s, timeout, "bridge connected to the card")

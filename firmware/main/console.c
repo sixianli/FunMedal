@@ -54,7 +54,7 @@ static void print_info(void)
     ble_link_security(security, sizeof(security));
     console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
-                   "ble=%s ble_writes=%lu prompt=%s sec=%s gatt_changed=%u voice=%s mic=%s uptime_s=%lld\n",
+                   "ble=%s ble_writes=%lu prompt=%s sec=%s gatt_changed=%u voice=%s mic=%s link=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
                    frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
@@ -62,8 +62,8 @@ static void print_info(void)
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
                    (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
                    (unsigned long)ble_link_writes(), prompt, security, (unsigned)ble_link_changed_handle(),
-                   scene_voice_name(scene.voice),
-                   voice_ready() ? "ready" : "off", (long long)(esp_timer_get_time() / 1000000));
+                   scene_voice_name(scene.voice), voice_ready() ? "ready" : "off", scene_link_name(scene.link),
+                   (long long)(esp_timer_get_time() / 1000000));
 }
 
 static bool write_all(const char *data, size_t size, int64_t *waited_us, int *timeouts)

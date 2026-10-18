@@ -10,6 +10,7 @@ let decisionUUID = CBUUID(string: "6D2F1004-6B0E-4A8E-9A4B-46756E4D6564")
 let audioUUID = CBUUID(string: "6D2F1005-6B0E-4A8E-9A4B-46756E4D6564")
 let voiceUUID = CBUUID(string: "6D2F1006-6B0E-4A8E-9A4B-46756E4D6564")
 let voiceImageUUID = CBUUID(string: "6D2F1007-6B0E-4A8E-9A4B-46756E4D6564")
+let versionUUID = CBUUID(string: "6D2F1008-6B0E-4A8E-9A4B-46756E4D6564")
 let cardCharacteristics = [stateUUID, promptUUID, decisionUUID, audioUUID, voiceUUID, voiceImageUUID]
 
 final class EventLog {
@@ -88,6 +89,8 @@ struct Handled {
 
 final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let writeRetrySeconds = 1.0
+    static let linkVersion = 2
+    static let linkVersions = 1...9999
     static let toolLimit = 31
     static let summaryLimit = 240
     static let countLimit = 999
@@ -105,9 +108,11 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let activityPath: String
     let log: EventLog
     let locale: String
+    let linkVersion: Int
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var characteristics: [CBUUID: CBCharacteristic] = [:]
+    private var cardVersion: Int?
     private var link = "starting"
     private var bluetooth = "unknown"
     private var sessions = Sessions()
@@ -133,8 +138,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return recognizer
     }()
 
-    init(socketPath: String, log: EventLog, locale: String) {
+    init(socketPath: String, log: EventLog, locale: String, linkVersion: Int) {
         self.socketPath = socketPath
+        self.linkVersion = linkVersion
         activityPath = Bridge.activityPath(for: socketPath)
         self.log = log
         self.locale = locale
@@ -510,6 +516,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "card": link,
             "desired": desired,
             "card_state": cardState ?? NSNull(),
+            "card_version": cardVersion ?? NSNull(),
+            "bridge_version": linkVersion,
             "prompt": cardPromptID ?? NSNull(),
             "approvals": approvals.map { ["id": $0.id, "session": $0.session, "tool": $0.tool] },
             "sessions": sessions.table.mapValues { ["state": $0.shown, "pending": $0.pendingCount] },
@@ -573,6 +581,11 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             log.write("ignored_" + what, ["error": error.map { String(describing: $0) } ?? NSNull()])
             return
         }
+        if link == "mismatch" {
+            forgetCard()
+            log.write(what, ["error": error.map { String(describing: $0) } ?? NSNull(), "reconnect": false])
+            return
+        }
         link = "connecting"
         forgetCard()
         log.write(what, ["error": error.map { String(describing: $0) } ?? NSNull()])
@@ -596,6 +609,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        if link == "mismatch" { return }
         if let current = self.peripheral {
             if current.identifier == peripheral.identifier || link == "connected" || link == "discovering" { return }
             central.cancelPeripheralConnection(current)
@@ -614,6 +628,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         counts["connects", default: 0] += 1
         link = "discovering"
+        cardVersion = nil
         central.stopScan()
         log.write("connected")
         peripheral.discoverServices([serviceUUID])
@@ -635,24 +650,63 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             central?.cancelPeripheralConnection(peripheral)
             return
         }
-        peripheral.discoverCharacteristics(cardCharacteristics, for: service)
+        peripheral.discoverCharacteristics(cardCharacteristics + [versionUUID], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard isCurrent(peripheral) else { return }
         var found: [CBUUID: CBCharacteristic] = [:]
-        for characteristic in service.characteristics ?? [] where cardCharacteristics.contains(characteristic.uuid) {
+        for characteristic in service.characteristics ?? []
+        where cardCharacteristics.contains(characteristic.uuid) || characteristic.uuid == versionUUID {
             found[characteristic.uuid] = characteristic
-        }
-        guard found.count == cardCharacteristics.count, let decision = found[decisionUUID],
-              let audio = found[audioUUID] else {
-            log.write("characteristic_missing", ["found": found.keys.map(\.uuidString).sorted(),
-                                                 "error": error.map { String(describing: $0) } ?? NSNull()])
-            central?.cancelPeripheralConnection(peripheral)
-            return
         }
         forgetCard()
         characteristics = found
+        guard let version = found[versionUUID] else {
+            mismatch(card: nil, of: peripheral)
+            return
+        }
+        peripheral.readValue(for: version)
+    }
+
+    private func mismatch(card: Int?, of peripheral: CBPeripheral) {
+        cardVersion = card
+        link = "mismatch"
+        log.write("version", ["card": card ?? NSNull(), "bridge": linkVersion, "match": false])
+        central?.stopScan()
+        central?.cancelPeripheralConnection(peripheral)
+    }
+
+    private func checkVersion(_ characteristic: CBCharacteristic, of peripheral: CBPeripheral, error: Error?) {
+        guard error == nil, let data = characteristic.value, let text = String(data: data, encoding: .utf8),
+              let version = Int(text), Bridge.linkVersions.contains(version) else {
+            log.write("version_unreadable", ["bytes": characteristic.value?.count ?? 0,
+                                             "error": error.map { String(describing: $0) } ?? NSNull()])
+            central?.cancelPeripheralConnection(peripheral)
+            return
+        }
+        cardVersion = version
+        peripheral.writeValue(Data(String(linkVersion).utf8), for: characteristic, type: .withResponse)
+    }
+
+    private func versionWritten(of peripheral: CBPeripheral, error: Error?) {
+        guard let card = cardVersion else { return }
+        guard card == linkVersion else {
+            mismatch(card: card, of: peripheral)
+            return
+        }
+        if let error {
+            log.write("version_write_error", ["error": String(describing: error)])
+            central?.cancelPeripheralConnection(peripheral)
+            return
+        }
+        log.write("version", ["card": card, "bridge": linkVersion, "match": true])
+        guard cardCharacteristics.allSatisfy({ characteristics[$0] != nil }), let decision = characteristics[decisionUUID],
+              let audio = characteristics[audioUUID] else {
+            log.write("characteristic_missing", ["found": characteristics.keys.map(\.uuidString).sorted()])
+            central?.cancelPeripheralConnection(peripheral)
+            return
+        }
         link = "connected"
         log.write("ready")
         peripheral.setNotifyValue(true, for: decision)
@@ -669,6 +723,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if isCurrent(peripheral), characteristic.uuid == versionUUID {
+            versionWritten(of: peripheral, error: error)
+            return
+        }
         guard isCurrent(peripheral), let flight = inFlight, characteristic.uuid == flight.uuid else { return }
         inFlight = nil
         if let error {
@@ -700,6 +758,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if isCurrent(peripheral), characteristic.uuid == versionUUID {
+            checkVersion(characteristic, of: peripheral, error: error)
+            return
+        }
         guard isCurrent(peripheral), error == nil, let data = characteristic.value else { return }
         if characteristic.uuid == audioUUID {
             hear(data)
