@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import socket
 import tempfile
 import threading
@@ -572,7 +573,15 @@ def test_terminal_yes_clears_prompt(case, card, bridge, run_dir):
     assert [c["how"] for c in summary["closed"]] == ["answered"], summary
 
 
-REJECT_KEYS = {"esc": ("\x1b", "esc (reject in terminal)"), "no": ("3", "3 (choose No in terminal)")}
+NO_OPTION = re.compile(r"(\d)\.No(?:,|(?=[A-Z])|$)")
+
+
+def reject_in_terminal(session, way, asked):
+    if way == "esc":
+        session.send("\x1b", "esc (reject in terminal)")
+        return
+    found = wait_until(lambda: NO_OPTION.search(session.screen(), asked), 5.0, "the No option of the approval dialog")
+    session.send(found.group(1), f"{found.group(1)} (choose No in terminal)")
 
 
 @pytest.mark.parametrize("way,case", [
@@ -587,8 +596,8 @@ def test_terminal_rejection(way, case, card, bridge, run_dir):
             start = card.mark()
             request_touch(session, marker)
             shown = wait_prompt(card, start, 120.0)
-            session.wait_screen("Do you want to proceed", 10.0)
-            session.send(*REJECT_KEYS[way])
+            asked = session.wait_screen("Do you want to proceed", 10.0)
+            reject_in_terminal(session, way, asked)
             rejected_t = session.timeline[-1]["t"]
             _, cleared_t, _ = card.wait_for(lambda line: line == "PROMPT none", 5.0, shown["index"])
             card.wait_for(lambda line: line == "STATE idle", 5.0, shown["index"])
