@@ -1,10 +1,10 @@
 let seq = 0
 
 async function record($, dir, fields) {
-  seq += 1
+  const n = ++seq
   const t = await $.clock.now()
-  const name = dir + "/mod-events/" + String(t) + "-" + String(seq).padStart(4, "0") + ".json"
-  await $.fs.write(name, JSON.stringify({ t: t / 1000, seq, ...fields }))
+  const name = dir + "/mod-events/" + String(t) + "-" + String(n).padStart(4, "0") + ".json"
+  await $.fs.write(name, JSON.stringify({ t: t / 1000, seq: n, ...fields }))
 }
 
 async function submit($, dir, text) {
