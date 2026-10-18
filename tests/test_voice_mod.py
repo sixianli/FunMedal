@@ -228,7 +228,9 @@ def test_mod_delivers(case, card, bridge, run_dir):
     assert len(summary["listener_processes"]) == 1, summary
     assert (summary["entered"]["first"], summary["entered_follow"]["result"]) == ("queued", "submitted"), summary
     assert summary["entered_follow"]["t"] - summary["entered"]["first_t"] < 5.0, summary
-    assert [(r["clip"], r["result"], r.get("pid")) for r in summary["voice_results"]] == [
+    retried = [t["clip"] for said in (summary["entered"], summary["blocked"]) for t in said["unheard_tries"]]
+    assert [r["result"] for r in summary["voice_results"] if r["clip"] in retried] == ["empty"] * len(retried), summary
+    assert [(r["clip"], r["result"], r.get("pid")) for r in summary["voice_results"] if r["clip"] not in retried] == [
         (summary["entered"]["clip"], "queued", summary["hooked"][0]),
         (summary["blocked"]["clip"], "queued", summary["hooked"][0])], summary
     assert summary["followed"] == [(summary["entered"]["clip"], "submitted"),
