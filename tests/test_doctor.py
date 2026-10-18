@@ -134,6 +134,8 @@ SITUATIONS = {
                                  {"卡片": "不好", "固件版本": "不好"}, "固件"),
     "resident-without-version": (changed(status_fields={"card_version": KeyError, "bridge_version": KeyError}),
                                  {"固件版本": "不好"}, "install.sh"),
+    "pairing-failed": (changed(status_fields={"card": "pairing_failed", "card_version": None}),
+                       {"卡片": "不好", "固件版本": "不知道"}, "点“连接”"),
     "plugin-missing": (changed(plugins=[{"id": "other@elsewhere", "enabled": True}]), {"插件": "不好"}, "install.sh"),
     "plugin-disabled": (changed(plugins=[{"id": "funmedal@funmedal", "enabled": False}]), {"插件": "不好"},
                         "claude plugin enable funmedal@funmedal"),
@@ -167,6 +169,18 @@ SITUATIONS = {
     ("[OB-11] doctor reports no claude command", "claude-missing"),
 ])
 def test_doctor(case, way, run_dir, tmp_path):
+    check_situation(way, run_dir, tmp_path)
+
+
+@pytest.mark.parametrize("case, way", [
+    ("[OB-14] doctor reports a bridge that gave up after pairing failed three times and says how to pair again",
+     "pairing-failed"),
+])
+def test_doctor_pairing(case, way, run_dir, tmp_path):
+    check_situation(way, run_dir, tmp_path)
+
+
+def check_situation(way, run_dir, tmp_path):
     require_bridge_app()
     setup, bad, fix = SITUATIONS[way]
     result = run_doctor(tmp_path, setup)

@@ -88,6 +88,7 @@ struct Handled {
 final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let writeRetrySeconds = 1.0
     static let linkVersion = 2
+    static let pairingAttempts = 3
     static let linkVersions = 1...9999
     static let toolLimit = 31
     static let summaryLimit = 240
@@ -112,6 +113,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var characteristics: [CBUUID: CBCharacteristic] = [:]
     private var cardVersion: Int?
     private var link = "starting"
+    private var pairingFailures = 0
     private var bluetooth = "unknown"
     private var sessions = Sessions()
     private var desired = "idle"
@@ -570,6 +572,15 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         transcription = nil
     }
 
+    private var gaveUp: Bool {
+        link == "mismatch" || link == "pairing_failed"
+    }
+
+    static func isPairingFailure(_ error: Error?) -> Bool {
+        guard let code = (error as? CBATTError)?.code else { return false }
+        return code == .insufficientEncryption || code == .insufficientAuthentication
+    }
+
     private func isCurrent(_ candidate: CBPeripheral) -> Bool {
         candidate === peripheral
     }
@@ -579,7 +590,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             log.write("ignored_" + what, ["error": error.map { String(describing: $0) } ?? NSNull()])
             return
         }
-        if link == "mismatch" {
+        if gaveUp {
             forgetCard()
             log.write(what, ["error": error.map { String(describing: $0) } ?? NSNull(), "reconnect": false])
             return
@@ -602,12 +613,13 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         link = "scanning"
+        pairingFailures = 0
         central.scanForPeripherals(withServices: [serviceUUID])
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        if link == "mismatch" { return }
+        if gaveUp { return }
         if let current = self.peripheral {
             if current.identifier == peripheral.identifier || link == "connected" || link == "discovering" { return }
             central.cancelPeripheralConnection(current)
@@ -678,8 +690,17 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private func checkVersion(_ characteristic: CBCharacteristic, of peripheral: CBPeripheral, error: Error?) {
         guard error == nil, let data = characteristic.value, let text = String(data: data, encoding: .utf8),
               let version = Int(text), Bridge.linkVersions.contains(version) else {
-            log.write("version_unreadable", ["bytes": characteristic.value?.count ?? 0,
-                                             "error": error.map { String(describing: $0) } ?? NSNull()])
+            var fields: [String: Any] = ["bytes": characteristic.value?.count ?? 0,
+                                         "error": error.map { String(describing: $0) } ?? NSNull()]
+            if Bridge.isPairingFailure(error) {
+                pairingFailures += 1
+                fields["pairing_failures"] = pairingFailures
+            }
+            log.write("version_unreadable", fields)
+            if pairingFailures >= Bridge.pairingAttempts {
+                link = "pairing_failed"
+                central?.stopScan()
+            }
             central?.cancelPeripheralConnection(peripheral)
             return
         }
@@ -706,6 +727,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         link = "connected"
+        pairingFailures = 0
         log.write("ready")
         peripheral.setNotifyValue(true, for: decision)
         peripheral.setNotifyValue(true, for: audio)

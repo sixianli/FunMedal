@@ -147,6 +147,10 @@ static int prompt_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ct
 static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        if (take_refusal(BLE_REFUSE_VERSION)) {
+            console_event("BLE reject version read\n");
+            return BLE_ATT_ERR_INSUFFICIENT_ENC;
+        }
         char own[LINK_VERSION_TEXT_MAX];
         int len = link_version_text(LINK_VERSION, own, sizeof(own));
         return os_mbuf_append(ctxt->om, own, (uint16_t)len) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -647,6 +651,15 @@ void ble_link_security(char *out, size_t size)
 int ble_link_unpair(void)
 {
     return ble_store_clear();
+}
+
+int ble_link_disconnect(void)
+{
+    uint32_t conn = atomic_load(&conn_handle);
+    if (conn == BLE_HS_CONN_HANDLE_NONE) {
+        return BLE_HS_ENOTCONN;
+    }
+    return ble_gap_terminate((uint16_t)conn, BLE_ERR_REM_USER_CONN_TERM);
 }
 
 uint16_t ble_link_changed_handle(void)

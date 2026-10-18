@@ -132,6 +132,9 @@ enum Doctor {
         case "mismatch":
             return Finding(mark: .bad, name: name, detail: "连上过，但版本不配，桥接程序已经断开",
                            fix: "照下一行更新，\(restart)")
+        case "pairing_failed":
+            return Finding(mark: .bad, name: name, detail: "配对连续失败 \(Bridge.pairingAttempts) 次，桥接程序不再连这张卡片",
+                           fix: "\(restart)；Mac 弹出配对框后，两边数字相同就点“连接”，再按卡片右侧最上面的键")
         case "off":
             return Finding(mark: .unknown, name: name, detail: "蓝牙不能用，见上面蓝牙那一行")
         case let link:

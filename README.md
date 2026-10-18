@@ -87,7 +87,7 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 
 桥接程序第一次连上卡片时，Mac 弹出蓝牙配对对话框，上面有六位数字；卡片同时显示蓝色的“蓝牙配对”画面和同一串数字。两边数字相同时，先在 Mac 上点“连接”，再按卡片右侧最上面的键。不同就按右侧最下面的键取消。
 
-配对失败或取消后，退出桥接程序，再照第 3 步启动它（或者开一个新的 Claude Code 会话），就会重新弹出配对对话框。退出用这条命令：
+配对失败或取消后（在 Mac 上或卡片上点了取消），桥接程序自己断开重连，大约 1 秒后 Mac 再弹一个配对框，卡片也换上新的数字。连续失败 3 次后，桥接程序停下、不再弹框，`status` 里 `card` 是 `pairing_failed`。这时退出桥接程序，再照第 3 步启动它，就会重新弹出配对对话框。退出用这条命令：
 
 ```bash
 ~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge quit

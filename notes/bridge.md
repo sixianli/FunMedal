@@ -105,6 +105,7 @@
 - **不一样**：记一行 `version`（`match` 是 `false`），断开，不再重连。`status` 里 `card` 是 `mismatch`。卡片那边收到写回的版本号后，整屏换成红底白字的“版本不配 / 卡片 2 · Mac 3”，下面写该更新哪一边：Mac 的版本大时是“请更新卡片固件”，卡片的版本大时是“请更新 Mac 上的桥接程序”，最后一行是“然后重启桥接程序”。这个画面一直保留，直到版本一样的桥接程序连上来。
 - **找不到 VERSION**（OB-13 之前的固件）：同样算不一样，`version` 那一行的 `card` 是 `null`。旧固件没有这个画面，卡片停在原来的显示上。2026-10-18 把 OB-13 之前的固件只写进程序分区（配对信息不动）测过一次：桥接程序连上 1 次，记一行 `version`（`card` 是 `null`），断开时 `reconnect` 是 `false`，15 秒后 `status` 仍是 `mismatch`、`connects` 仍是 1；`doctor` 报“卡片固件太旧，没有版本号”。测完写回了新固件（`artifacts/ob13-oldfirmware-20261018-101801/`）。这一项是手动做的，没有写成自动测试，因为每次都要换两次固件。
 - **读到的不是 1 到 9999 的数字**：记一行 `version_unreadable`（字节数和错误），断开后照常重连。
+- **读不出，错误是“加密不够”或“认证不够”**（`CBATTErrorDomain` 的错误码 15 或 5）：说明这条连接没配对成功，比如配对框被取消。`version_unreadable` 那一行多一个 `pairing_failures`，是连续失败的次数；断开后照常重连，macOS 在新连接上会再弹配对框。连续失败 3 次后，`status` 里 `card` 变成 `pairing_failed`，桥接程序停止扫描、不再重连，免得配对框一直弹下去；重启桥接程序或蓝牙重新打开后从 0 算起，连上一次（记 `ready`）也清零。OB-14 加的，实测见 [approval.md](approval.md) 的“实测结果”第 11 条。
 
 不重连是有意的：版本对不上时，重连多少次结果都一样，只会让卡片反复断开。想重试，就更新落后的那一边后退出再启动桥接程序；关掉再打开 Mac 的蓝牙也会让它重新搜一次。
 
@@ -215,7 +216,7 @@ FM-15 起 `status` 和记录里和语音有关的几项（OB-8 加了 `waiting` 
 | 蓝牙 | `status` 里的 `authorization` 和 `bluetooth` | `allowedAlways` 且 `poweredOn` 是“好”；拒绝、还没回答授权框、蓝牙关着都是“不好” |
 | 语音识别 | `status` 里的 `speech` | `authorized` 是“好”；拒绝或还没问过是“不好” |
 | 签名 | 对 `~/Applications/FunMedalBridge.app` 运行 `codesign --verify` 和 `codesign -dv` | 用证书签名是“好”；临时签名是“注意”，因为每次重新安装 macOS 都要再问一次授权；没装、没签名或签名坏了是“不好” |
-| 卡片 | `status` 里的 `card` | `connected` 是“好”；`mismatch` 和其他没连上的情况是“不好”；`off` 是“不知道”，看蓝牙那一行 |
+| 卡片 | `status` 里的 `card` | `connected` 是“好”；`mismatch`、`pairing_failed` 和其他没连上的情况是“不好”，`pairing_failed` 的改法是重启桥接程序后重新配对；`off` 是“不知道”，看蓝牙那一行 |
 | 固件版本 | `status` 里的 `card_version` 和 `bridge_version`，见上文“先核对版本” | 一样是“好”；不一样、卡片没有版本号、正在跑的桥接程序太旧不报版本都是“不好”，并说该更新哪一边；卡片没连上是“不知道” |
 | 插件 | `claude plugin list --json` | `funmedal@funmedal` 装着且开着是“好”；没装、关着是“不好” |
 | hooks 开关 | `~/.claude/settings.json` 里的 `disableAllHooks` | 是 `true` 时“不好”，其他情况（包括没有这个文件）是“好” |

@@ -95,9 +95,10 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节> voice=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
 | `key <ok\|up\|down> <press\|long\|hold <毫秒>>` | 模拟一次按键，走和真按键相同的处理，测试用它代替人按键，见 [approval.md](approval.md) |
 | `ble unpair` | 清掉卡片上的全部蓝牙绑定，见 [approval.md](approval.md) |
+| `ble disconnect` | 卡片主动断开当前的蓝牙连接，回 `OK ble disconnect`；没有连接时回 `ERR ble disconnect rc=<码>`。测试用它让桥接程序重连，不用重启卡片（重启会取消还没用掉的 `ble reject`） |
 | `ble decision <编号> allow\|deny` | 不按键，直接发一个回答给 Mac，测试用，见 [approval.md](approval.md) |
 | `ble layout forget` | 忘掉记下的功能表指纹，下次开机按“功能表变了”处理，测试用，见下文“换固件后 Mac 还用旧的功能表” |
-| `ble reject image\|voice [<1-9>]`、`ble reject none` | 让卡片回绝 Mac 接下来写来的文字图片块（`image`）或语音结果（`voice`），次数不写时是 1 次：每回绝一次，回 ATT 错误 14（蓝牙写入时对方回的错误码，这个码的意思是“不太可能发生的错误”），并报 `BLE reject image injected` 或 `BLE reject voice injected`，成功时回 `OK ble reject <image\|voice> <次数>`，`none` 成功时回 `OK ble reject none`；种类写错、次数不是 1 到 9 的整数、`none` 后面带了次数时，回 `ERR ble usage: …`，原来记着的回绝不变。同一时间只记一种回绝，后输入的替换先输入的。`none` 取消还没用掉的回绝，卡片重启也会取消。测试用，见 [voice.md](voice.md) 编号 17 |
+| `ble reject image\|voice\|version [<1-9>]`、`ble reject none` | `version` 让卡片回绝 Mac 接下来对 VERSION 的读取：每回绝一次回 ATT 错误 15（“加密不够”，和没配对成功时 Mac 收到的一样），并报 `BLE reject version read`，测试用它模拟配对失败，见 [approval.md](approval.md) 实测第 11 条。`image`、`voice` 让卡片回绝 Mac 接下来写来的文字图片块（`image`）或语音结果（`voice`），次数不写时是 1 次：每回绝一次，回 ATT 错误 14（蓝牙写入时对方回的错误码，这个码的意思是“不太可能发生的错误”），并报 `BLE reject image injected` 或 `BLE reject voice injected`，成功时回 `OK ble reject <image\|voice> <次数>`，`none` 成功时回 `OK ble reject none`；种类写错、次数不是 1 到 9 的整数、`none` 后面带了次数时，回 `ERR ble usage: …`，原来记着的回绝不变。同一时间只记一种回绝，后输入的替换先输入的。`none` 取消还没用掉的回绝，卡片重启也会取消。测试用，见 [voice.md](voice.md) 编号 17 |
 | `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。

@@ -321,8 +321,8 @@ static void key_command(char *args)
 
 static void print_ble_usage(void)
 {
-    console_printf("ERR ble usage: ble unpair | ble layout forget | ble decision <id> allow|deny | "
-                   "ble reject image|voice [<1-%d>] | ble reject none\n", BLE_REFUSE_MAX_TIMES);
+    console_printf("ERR ble usage: ble unpair | ble disconnect | ble layout forget | ble decision <id> allow|deny | "
+                   "ble reject image|voice|version [<1-%d>] | ble reject none\n", BLE_REFUSE_MAX_TIMES);
 }
 
 static void ble_decision_command(void)
@@ -362,7 +362,7 @@ static void ble_layout_command(void)
 static bool refusal_from_name(const char *name, ble_refusal_t *what)
 {
     static const char *const names[] = {
-        [BLE_REFUSE_NONE] = "none", [BLE_REFUSE_IMAGE] = "image", [BLE_REFUSE_VOICE] = "voice"};
+        [BLE_REFUSE_NONE] = "none", [BLE_REFUSE_IMAGE] = "image", [BLE_REFUSE_VOICE] = "voice", [BLE_REFUSE_VERSION] = "version"};
     for (size_t i = 0; name != NULL && i < sizeof(names) / sizeof(names[0]); i++) {
         if (strcmp(name, names[i]) == 0) {
             *what = (ble_refusal_t)i;
@@ -407,6 +407,15 @@ static void ble_command(char *args)
     }
     if (what != NULL && strcmp(what, "layout") == 0) {
         ble_layout_command();
+        return;
+    }
+    if (what != NULL && strcmp(what, "disconnect") == 0 && strtok(NULL, " ") == NULL) {
+        int rc = ble_link_disconnect();
+        if (rc != 0) {
+            console_printf("ERR ble disconnect rc=%d\n", rc);
+            return;
+        }
+        console_printf("OK ble disconnect\n");
         return;
     }
     if (what == NULL || strcmp(what, "unpair") != 0 || strtok(NULL, " ") != NULL) {
