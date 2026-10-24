@@ -22,7 +22,7 @@
 - **USB 串口命令**：Mac 上的测试程序通过 USB 串口（卡片用 USB 线连 Mac 时出现的文字通道）切换状态、截取画面、读按键电压，见“USB 串口命令”。
 - **蓝牙收状态**：卡片是 BLE（低功耗蓝牙）外设，Mac 上的桥接程序连上后写入状态名，卡片就切到那个状态。服务编号、怎么连和桥接程序见 [bridge.md](bridge.md)（FM-13）。
 
-还不能做的：按键触发批准或拒绝（FM-14，现在按键只从串口报出来）；录音（FM-15）；睡眠省电；读电池电量；原厂的电子名片功能。
+还不能做的：睡眠省电；读电池电量；原厂的电子名片功能。FM-14 的按键批准、拒绝和 FM-15 的录音做过，2026-10-24 起拿掉了，见 [approval.md](approval.md) 和 [voice.md](voice.md) 开头。
 
 ## 怎么编译和烧录
 
@@ -61,10 +61,10 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 任务 | 优先级 | 做什么 | 代码 |
 | --- | --- | --- | --- |
-| 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件；批准画面和配对画面里的按键也在这里处理（见 [approval.md](approval.md)）；串口 `key` 命令注入的按键同样在这个任务里处理。栈 4096 字节（FM-14 从 3072 加大，见 approval.md 的“实测结果”第 5 条） | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
+| 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件；配对画面里的按键也在这里处理（见 [approval.md](approval.md)），其他时候按键只从串口报出来；串口 `key` 命令注入的按键同样在这个任务里处理。栈 4096 字节（FM-14 从 3072 加大，见 approval.md 的“实测结果”第 5 条） | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
 | 显示 | 5 | 状态变了就重画；没变时每 0.5 秒换一帧 | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c) |
 | 串口命令 | 4 | 读 USB 串口上的命令并回复 | [console.c](../firmware/main/console.c) |
-| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入、批准请求写入和配对过程的消息时，都在这个任务里处理并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
+| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入和配对过程的消息时，都在这个任务里处理并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
 
 - **画面怎么送到屏幕**：一帧 240×320 像素，每像素 2 字节（RGB565，一种红 5 位、绿 6 位、蓝 5 位的颜色格式）。程序每次只算 40 行，放进两块轮流使用的内存，用 DMA（不占 CPU、由硬件自己搬数据的传输方式）经 40 MHz 的 SPI 送给屏幕。
 - **小人和字是生成的**：[tools/gen_pet.py](../tools/gen_pet.py) 用代码画出 5 种状态各两帧的小人，生成 [pet_art.c](../firmware/main/pet_art.c)。改了图案后要重新生成。2026-10-16 用下面的命令重新生成过一次，和仓库里的逐字节相同：
@@ -87,7 +87,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。FM-14 加的批准和配对相关的行（`PROMPT`、`DECISION`、`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。配对相关的行（`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”；同一处写的 `PROMPT`、`DECISION` 两种行 2026-10-24 随批准一起删了。开机时音频芯片初始化失败会报 `AUDIO unavailable <错误名>`，这时 `tone` 用不了，其他照常。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。
 
 两类输出的发送规则不同：
 
@@ -96,7 +96,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`prompt`（正在显示的批准请求编号，没有时是 `none`）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一次状态写入就从后两种变回 `none`）、`uptime_s`（开机多少秒）。语音加的两项见 [voice.md](voice.md) |
+| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一次状态写入就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
 | `state <idle\|working\|waiting\|done\|error>` | 切换状态 |
 | `frame <0\|1\|auto>` | 固定显示某一帧，或恢复自动换帧 |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
@@ -105,15 +105,14 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `lcd invert\|bgr <0\|1>`、`lcd mirror <0\|1> <0\|1>`、`lcd gap <x> <y>` | 调屏幕的颜色反转、颜色顺序、镜像、偏移；会按新设置重建屏幕驱动，成功回 `OK lcd <全部屏幕设置>`。重建失败时退回原来的设置；退回也失败时串口上会多一行 ESP-IDF 的错误日志，之后每次画屏都失败，`info` 的 `draw_errors` 会一直增加 |
 | `adc <1-120>` | 在给定秒数内每 20 ms 回一行 `ADC <毫伏> <原始读数> <判断>`，结束时回 `ADC END` |
 | `backlight <0-100>` | 调背光亮度 |
-| `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节> voice=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
-| `key <ok\|up\|down> <press\|long\|hold <毫秒>>` | 模拟一次按键，走和真按键相同的处理，测试用它代替人按键，见 [approval.md](approval.md) |
+| `stacks` | 回 `OK stacks keys=<字节> display=<字节> console=<字节> nimble_host=<字节>`：每个任务开机以来栈空间最少时还剩多少字节，找不到某个任务时是 -1 |
+| `key <ok\|up\|down> <press\|long\|hold <毫秒>>` | 模拟一次按键，走和真按键相同的处理，测试用它代替人按键（比如配对画面上的确认键） |
 | `ble unpair` | 清掉卡片上的全部蓝牙绑定，见 [approval.md](approval.md) |
 | `ble disconnect` | 卡片主动断开当前的蓝牙连接，回 `OK ble disconnect`；没有连接时回 `ERR ble disconnect rc=<码>`。测试用它让桥接程序重连，不用重启卡片（重启会取消还没用掉的 `ble reject`） |
-| `ble decision <编号> allow\|deny` | 不按键，直接发一个回答给 Mac，测试用，见 [approval.md](approval.md) |
 | `ble layout forget` | 忘掉记下的功能表指纹，下次开机按“功能表变了”处理，测试用，见下文“换固件后 Mac 还用旧的功能表” |
-| `ble reject image\|voice\|version [<1-9>]`、`ble reject none` | `version` 让卡片回绝 Mac 接下来对 VERSION 的读取：每回绝一次回 ATT 错误 15（“加密不够”，和没配对成功时 Mac 收到的一样），并报 `BLE reject version read`，测试用它模拟配对失败，见 [approval.md](approval.md) 实测第 11 条。`image`、`voice` 让卡片回绝 Mac 接下来写来的文字图片块（`image`）或语音结果（`voice`），次数不写时是 1 次：每回绝一次，回 ATT 错误 14（蓝牙写入时对方回的错误码，这个码的意思是“不太可能发生的错误”），并报 `BLE reject image injected` 或 `BLE reject voice injected`，成功时回 `OK ble reject <image\|voice> <次数>`，`none` 成功时回 `OK ble reject none`；种类写错、次数不是 1 到 9 的整数、`none` 后面带了次数时，回 `ERR ble usage: …`，原来记着的回绝不变。同一时间只记一种回绝，后输入的替换先输入的。`none` 取消还没用掉的回绝，卡片重启也会取消。测试用，见 [voice.md](voice.md) 编号 17 |
+| `ble reject version [<1-9>]`、`ble reject none` | `version` 让卡片回绝 Mac 接下来对 VERSION 的读取：每回绝一次回 ATT 错误 15（“加密不够”，和没配对成功时 Mac 收到的一样），并报 `BLE reject version read`，测试用它模拟配对失败，见 [approval.md](approval.md) 实测第 11 条。次数不写时是 1 次。`none` 成功时回 `OK ble reject none`，取消还没用掉的回绝，卡片重启也会取消；种类写错、次数不是 1 到 9 的整数、`none` 后面带了次数时，回 `ERR ble usage: …`，原来记着的回绝不变。以前还有给语音测试用的 `image`、`voice` 两种，2026-10-24 删了 |
 | `timing` | 回 `OK timing render_us=<微秒> total_us=<微秒>`：最近一次画整屏时，CPU 算像素一共用了多少微秒，以及从开始画到屏幕收完数据一共多少微秒。还没画过时两个数都是 0。状态卡片实施计划 Task 0 用它测整屏一帧多长 |
-| `tone <50-7000 赫兹> <10-5000 毫秒> [DAC 音量 0-255]` | 让喇叭放一段正弦波测试音，放完回 `OK tone <赫兹> <毫秒> <音量>`。音量写进 ES8311（卡片上的音频芯片）的 0x32 号寄存器，0xBF 是不放大也不衰减，不写时用 0xBF；放完改回 0，也就是静音。放音时录音要等它放完，反过来也一样。参数不对时回 `ERR tone usage: …`。Task 0 用它确认喇叭这条路通不通 |
+| `tone <50-7000 赫兹> <10-5000 毫秒> [DAC 音量 0-255]` | 让喇叭放一段正弦波测试音，放完回 `OK tone <赫兹> <毫秒> <音量>`。音量写进 ES8311（卡片上的音频芯片）的 0x32 号寄存器，0xBF 是不放大也不衰减，不写时用 0xBF；放完改回 0，也就是静音。参数不对时回 `ERR tone usage: …`。Task 0 用它确认喇叭这条路通不通 |
 | `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
@@ -138,7 +137,13 @@ Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/
 
 `tone` 第一版每个采样点都调用一次 `sinf`，输入是“第几个点 × 每点转过的角度”，越往后越大，放到 1 秒时已经是几千弧度。ESP32-C3 没有浮点运算硬件，`sinf` 全靠软件算，输入很大时还要先做很慢的取余。实测放 1 秒的音，算波形用了 4.0 秒，写给 I2S（主控和音频芯片之间的数字音频线）只用了 0.027 秒，也就是说声音大部分时间是断的，I2S 发送缓冲区空着时芯片输出的是静音。
 
-现在的做法：第一次放音时算一张 256 个点的正弦表，之后每个点只做一次整数相位累加和一次查表。改完后放 1 秒的音 1.25 秒回复、2 秒的音 2.29 秒回复，多出来的约 0.2 秒是放完后留给芯片把最后一段送完的等待。以后在卡片上实时生成声音，都不要逐点调用 `sinf` 这类软件浮点函数。
+现在的做法：开机时算一张 256 个点的正弦表，之后每个点只做一次整数相位累加和一次查表。改完后放 1 秒的音 1.25 秒回复、2 秒的音 2.29 秒回复，多出来的约 0.2 秒是放完后留给芯片把最后一段送完的等待。以后在卡片上实时生成声音，都不要逐点调用 `sinf` 这类软件浮点函数。
+
+## 喇叭的初始化（2026-10-24 起）
+
+按住说话拿掉后，音频的代码只剩 [audio.c](../firmware/main/audio.c)：开机时 `audio_start` 建 I2C 总线（主控用来设置音频芯片寄存器的两根线），只建 I2S 的发送方向，写 ES8311 里放音那条路要用的寄存器，再算好正弦表。以前录音用的 ADC（把麦克风的声音变成数字的部分）寄存器 0x03、0x0e、0x14、0x16、0x17、0x1c 不再写。
+
+I2S 发送方向开机就打开，之后一直开着，没东西放时发 0（`auto_clear_after_cb`），所以给 ES8311 的主时钟一直在走，和以前录音方向一直开着时一样。`tone` 每次只改 0x32 号音量寄存器：放之前设成要的音量，放完等 0.2 秒再改回 0。以前每放一次音都打开、关掉一次发送方向，现在不这样做了。初始化失败时开机报 `AUDIO unavailable <错误名>`，`info` 里 `audio=off`，`tone` 回 `ERR`。
 
 ## 串口截图丢数据的问题
 

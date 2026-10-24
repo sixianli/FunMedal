@@ -31,11 +31,15 @@
 
 - 2026-10-24 20:38 Task 0 的实测做完，当前批次换成 Task 1（SC-16），从“之后”里去掉重复的 SC-16 一行。G6 是负责人对桌面会话何时消失的一次性决定，写进设计规格“待负责人决定的事”第 3 条，影响 SC-4 的演示方式。
 
+- 2026-10-24 21:01 Task 1 和实施计划不同的两处：`pet_art.c/h`、`tools/gen_pet.py` 不在 Task 1 删，留到新画面换掉旧画面（Task 3c、3d）后，因为现有画面和 `test_card_display.py` 还要用小人；`--wait-limit` 保留只给测试用，设计规格第 3 节同步改了。
+
 ## 意外和发现
 
 - 2026-10-24 16:52 决定文档的路径前缀只认目录或完整文件名，`docs/prd-` 这种半个文件名匹配不上，所以 decision_docs 写成 PRD 的完整路径。
 
 - 2026-10-24 20:38 桌面 App 里关掉会话不发 `SessionEnd`、claude 进程也不退出；归档才发 `SessionEnd`（`reason: other`）并结束进程（notes/claude-code.md“状态卡片开工实测：桌面 App”）。
+
+- 2026-10-24 21:01 删掉 `test_approval.py` 会让还在用的等待行为（hook 等到上限、五种事件放走 hook、hook 进程被结束、在终端拒绝）没人测，所以把这几条改写后挪进 `tests/test_bridge.py`。
 
 ## 决定
 

@@ -3,14 +3,15 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
 from bridge_harness import (APP_CLAUDES, BRIDGE, HOOK_EVENTS, HOOK_TIMEOUT_S, INSTALLED_BRIDGE,  # noqa: F401
                             PERMISSION_HOOK_TIMEOUT_S, PLUGIN, ROOT, artifacts, bridge, bridge_cli, card, card_states,
-                            claude_version, event, press, real_session,
-                            request_touch, require_bridge_app, run_dir, wait_prompt, wait_session_ready, wait_until,
+                            claude_version, event, real_session,
+                            request_touch, require_bridge_app, run_dir, wait_session_ready, wait_until,
                             write_summary)
 from claude_session import INHERITED_PREFIXES
 
@@ -20,6 +21,7 @@ PLUGIN_ID = "funmedal@funmedal"
 NEEDED_VERSION = "2.1.292"
 INSTALLED_COMMAND = '"$HOME/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge" hook'
 BLOCKING_EXIT = 2
+DESCRIPTION = "Shows the state of every running Claude Code session on the FunMedal card"
 USER_FILES = [".claude/settings.json", ".claude/plugins/known_marketplaces.json", ".claude/plugins/installed_plugins.json"]
 FAKE_CLAUDE = """#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_CLAUDE_LOG"
@@ -170,6 +172,19 @@ def test_plugin_hooks(case, run_dir):
     for name, hooks in found.items():
         timeout = PERMISSION_HOOK_TIMEOUT_S if name == "PermissionRequest" else HOOK_TIMEOUT_S
         assert hooks == [{"type": "command", "command": INSTALLED_COMMAND, "timeout": timeout}], (name, hooks)
+
+
+@pytest.mark.parametrize("case", ["[OB-7] the plugin describes itself as the status card and loads no mod"])
+def test_plugin_is_status_card_only(case, run_dir):
+    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    shipped = subprocess.run(["git", "ls-files", "-z", "--", "."], cwd=PLUGIN, capture_output=True, check=True)
+    scripts = sorted(name for name in shipped.stdout.decode().split("\0")
+                     if Path(name).suffix in {".js", ".ts", ".mjs"})
+    write_summary(run_dir, {"description": manifest.get("description"), "hook_keys": sorted(hooks), "scripts": scripts})
+    assert manifest["description"] == DESCRIPTION, manifest
+    assert sorted(hooks) == ["hooks"], hooks
+    assert scripts == [], scripts
 
 
 @pytest.mark.parametrize("case", ["[OB-7] with no bridge installed every plugin hook exits without blocking "
@@ -367,8 +382,8 @@ def test_install_with_desktop_claude_only(case, run_dir, tmp_path):
     assert summary["owner_files_unchanged"], summary
 
 
-@pytest.mark.parametrize("case", ["[OB-7] a session whose only hooks come from the plugin shows its states and takes "
-                                  "a card approval"])
+@pytest.mark.parametrize("case", ["[OB-7] a session whose only hooks come from the plugin shows its states while "
+                                  "the person answers in the terminal"])
 def test_plugin_session(case, card, bridge, run_dir):
     summary = {}
     try:
@@ -378,27 +393,26 @@ def test_plugin_session(case, card, bridge, run_dir):
             wait_session_ready(session, bridge)
             start = card.mark()
             request_touch(session, marker)
-            shown = wait_prompt(card, start, 120.0)
+            card.wait_for(lambda line: line == "STATE waiting", 120.0, start)
             session.wait_screen("Do you want to proceed", 10.0)
             waiting = hook_processes(session.proc.pid)
-            press(card, "ok", "long")
-            card.wait_for(lambda line: line == f"DECISION {shown['id']} allow", 5.0, shown["index"])
+            session.send("1", "1 (yes in terminal)")
+            time.sleep(0.3)
+            session.send("\r", "enter (confirm)")
             wait_until(marker.exists, 30.0, "marker file")
-            session.wait_screen("Allowed by PermissionRequest hook", 30.0)
             card.wait_for(lambda line: line == "STATE done", 90.0, start)
             session.exit()
             card.wait_for(lambda line: line == "STATE idle", 20.0, start)
             summary = {"argv": session.argv, "settings": settings, "waiting_hooks": waiting,
                        "status_through_env": json.loads(through_env.stdout) if through_env.returncode == 0 else None,
                        "bridge_pid": bridge.status()["pid"], "states": card_states(card, start),
-                       "answers": [e for e in bridge.log_entries() if e.get("kind") == "answer"]}
+                       "released": [e["why"] for e in bridge.log_entries() if e.get("kind") == "wait_released"]}
     finally:
         write_summary(run_dir, summary)
     assert "hooks" not in summary["settings"], summary
     assert summary["argv"][1:3] == ["--setting-sources", "project"], summary
     assert summary["argv"][summary["argv"].index("--plugin-dir") + 1] == str(PLUGIN), summary
     assert summary["status_through_env"]["pid"] == summary["bridge_pid"], summary
-    assert sorted(h["command"] for h in summary["waiting_hooks"]) == [f"{INSTALLED_BRIDGE} hook",
-                                                                       f"{INSTALLED_BRIDGE} listen"], summary
+    assert [h["command"] for h in summary["waiting_hooks"]] == [f"{INSTALLED_BRIDGE} hook"], summary
     assert summary["states"] == ["working", "waiting", "working", "done", "idle"], summary
-    assert [(a["decision"], a["why"]) for a in summary["answers"]] == [("allow", "card")], summary
+    assert summary["released"] == ["post_tool_use"], summary

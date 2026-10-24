@@ -6,8 +6,6 @@
 
 #include "app.h"
 #include "console.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -20,16 +18,11 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "link_version.h"
-#include "voice.h"
 
 #define LINK_UUID(n) BLE_UUID128_INIT(0x64, 0x65, 0x4d, 0x6e, 0x75, 0x46, 0x4b, 0x9a, \
                                       0x8e, 0x4a, 0x0e, 0x6b, n, 0x10, 0x2f, 0x6d)
 #define STATE_VALUE_MAX 16
-#define DECISION_VALUE_MAX 24
 #define PASSKEY_RANGE 1000000
-#define IMAGE_CHUNK_MAX (VOICE_IMAGE_HEADER + 512)
-#define AUDIO_SEND_ATTEMPTS 25
-#define AUDIO_RETRY_MS 2
 #define SECURE_FLAGS_READ (BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN)
 #define SECURE_FLAGS_WRITE (BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN)
 #define LAYOUT_NAMESPACE "funmedal"
@@ -53,16 +46,11 @@ static const ble_uuid128_t voice_image_uuid = LINK_UUID(0x07);
 static const ble_uuid128_t version_uuid = LINK_UUID(0x08);
 
 static uint8_t own_addr_type;
-static uint16_t decision_handle;
-static uint16_t audio_handle;
 static uint16_t changed_handle;
 static uint32_t unconfirmed_layout;
 static bool layout_unconfirmed;
-static voice_image_t incoming_image;
 static _Atomic uint32_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static _Atomic uint32_t state_writes;
-static _Atomic bool decision_subscribed;
-static _Atomic bool audio_subscribed;
 static _Atomic bool pairing;
 static _Atomic uint32_t numcmp_conn = BLE_HS_CONN_HANDLE_NONE;
 static _Atomic uint32_t refusal;
@@ -124,26 +112,6 @@ static int state_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctx
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-static int prompt_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    static char value[PROMPT_VALUE_MAX];
-    static prompt_t prompt;
-    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    uint16_t len = 0;
-    if (ble_hs_mbuf_to_flat(ctxt->om, value, sizeof(value), &len) != 0) {
-        console_event("BLE reject prompt length\n");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (!prompt_parse(value, len, &prompt)) {
-        console_event("BLE reject prompt format\n");
-        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
-    }
-    app_set_prompt(&prompt);
-    return 0;
-}
-
 static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
@@ -170,60 +138,9 @@ static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_c
     return 0;
 }
 
-static int decision_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+static int retired_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    return BLE_ATT_ERR_UNLIKELY;
-}
-
-static int voice_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    char value[VOICE_RESULT_VALUE_MAX];
-    uint16_t len = 0;
-    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    if (ble_hs_mbuf_to_flat(ctxt->om, value, sizeof(value), &len) != 0) {
-        console_event("BLE reject voice length\n");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (take_refusal(BLE_REFUSE_VOICE)) {
-        console_event("BLE reject voice injected\n");
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    uint8_t clip;
-    voice_result_t result;
-    if (!voice_result_parse(value, len, &clip, &result)) {
-        console_event("BLE reject voice format\n");
-        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
-    }
-    bool image = result == VOICE_RESULT_QUEUED && voice_image_complete(&incoming_image, clip);
-    voice_on_result(clip, result, image ? incoming_image.pixels : NULL);
-    voice_image_reset(&incoming_image);
-    return 0;
-}
-
-static int voice_image_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    static uint8_t chunk[IMAGE_CHUNK_MAX];
-    uint16_t len = 0;
-    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    if (ble_hs_mbuf_to_flat(ctxt->om, chunk, sizeof(chunk), &len) != 0) {
-        voice_image_reset(&incoming_image);
-        console_event("BLE reject image length\n");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (take_refusal(BLE_REFUSE_IMAGE)) {
-        voice_image_reset(&incoming_image);
-        console_event("BLE reject image injected\n");
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    if (!voice_image_write(&incoming_image, chunk, len)) {
-        console_event("BLE reject image chunk\n");
-        return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
-    }
-    return 0;
+    return ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR ? 0 : BLE_ATT_ERR_UNLIKELY;
 }
 
 static const struct ble_gatt_svc_def services[] = {
@@ -238,29 +155,27 @@ static const struct ble_gatt_svc_def services[] = {
             },
             {
                 .uuid = &prompt_uuid.u,
-                .access_cb = prompt_access,
+                .access_cb = retired_access,
                 .flags = SECURE_FLAGS_WRITE,
             },
             {
                 .uuid = &decision_uuid.u,
-                .access_cb = decision_access,
+                .access_cb = retired_access,
                 .flags = SECURE_FLAGS_NOTIFY,
-                .val_handle = &decision_handle,
             },
             {
                 .uuid = &audio_uuid.u,
-                .access_cb = decision_access,
+                .access_cb = retired_access,
                 .flags = SECURE_FLAGS_NOTIFY,
-                .val_handle = &audio_handle,
             },
             {
                 .uuid = &voice_uuid.u,
-                .access_cb = voice_access,
+                .access_cb = retired_access,
                 .flags = SECURE_FLAGS_WRITE,
             },
             {
                 .uuid = &voice_image_uuid.u,
-                .access_cb = voice_image_access,
+                .access_cb = retired_access,
                 .flags = SECURE_FLAGS_WRITE,
             },
             {
@@ -476,12 +391,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         return 0;
     case BLE_GAP_EVENT_DISCONNECT: {
         atomic_store(&conn_handle, BLE_HS_CONN_HANDLE_NONE);
-        atomic_store(&decision_subscribed, false);
-        atomic_store(&audio_subscribed, false);
         atomic_store(&pairing, false);
         end_pairing_screen();
-        prompt_t none = {.active = false};
-        app_set_prompt(&none);
         console_event("BLE disconnected reason=0x%x\n", event->disconnect.reason);
         advertise();
         return 0;
@@ -503,13 +414,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         console_event("PAIR repeat\n");
         return BLE_GAP_REPEAT_PAIRING_RETRY;
     case BLE_GAP_EVENT_SUBSCRIBE:
-        if (event->subscribe.attr_handle == decision_handle) {
-            atomic_store(&decision_subscribed, event->subscribe.cur_notify != 0);
-            console_event("BLE subscribe decision=%d\n", event->subscribe.cur_notify);
-        } else if (event->subscribe.attr_handle == audio_handle) {
-            atomic_store(&audio_subscribed, event->subscribe.cur_notify != 0);
-            console_event("BLE subscribe audio=%d\n", event->subscribe.cur_notify);
-        } else if (event->subscribe.attr_handle == changed_handle) {
+        if (event->subscribe.attr_handle == changed_handle) {
             console_event("BLE subscribe changed=%d\n", event->subscribe.cur_indicate);
         }
         return 0;
@@ -585,43 +490,9 @@ uint32_t ble_link_writes(void)
     return atomic_load(&state_writes);
 }
 
-bool ble_link_send_decision(uint32_t id, bool allow)
-{
-    uint16_t conn = (uint16_t)atomic_load(&conn_handle);
-    if (!atomic_load(&decision_subscribed) || !link_secure(conn)) {
-        return false;
-    }
-    char value[DECISION_VALUE_MAX];
-    int len = snprintf(value, sizeof(value), "%lu %s", (unsigned long)id, allow ? "allow" : "deny");
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(value, (uint16_t)len);
-    return om != NULL && ble_gatts_notify_custom(conn, decision_handle, om) == 0;
-}
-
 bool ble_link_ready(void)
 {
     return link_secure((uint16_t)atomic_load(&conn_handle));
-}
-
-bool ble_link_send_audio(const uint8_t *data, size_t len)
-{
-    for (int attempt = 0; attempt < AUDIO_SEND_ATTEMPTS; attempt++) {
-        uint16_t conn = (uint16_t)atomic_load(&conn_handle);
-        if (!atomic_load(&audio_subscribed) || !link_secure(conn)) {
-            return false;
-        }
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
-        if (om != NULL) {
-            int rc = ble_gatts_notify_custom(conn, audio_handle, om);
-            if (rc == 0) {
-                return true;
-            }
-            if (rc != BLE_HS_ENOMEM) {
-                return false;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(AUDIO_RETRY_MS));
-    }
-    return false;
 }
 
 void ble_link_confirm_pairing(bool accept)

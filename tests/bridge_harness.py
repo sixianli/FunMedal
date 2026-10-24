@@ -106,7 +106,6 @@ class Bridge:
     def __init__(self, workdir: Path, app: Path = APP):
         self.app = app
         self.socket = os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}{uuid.uuid4().hex[:8]}.sock")
-        self.activity = Path(self.socket).with_suffix(".activity.json")
         self.log = workdir / "bridge.jsonl"
         self.started = False
         self.runs: list[HookRun] = []
@@ -145,9 +144,9 @@ class Bridge:
         except TimeoutError as error:
             raise TimeoutError(f"{error}; last status: {self.status()}") from error
 
-    def approvals(self):
+    def waits(self):
         status = self.status()
-        return None if status is None else status["approvals"]
+        return None if status is None else status["waits"]
 
     def quit(self):
         for run in self.runs:
@@ -182,8 +181,6 @@ def resident_locked_out():
 def stop_leftover_bridges():
     for path in glob.glob(os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}*.sock")):
         bridge_cli("quit", "--socket", path)
-    for path in glob.glob(os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}*.activity.json")):
-        os.unlink(path)
 
 
 def event(name, session, **fields):
@@ -210,35 +207,7 @@ def ble_writes(card, start):
     return [line.split()[2] for _, line in card.since(start) if line.startswith("BLE state ")]
 
 
-PROMPT_LINE = re.compile(r"PROMPT (\d+) (\d+)/(\d+) (\S+)$")
 W, H = 240, 320
-
-
-def approve(session, tool_name, tool_input):
-    return event("PermissionRequest", session, tool_name=tool_name, tool_input=tool_input,
-                 permission_suggestions=[{"type": "addRules", "rules": [{"toolName": tool_name}]}])
-
-
-def behavior(stdout):
-    if stdout.strip() == "":
-        return None
-    output = json.loads(stdout)
-    assert output["hookSpecificOutput"]["hookEventName"] == "PermissionRequest", output
-    return output["hookSpecificOutput"]["decision"]
-
-
-def wait_prompt(card, start, timeout=10.0, prompt_id=None):
-    def matches(line):
-        found = PROMPT_LINE.match(line)
-        return found is not None and (prompt_id is None or found.group(1) == str(prompt_id))
-    index, t, line = card.wait_for(matches, timeout, start)
-    found = PROMPT_LINE.match(line)
-    return {"index": index, "t": t, "id": int(found.group(1)), "position": int(found.group(2)),
-            "count": int(found.group(3)), "tool": found.group(4)}
-
-
-def press(card, key, how):
-    assert card.request(f"key {key} {how}") == f"OK key {key} {how}"
 
 
 def snapshot(card, run_dir, name):
@@ -336,7 +305,6 @@ def bridge(card, run_dir):
     instance = Bridge(run_dir)
     yield instance
     instance.quit()
-    instance.activity.unlink(missing_ok=True)
 
 
 def write_settings(path: Path, extra=None):

@@ -8,24 +8,11 @@
 
 #define MAX_RUN_GLYPHS 64
 #define MAX_RUNS 16
-#define PROMPT_BACKGROUND 0xff9f1c
-#define PROMPT_TEXT 0x1a1c2c
 #define PAIRING_BACKGROUND 0x1d4e89
 #define PAIRING_TEXT 0xffffff
-#define HEADER_TOP 6
-#define TOOL_TOP 54
-#define BODY_TOP 82
-#define FOOTER_TOP 262
 #define PAIRING_TITLE_TOP 30
 #define PAIRING_CODE_TOP 110
 #define PAIRING_HINT_TOP 190
-#define VOICE_BACKGROUND 0x5a189a
-#define VOICE_TEXT 0xffffff
-#define VOICE_TITLE_TOP 110
-#define VOICE_HINT_TOP 170
-#define VOICE_IMAGE_TOP 60
-#define VOICE_TEXT_LINES 2
-#define VOICE_NOT_SENT "没送进去"
 #define LINK_BACKGROUND 0x9d0208
 #define LINK_TEXT 0xffffff
 #define LINK_TITLE_TOP 60
@@ -38,11 +25,6 @@ typedef struct {
     uint32_t background[PET_FRAMES];
     uint32_t text;
 } state_style_t;
-
-typedef struct {
-    const char *title;
-    const char *lines[VOICE_TEXT_LINES];
-} voice_text_t;
 
 typedef struct {
     const font_t *font;
@@ -65,28 +47,9 @@ static const state_style_t STYLES[PET_STATE_COUNT] = {
     [PET_ERROR] = {"error", "出错了", {0x9b2226, 0x9b2226}, 0xffffff},
 };
 
-static const char *const APPROVE_HINT = "长按右侧最上面的键 批准";
-static const char *const DENY_HINT = "按右侧最下面的键 拒绝";
-static const char *const APPROVED = "已批准";
-static const char *const DENIED = "已拒绝";
 static const char *const PAIRING_TITLE = "蓝牙配对";
 static const char *const NUMCMP_HINTS[] = {"数字和 Mac 上的相同时", "按右侧最上面的键配对", "按右侧最下面的键取消"};
 static const char *const PASSKEY_HINT = "在 Mac 上输入这串数字";
-static const char *const LISTENING = "在听";
-static const char *const LISTENING_HINT = "松开就发送";
-static const char *const TRANSCRIBING = "转文字中";
-static const voice_text_t VOICE_TEXTS[] = {
-    [VOICE_RESULT_QUEUED] = {"已排队", {NULL, NULL}},
-    [VOICE_RESULT_SUBMITTED] = {"已送进去", {NULL, NULL}},
-    [VOICE_RESULT_EMPTY] = {VOICE_NOT_SENT, {"没听清", NULL}},
-    [VOICE_RESULT_NO_SESSION] = {"未连接", {"没有会话在收语音", "在电脑上发一句话再试"}},
-    [VOICE_RESULT_DENIED] = {VOICE_NOT_SENT, {"Mac 没有语音识别权限", NULL}},
-    [VOICE_RESULT_CLEARED] = {VOICE_NOT_SENT, {"刚才那句被停止清掉了", "请再说一遍"}},
-    [VOICE_RESULT_STOPPED] = {VOICE_NOT_SENT, {"你按过停止", "请先在电脑上打一句话"}},
-    [VOICE_RESULT_REFUSED] = {VOICE_NOT_SENT, {"Claude Code 没收下这句", NULL}},
-    [VOICE_RESULT_OFFLINE] = {VOICE_NOT_SENT, {"没连上 Mac", NULL}},
-    [VOICE_RESULT_TIMEOUT] = {VOICE_NOT_SENT, {"Mac 没有回音", NULL}},
-};
 static const char *const LINK_TITLE = "版本不配";
 static const char *const LINK_VERSIONS = "卡片 %u · Mac %u";
 static const char *const LINK_HINTS[] = {
@@ -99,12 +62,6 @@ static const char *const LINK_NAMES[] = {
     [SCENE_LINK_MATCH] = "match",
     [SCENE_LINK_UPDATE_FIRMWARE] = "update_firmware",
     [SCENE_LINK_UPDATE_BRIDGE] = "update_bridge",
-};
-static const char *const VOICE_NAMES[] = {
-    [SCENE_VOICE_NONE] = "none",
-    [SCENE_VOICE_LISTENING] = "listening",
-    [SCENE_VOICE_TRANSCRIBING] = "transcribing",
-    [SCENE_VOICE_RESULT] = "result",
 };
 
 uint16_t scene_rgb565_wire(uint32_t rgb)
@@ -142,11 +99,6 @@ const char *scene_state_name(pet_state_t state)
 const char *scene_state_label(pet_state_t state)
 {
     return STYLES[state].label;
-}
-
-const char *scene_voice_name(scene_voice_t voice)
-{
-    return VOICE_NAMES[voice];
 }
 
 const char *scene_link_name(scene_link_t link)
@@ -188,11 +140,6 @@ static void add_run(runs_t *runs, const font_t *font, const char *text, size_t l
     if (runs->count < MAX_RUNS) {
         runs->items[runs->count++] = (text_run_t){font, text, len, x, top};
     }
-}
-
-static void add_text(runs_t *runs, const font_t *font, const char *text, int x, int top)
-{
-    add_run(runs, font, text, strlen(text), x, top);
 }
 
 static void add_centered(runs_t *runs, const font_t *font, const char *text, int top)
@@ -243,53 +190,6 @@ static void render_runs(const runs_t *runs, uint32_t bg, uint32_t fg, int y0, in
     }
 }
 
-static const char ELLIPSIS[] = "\xe2\x80\xa6";
-
-static void add_ellipsis(runs_t *runs, const font_t *font, const char *kept, size_t len, int x, int top)
-{
-    add_run(runs, font, ELLIPSIS, strlen(ELLIPSIS), x + font_width(font, kept, len), top);
-}
-
-static void add_fitted(runs_t *runs, const font_t *font, const char *text, int x, int top)
-{
-    bool truncated = false;
-    size_t kept = prompt_fit(font, text, strlen(text), SCENE_TEXT_WIDTH, &truncated);
-    add_run(runs, font, text, kept, x, top);
-    if (truncated) {
-        add_ellipsis(runs, font, text, kept, x, top);
-    }
-}
-
-static void render_prompt(const scene_t *scene, int y0, int rows, uint16_t *out)
-{
-    const prompt_t *prompt = &scene->prompt;
-    char position[16];
-    snprintf(position, sizeof(position), "%u/%u", (unsigned)prompt->index, (unsigned)prompt->count);
-    runs_t runs = {.count = 0};
-    add_text(&runs, &font_large, STYLES[PET_WAITING].label, SCENE_MARGIN, HEADER_TOP);
-    int position_x = SCENE_W - SCENE_MARGIN - font_width(&font_text, position, strlen(position));
-    add_run(&runs, &font_text, position, strlen(position), position_x,
-            HEADER_TOP + (font_large.line_height - font_text.line_height) / 2);
-    add_fitted(&runs, &font_text, prompt->tool, SCENE_MARGIN, TOOL_TOP);
-    prompt_layout_t layout;
-    prompt_layout(&font_text, prompt->text, SCENE_TEXT_WIDTH, &layout);
-    for (int i = 0; i < layout.count; i++) {
-        const prompt_line_t *line = &layout.lines[i];
-        int top = BODY_TOP + i * font_text.line_height;
-        add_run(&runs, &font_text, prompt->text + line->start, line->len, SCENE_MARGIN, top);
-        if (layout.truncated && i == layout.count - 1) {
-            add_ellipsis(&runs, &font_text, prompt->text + line->start, line->len, SCENE_MARGIN, top);
-        }
-    }
-    if (scene->decision == SCENE_DECISION_NONE) {
-        add_text(&runs, &font_text, APPROVE_HINT, SCENE_MARGIN, FOOTER_TOP);
-        add_text(&runs, &font_text, DENY_HINT, SCENE_MARGIN, FOOTER_TOP + font_text.line_height + 4);
-    } else {
-        add_centered(&runs, &font_large, scene->decision == SCENE_DECISION_ALLOW ? APPROVED : DENIED, FOOTER_TOP);
-    }
-    render_runs(&runs, PROMPT_BACKGROUND, PROMPT_TEXT, y0, rows, out);
-}
-
 static void render_pairing(const scene_t *scene, int y0, int rows, uint16_t *out)
 {
     char code[8];
@@ -317,48 +217,6 @@ static void render_link(const scene_t *scene, int y0, int rows, uint16_t *out)
     add_centered(&runs, &font_text, LINK_HINTS[scene->link], LINK_HINT_TOP);
     add_centered(&runs, &font_text, LINK_RESTART, LINK_HINT_TOP + font_text.line_height + 4);
     render_runs(&runs, LINK_BACKGROUND, LINK_TEXT, y0, rows, out);
-}
-
-static void draw_voice_image(const uint8_t *pixels, int y0, int rows, uint16_t *out)
-{
-    uint16_t ink = scene_rgb565_wire(VOICE_TEXT);
-    for (int y = y0; y < y0 + rows; y++) {
-        int iy = y - VOICE_IMAGE_TOP;
-        if (iy < 0 || iy >= VOICE_IMAGE_H) {
-            continue;
-        }
-        uint16_t *row = out + (y - y0) * SCENE_W;
-        for (int ix = 0; ix < VOICE_IMAGE_W; ix++) {
-            if (voice_image_pixel(pixels, ix, iy)) {
-                row[SCENE_MARGIN + ix] = ink;
-            }
-        }
-    }
-}
-
-static void render_voice(const scene_t *scene, int y0, int rows, uint16_t *out)
-{
-    runs_t runs = {.count = 0};
-    bool image = false;
-    if (scene->voice == SCENE_VOICE_LISTENING) {
-        add_centered(&runs, &font_large, LISTENING, VOICE_TITLE_TOP);
-        add_centered(&runs, &font_text, LISTENING_HINT, VOICE_HINT_TOP);
-    } else if (scene->voice == SCENE_VOICE_TRANSCRIBING) {
-        add_centered(&runs, &font_large, TRANSCRIBING, VOICE_TITLE_TOP);
-    } else if (scene->voice_result == VOICE_RESULT_QUEUED || scene->voice_result == VOICE_RESULT_SUBMITTED) {
-        image = scene->voice_image != NULL;
-        add_centered(&runs, &font_large, VOICE_TEXTS[scene->voice_result].title, image ? HEADER_TOP : VOICE_TITLE_TOP);
-    } else {
-        const voice_text_t *text = &VOICE_TEXTS[scene->voice_result];
-        add_centered(&runs, &font_large, text->title, VOICE_TITLE_TOP);
-        for (int i = 0; i < VOICE_TEXT_LINES && text->lines[i] != NULL; i++) {
-            add_centered(&runs, &font_text, text->lines[i], VOICE_HINT_TOP + i * (font_text.line_height + 4));
-        }
-    }
-    render_runs(&runs, VOICE_BACKGROUND, VOICE_TEXT, y0, rows, out);
-    if (image) {
-        draw_voice_image(scene->voice_image, y0, rows, out);
-    }
 }
 
 static uint32_t pattern_pixel(int x, int y)
@@ -437,10 +295,6 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
         render_pairing(scene, y0, rows, out);
     } else if (link_mismatch(scene)) {
         render_link(scene, y0, rows, out);
-    } else if (scene->voice != SCENE_VOICE_NONE) {
-        render_voice(scene, y0, rows, out);
-    } else if (scene->prompt.active) {
-        render_prompt(scene, y0, rows, out);
     } else {
         render_pet(scene, y0, rows, out);
     }

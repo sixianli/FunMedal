@@ -18,10 +18,10 @@ ARTIFACTS_PREFIX = "ob11"
 ARTIFACTS_SUBDIR = "doctor"
 TERMINAL_LINE = "Claude Code 版本（终端）"
 DESKTOP_LINE = "Claude Code 版本（桌面 App）"
-CHECKS = ["桥接程序", "蓝牙", "语音识别", "签名", "卡片", "固件版本", "插件", "hooks 开关", TERMINAL_LINE, DESKTOP_LINE]
+CHECKS = ["桥接程序", "蓝牙", "签名", "卡片", "固件版本", "插件", "hooks 开关", TERMINAL_LINE, DESKTOP_LINE]
 LINE = re.compile(r"^(好|注意|不好|不知道) (.+?)：(.*)$")
 GOOD_STATUS = {"ok": True, "pid": 4242, "bluetooth": "poweredOn", "authorization": "allowedAlways",
-               "speech": "authorized", "card": "connected", "card_version": 2, "bridge_version": 2}
+               "card": "connected", "card_version": 2, "bridge_version": 2}
 GOOD_PLUGINS = [{"id": "funmedal@funmedal", "enabled": True}, {"id": "other@elsewhere", "enabled": True}]
 GOOD = {"status": GOOD_STATUS, "version": "2.1.292 (Claude Code)", "plugins": GOOD_PLUGINS, "settings": {},
         "app": "copy", "claude": True, "desktop": {}}
@@ -36,7 +36,7 @@ if [ "$*" = "--version" ]; then {answer}; fi
 if [ "$*" = "plugin list --json" ]; then printf '%s\\n' "$FAKE_CLAUDE_PLUGINS"; exit 0; fi
 exit 1
 """
-UNKNOWN_CARD = {"蓝牙": "不知道", "语音识别": "不知道", "卡片": "不知道", "固件版本": "不知道"}
+UNKNOWN_CARD = {"蓝牙": "不知道", "卡片": "不知道", "固件版本": "不知道"}
 
 
 class FakeBridge:
@@ -136,8 +136,6 @@ SITUATIONS = {
     "bluetooth-unanswered": (changed(status_fields={"authorization": "notDetermined"}), {"蓝牙": "不好"}, "允许"),
     "bluetooth-off": (changed(status_fields={"bluetooth": "poweredOff", "card": "off", "card_version": None}),
                       {"蓝牙": "不好", "卡片": "不知道", "固件版本": "不知道"}, "打开"),
-    "speech-denied": (changed(status_fields={"speech": "denied"}), {"语音识别": "不好"}, "隐私与安全性"),
-    "speech-unanswered": (changed(status_fields={"speech": "not_determined"}), {"语音识别": "不好"}, "speech-access"),
     "app-missing": (changed(app="missing"), {"签名": "不好"}, "install.sh"),
     "app-unsigned": (changed(app="unsigned"), {"签名": "不好"}, "install.sh"),
     "app-adhoc": (changed(app="adhoc"), {"签名": "注意"}, "Apple Development"),
@@ -170,8 +168,6 @@ SITUATIONS = {
     ("[OB-11] doctor reports bluetooth access refused", "bluetooth-denied"),
     ("[OB-11] doctor reports bluetooth access still waiting for an answer", "bluetooth-unanswered"),
     ("[OB-11] doctor reports bluetooth switched off", "bluetooth-off"),
-    ("[OB-11] doctor reports speech recognition refused", "speech-denied"),
-    ("[OB-11] doctor reports speech recognition never asked", "speech-unanswered"),
     ("[OB-11] doctor reports the installed bridge missing", "app-missing"),
     ("[OB-11] doctor reports the installed bridge without a signature", "app-unsigned"),
     ("[OB-11] doctor reports the card not connected", "card-away"),

@@ -50,7 +50,6 @@ enum Doctor {
         let findings = [
             bridgeRunning(status, socket: socket, app: app),
             bluetooth(status, restart: restart),
-            speech(status, app: app, restart: restart),
             signature(app: app),
             card(status, restart: restart),
             linkVersion(status, restart: restart),
@@ -99,23 +98,6 @@ enum Doctor {
         }
     }
 
-    static func speech(_ status: [String: Any]?, app: String, restart: String) -> Finding {
-        let name = "语音识别"
-        guard let status else { return Finding(mark: .unknown, name: name, detail: "桥接程序没在跑，查不到") }
-        switch status["speech"] as? String {
-        case "authorized":
-            return Finding(mark: .good, name: name, detail: "允许使用")
-        case "denied", "restricted":
-            return Finding(mark: .bad, name: name, detail: "macOS 不让桥接程序用语音识别，按住说话用不了",
-                           fix: "在“系统设置 → 隐私与安全性 → 语音识别”里打开 FunMedalBridge，\(restart)")
-        case "not_determined":
-            return Finding(mark: .bad, name: name, detail: "还没问过你，按住说话用不了",
-                           fix: "运行 open -n -W \"\(app)\" --args speech-access，在弹框里选允许")
-        default:
-            return Finding(mark: .unknown, name: name, detail: "桥接程序没报语音识别授权")
-        }
-    }
-
     static func signature(app: String) -> Finding {
         let name = "签名"
         let install = "在仓库目录运行 sh install.sh"
@@ -129,7 +111,7 @@ enum Doctor {
         let lines = shown.err.split(separator: "\n").map(String.init)
         if lines.contains("Signature=adhoc") {
             return Finding(mark: .note, name: name,
-                           detail: "临时签名：每次重新安装后，macOS 都会再问一次蓝牙和语音识别授权",
+                           detail: "临时签名：每次重新安装后，macOS 都会再问一次蓝牙授权",
                            fix: "照 README“安装”的第 3 步拿一张 Apple Development 证书，再运行 sh mac/bridge/build.sh 和 sh install.sh")
         }
         let authority = lines.first { $0.hasPrefix("Authority=") }.map { String($0.dropFirst("Authority=".count)) }
@@ -209,7 +191,7 @@ enum Doctor {
             return Finding(mark: .unknown, name: name, detail: "\(path) 不是有效的 JSON")
         }
         if settings["disableAllHooks"] as? Bool == true {
-            return Finding(mark: .bad, name: name, detail: "\(path) 里 disableAllHooks 是 true，状态显示、批准和按住说话都不工作",
+            return Finding(mark: .bad, name: name, detail: "\(path) 里 disableAllHooks 是 true，卡片收不到会话状态",
                            fix: "把 disableAllHooks 删掉或改成 false，再开新的会话")
         }
         return Finding(mark: .good, name: name, detail: "没被关掉（只查了 \(path)）")

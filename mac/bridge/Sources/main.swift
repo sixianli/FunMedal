@@ -18,7 +18,7 @@ func defaultSocket() -> String {
     return support.appendingPathComponent("FunMedal/bridge.sock").path
 }
 
-func serve(socket: String, logPath: String?, locale: String, linkVersion: Int) -> Never {
+func serve(socket: String, logPath: String?, linkVersion: Int) -> Never {
     guard UnixSocket.address(socket) != nil else { fail("socket path is too long: \(socket)", setupFailedExit) }
     let directory = (socket as NSString).deletingLastPathComponent
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true,
@@ -33,7 +33,7 @@ func serve(socket: String, logPath: String?, locale: String, linkVersion: Int) -
         fail("cannot listen on \(socket): \(String(cString: strerror(errno)))", setupFailedExit)
     }
     let log = EventLog(path: logPath)
-    let bridge = Bridge(socketPath: socket, log: log, locale: locale, linkVersion: linkVersion)
+    let bridge = Bridge(socketPath: socket, log: log, linkVersion: linkVersion)
     log.write("start", ["pid": Int(getpid()), "socket": socket])
     let acceptor = Thread {
         while true {
@@ -60,11 +60,8 @@ func serveClient(_ client: Int32, bridge: Bridge, socket: String, lockPath: Stri
     if let reply = handled.reply, let data = Hook.line(reply) {
         _ = UnixSocket.writeAll(client, data)
     }
-    if let approval = handled.approval {
-        follow(approval, reader: reader, bridge: bridge)
-    }
-    if let listener = handled.listener {
-        hold(listener, reader: reader, bridge: bridge)
+    if let wait = handled.wait {
+        follow(wait, reader: reader, bridge: bridge)
     }
     close(client)
     if handled.quit {
@@ -74,29 +71,17 @@ func serveClient(_ client: Int32, bridge: Bridge, socket: String, lockPath: Stri
     }
 }
 
-func follow(_ approval: Approval, reader: LineReader, bridge: Bridge) {
+func follow(_ wait: PermissionWait, reader: LineReader, bridge: Bridge) {
     while true {
         switch reader.next(until: .distantFuture) {
         case .line(let data):
             let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if message?["op"] as? String == "give_up" { bridge.gaveUp(approval) }
+            if message?["op"] as? String == "give_up" { bridge.gaveUp(wait) }
         case .closed, .tooLong:
-            bridge.ended(approval)
+            bridge.ended(wait)
             return
         case .timeout:
             continue
-        }
-    }
-}
-
-func hold(_ listener: Listener, reader: LineReader, bridge: Bridge) {
-    while true {
-        switch reader.next(until: .distantFuture) {
-        case .line, .timeout:
-            continue
-        case .closed, .tooLong:
-            bridge.unlisten(listener)
-            return
         }
     }
 }
@@ -115,17 +100,13 @@ func ask(socket: String, _ message: [String: Any]) -> Int32 {
 
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: funmedal-bridge serve|hook|listen|said|status|quit|speech-access|doctor [--socket PATH] "
-    + "[--log PATH] [--wait-limit SECONDS] [--voice-locale LOCALE] [--clip NUMBER] [--result WORD] "
-    + "[--link-version NUMBER]"
+let usage = "usage: funmedal-bridge serve|hook|status|quit|doctor [--socket PATH] [--log PATH] "
+    + "[--wait-limit SECONDS] [--link-version NUMBER]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
 var logPath: String?
 var waitLimit = Hook.defaultWaitLimit
-var voiceLocale = Voice.localeIdentifier
-var saidClip: String?
-var saidResult: String?
 var linkVersion = Bridge.linkVersion
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
@@ -138,9 +119,6 @@ while !arguments.isEmpty {
             fail("--wait-limit needs a number of seconds", usageExit)
         }
         waitLimit = seconds
-    case "--voice-locale": voiceLocale = arguments.removeFirst()
-    case "--clip": saidClip = arguments.removeFirst()
-    case "--result": saidResult = arguments.removeFirst()
     case "--link-version":
         guard let version = Int(arguments.removeFirst()), Bridge.linkVersions.contains(version) else {
             fail("--link-version needs a number from 1 to 9999", usageExit)
@@ -152,19 +130,10 @@ while !arguments.isEmpty {
 
 switch mode {
 case "serve":
-    serve(socket: socketPath, logPath: logPath, locale: voiceLocale, linkVersion: linkVersion)
+    serve(socket: socketPath, logPath: logPath, linkVersion: linkVersion)
 case "hook":
     Hook.run(socket: socketPath, waitLimit: waitLimit, logPath: logPath)
     exit(0)
-case "listen":
-    Listen.run(socket: socketPath)
-case "said":
-    guard let saidClip, let clip = UInt8(saidClip), let saidResult, Bridge.saidResults.contains(saidResult) else {
-        fail("said needs --clip 0-255 and --result \(Bridge.saidResults.sorted().joined(separator: "|"))", usageExit)
-    }
-    exit(ask(socket: socketPath, ["op": "said", "clip": Int(clip), "result": saidResult]))
-case "speech-access":
-    exit(Voice.access(reportTo: logPath, locale: voiceLocale))
 case "doctor":
     exit(Doctor.run(socket: socketPath))
 case "status", "quit":

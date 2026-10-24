@@ -209,7 +209,6 @@ def test_real_card(case, run_dir):
                 after = info_fields(watcher.request("info"))
             finally:
                 bridge.quit()
-                bridge.activity.unlink(missing_ok=True)
         finally:
             watcher.close()
     summary.update({"fw": booted["fw"], "sec": after["sec"], "link": after["link"]})

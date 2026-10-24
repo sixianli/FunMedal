@@ -1,5 +1,7 @@
 # 在卡片上批准或拒绝
 
+> 2026-10-24 起功能已拿掉：卡片上不再显示要批准的内容，按键也不再批准或拒绝，批准只在电脑上做。卡片仍显示“等你批准”，桥接程序现在怎么等见 [bridge.md](bridge.md) 的“等你批准时 hook 怎么等”。拿掉的原因见产品需求文档 [docs/prd-v0.1.md](../docs/prd-v0.1.md)，以后要不要再做记在 [docs/ideas/IDEA-20261024-001-card-approve-deny.md](../docs/ideas/IDEA-20261024-001-card-approve-deny.md)。下文是当时的设计和实测记录，照原样保留。
+
 本文是 FM-14（本项目任务清单里的第 14 项）的设计和实测记录：Claude Code（Anthropic 的 AI 编程助手）要你批准一个操作时，卡片显示要批准的是什么，你在卡片上按一个键就能批准或拒绝。状态怎么从 Mac 到达卡片见 [bridge.md](bridge.md)，hooks（Claude Code 在特定事件发生时自动运行的命令）的实测见 [claude-code.md](claude-code.md)。
 
 ## 对照使命

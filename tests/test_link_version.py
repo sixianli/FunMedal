@@ -73,7 +73,6 @@ def test_version_mismatch(case, way, card, run_dir):
                            for name, rows in (("title", TITLE_ROWS), ("versions", VERSION_ROWS), ("hint", HINT_ROWS))}}
     finally:
         odd.quit()
-        odd.activity.unlink(missing_ok=True)
     recovered = Bridge(run_dir / "recovered")
     (run_dir / "recovered").mkdir(exist_ok=True)
     try:
@@ -85,7 +84,6 @@ def test_version_mismatch(case, way, card, run_dir):
     finally:
         write_summary(run_dir, summary)
         recovered.quit()
-        recovered.activity.unlink(missing_ok=True)
     after = summary["after_quiet"]
     assert after["card"] == "mismatch" and after["connects"] == 1, summary
     assert after["card_version"] == LINK_VERSION and after["bridge_version"] == pretend, summary

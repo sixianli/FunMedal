@@ -10,16 +10,13 @@ from pathlib import Path
 import pytest
 
 from bridge_harness import (APP, HOOK_TIMEOUT_S, INSTALLED_BRIDGE, SOCKET_PREFIX, HookRun,  # noqa: F401
-                            approve, artifacts, bash, bridge, bridge_cli, card, card_states, event, real_session,
+                            artifacts, bash, bridge, bridge_cli, card, card_states, event, real_session,
                             require_bridge_app, run_dir, wait_session_ready, wait_until, write_summary)
 
 ARTIFACTS_PREFIX = "ob9"
 ARTIFACTS_SUBDIR = "bridge-start"
 QUIET_S = 3.0
 SETTLE_S = 5.0
-SPEECH_DECIDED = {"authorized", "denied", "restricted"}
-SPEECH_ANSWER_S = 120.0
-PERSON_RESET_SPEECH = os.environ.get("FM_PERSON_RESET_SPEECH")
 
 
 def socket_path(name):
@@ -61,7 +58,7 @@ def kinds(entries, kind):
 def clean_up(path):
     bridge_cli("quit", "--socket", path)
     wait_until(lambda: serving(path) is None and serve_processes(path) == [], 10.0, "bridge exit")
-    for leftover in (path, path + ".lock", str(Path(path).with_suffix(".activity.json"))):
+    for leftover in (path, path + ".lock"):
         Path(leftover).unlink(missing_ok=True)
 
 
@@ -79,7 +76,7 @@ def other_events():
     return [
         ("UserPromptSubmit", event("UserPromptSubmit", "ob9-other", prompt="hello")),
         ("PreToolUse", event("PreToolUse", "ob9-other", tool_use_id="t1", **first)),
-        ("PermissionRequest", approve("ob9-other", "Bash", {"command": "ls"})),
+        ("PermissionRequest", event("PermissionRequest", "ob9-other", **first)),
         ("PostToolUse", event("PostToolUse", "ob9-other", tool_use_id="t1", tool_response={}, **first)),
         ("PostToolUseFailure", event("PostToolUseFailure", "ob9-other", tool_use_id="t1", error="Exit code 1",
                                      **first)),
@@ -173,57 +170,8 @@ def test_other_events_start_nothing(case, run_dir):
     assert summary["status"] is None and summary["processes"] == [] and not summary["socket_file"], summary
 
 
-def start_app(path, log):
-    subprocess.run(["open", "-n", "-g", str(APP), "--args", "serve", "--socket", path, "--log", str(log)], check=True)
-    return wait_until(lambda: serving(path), 10.0, "bridge serving")
-
-
-@pytest.mark.parametrize("case", ["[OB-9] the bridge records its speech access when it starts and asks macOS only "
-                                  "while it is undecided"])
-def test_speech_access_at_start(case, run_dir):
-    require_bridge_app()
-    path = socket_path("speech")
-    log = run_dir / "bridge.jsonl"
-    summary = {}
-    try:
-        status = start_app(path, log)
-        recorded = wait_until(lambda: kinds(read_log(log), "speech"), 5.0, "speech access recorded")
-        time.sleep(QUIET_S)
-        summary = {"status": status, "first": recorded[0], "speech": kinds(read_log(log), "speech")}
-    finally:
-        write_summary(run_dir, summary)
-        clean_up(path)
-    first = summary["first"]["status"]
-    assert first in SPEECH_DECIDED, (f"speech access for {APP.name} is {first}; answer the macOS dialog, "
-                                     "or run this module with FM_PERSON_RESET_SPEECH set", summary)
-    assert [e["status"] for e in summary["speech"]] == [first], summary
-    assert summary["status"]["speech"] == first, summary
-
-
-@pytest.mark.skipif(not PERSON_RESET_SPEECH,
-                    reason="needs a person who has run `tccutil reset SpeechRecognition com.funmedal.bridge` and "
-                           "will click Allow; set FM_PERSON_RESET_SPEECH")
-@pytest.mark.parametrize("case", ["[OB-9] with speech access reset, the bridge asks macOS as soon as it starts and "
-                                  "records the answer"])
-def test_speech_asked_at_start(case, run_dir):
-    require_bridge_app()
-    path = socket_path("speech-ask")
-    log = run_dir / "bridge.jsonl"
-    summary = {}
-    try:
-        start_app(path, log)
-        answered = wait_until(lambda: (found := kinds(read_log(log), "speech")) and len(found) == 2 and found,
-                              SPEECH_ANSWER_S, "the person's answer to the speech dialog")
-        summary = {"speech": answered, "status": serving(path)}
-    finally:
-        write_summary(run_dir, summary)
-        clean_up(path)
-    assert [e["status"] for e in summary["speech"]] == ["not_determined", "authorized"], summary
-    assert summary["status"]["speech"] == "authorized", summary
-
-
 @pytest.mark.parametrize("case", ["[OB-9] with no bridge running, a real session starts the installed bridge, which "
-                                  "outlives the session, shows the session on the card and takes the mod's listener"])
+                                  "outlives the session and shows the session on the card"])
 def test_real_session_starts_bridge(case, card, bridge, run_dir):
     summary = {}
     try:
@@ -232,16 +180,13 @@ def test_real_session_starts_bridge(case, card, bridge, run_dir):
             started = bridge.status()
             connected = wait_until(lambda: (s := bridge.status()) and s["card"] == "connected"
                                    and s["card_state"] == s["desired"] and s, 30.0, "started bridge on the card")
-            listening = wait_until(lambda: (s := bridge.status()) and s["channels"] and s, 30.0,
-                                   "the mod's listener")["channels"]
-            hooked = sorted(int(pid) for pid in json.loads(bridge.activity.read_text(encoding="utf-8")))
             processes = serve_processes(bridge.socket)
             start = card.mark()
             session.type_line("Reply with the single word ok.", "enter (prompt)")
             card.wait_for(lambda line: line == "STATE done", 90.0, start)
             session.exit()
             card.wait_for(lambda line: line == "STATE idle", 20.0, start)
-            summary = {"started": started, "connected": connected, "listening": listening, "hooked": hooked,
+            summary = {"started": started, "connected": connected,
                        "processes": processes, "states": card_states(card, start), "after_exit": bridge.status()}
     finally:
         if not summary:
@@ -250,6 +195,5 @@ def test_real_session_starts_bridge(case, card, bridge, run_dir):
     started = summary["started"]
     assert [(p["pid"], p["ppid"]) for p in summary["processes"]] == [(started["pid"], 1)], summary
     assert summary["processes"][0]["command"].startswith(f"{INSTALLED_BRIDGE} serve"), summary
-    assert summary["listening"] == summary["hooked"] and len(summary["hooked"]) == 1, summary
     assert summary["states"] == ["working", "done", "idle"], summary
     assert summary["after_exit"] is not None and summary["after_exit"]["pid"] == started["pid"], summary

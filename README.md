@@ -1,24 +1,24 @@
 # FunMedal
 
-FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240×320 彩色屏幕、4 个按键、麦克风和电池）变成 Claude Code（Anthropic 的 AI 编程助手）的桌面伴侣。Claude Code 照常在 Mac 上运行，卡片通过加密的蓝牙和 Mac 上的桥接程序（本项目里一个常驻后台的小程序）相连。
+FunMedal 把一张 ESP32-C3 电子卡片（原厂固件叫 `trae_card`，带 240×320 彩色屏幕、4 个按键和电池）变成 Claude Code（Anthropic 的 AI 编程助手）的桌面伴侣。Claude Code 照常在 Mac 上运行，卡片通过加密的蓝牙和 Mac 上的桥接程序（本项目里一个常驻后台的小程序）相连。
 
 它只做电脑端和手机端都做不好的事，见 [MISSION.md](MISSION.md)：
 
-- **看一眼就知道状态**：卡片上的像素小人显示 Claude Code 正在干活、等你批准、做完了、出错了，还是空闲。
-- **在卡片上批准或拒绝**：Claude Code 要你批准一个操作时，卡片显示工具名和命令。长按右侧最上面的键批准，按一下右侧最下面的键拒绝。终端里的批准弹窗照样在，哪边先答算哪边。
-- **按住说话**：按住右侧中间的键说一句短指令，松开后 Mac 用离线语音识别转成文字，送进最近需要你的那个 Claude Code 会话，就像你在电脑上打了这句话。卡片先显示“已排队”和认出的文字，送进去后显示“已送进去”，没送进去时说明原因。
+- **看一眼就知道状态**：卡片上的像素小人显示 Claude Code 正在干活、等你批准、做完了、出错了，还是空闲。Claude Code 要你批准一个操作时，卡片显示“等你批准”，你在电脑上答完它才变。
+
+2026-10-24 起，在卡片上批准和按住说话这两个功能已经拿掉，卡片只显示状态，见产品需求文档 [docs/prd-v0.1.md](docs/prd-v0.1.md)；这两个功能以后要不要再做，记在 [docs/ideas/](docs/ideas/) 里。
 
 ## 需要什么
 
 | 东西 | 说明 |
 | --- | --- |
 | 卡片 | 和本项目同款的 ESP32-C3 卡片，硬件细节和引脚见 [notes/hardware.md](notes/hardware.md)。别的板子引脚不同，不能直接用 |
-| Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到蓝牙和离线语音识别，都是 macOS 自带的 |
+| Mac | 本项目在 Apple 芯片的 Mac、macOS 27.2 上开发和测试。桥接程序用到 macOS 自带的蓝牙 |
 | Xcode 命令行工具 | 提供 `swiftc`（Swift 编译器），用来编译桥接程序 |
 | Apple Development 证书 | 苹果发给开发者的签名证书，用免费的 Apple ID 就能拿到，不用付费的开发者会员。编译脚本用它给桥接程序签名，这样重新编译后 macOS 不用再问授权；没有也能用，只是每次重新编译后都要再点一次允许。拿法见下面第 3 步 |
 | esptool | 乐鑫的刷写工具，一个小 Python 程序，用来备份卡片和刷固件，装法见下面第 1 步 |
 | ESP-IDF v5.5.5 | 乐鑫官方的 ESP32 开发环境（几 GB），只有想自己编译卡片固件时才需要，装法见[乐鑫的安装文档](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/get-started/index.html) |
-| Claude Code | 要 2.1.292 或更新的版本，终端版或 Claude 桌面 App 自带的都行，`install.sh` 会检查；本项目用终端版 2.1.292 和桌面 App 自带的 2.1.299 测试。批准功能要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令）；按住说话靠插件里的 mod（插件里在 Claude Code 进程中运行的一段 JavaScript 程序）把话送进会话 |
+| Claude Code | 要 2.1.292 或更新的版本，终端版或 Claude 桌面 App 自带的都行，`install.sh` 会检查；本项目用终端版 2.1.292 和桌面 App 自带的 2.1.299 测试。显示“等你批准”要用到 `PermissionRequest` hook（Claude Code 在要你批准时运行的外部命令） |
 | Python 3 | 跑测试时需要；第 1 步把 `esptool` 装进仓库的 `.venv` 时也要 |
 
 ## 安装
@@ -95,13 +95,13 @@ sh install.sh
 
 - 找 Claude Code：终端里的 `claude` 命令，和 Claude 桌面 App 自带的那份（在 `~/Library/Application Support/Claude/claude-code/` 里，桌面 App 会自己下载和升级它），用两者中版本较新的那份。低于 2.1.292 时它会停下，告诉你怎么升级：终端版运行 `claude update`；桌面 App 在菜单 Claude → Check for Updates 里升级，再开一个新的 Code 会话。另一份低于 2.1.292 时照样安装，最后打一行“注意”，说明用那一份开的会话里 FunMedal 不能正常工作。
 - 把编译好的桥接程序复制到 `~/Applications/FunMedalBridge.app`。每次重新编译后都要再运行一次 `install.sh`，把新版本复制过去。
-- 用找到的那份 Claude Code 把这个仓库加为插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。终端版和桌面 App 用同一个 `~/.claude/settings.json`，所以用哪一份装，两边开的会话都会加载这个插件。插件里是 hooks（Claude Code 在各种事件发生时运行的外部命令）和一个 mod（在 Claude Code 进程里运行的一段 JavaScript 程序），它们都运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。hooks 把会话的状态和批准请求交给桥接程序；mod 在每个会话开始时接上桥接程序，把卡片上说的话当作你打的字送进会话。
+- 用找到的那份 Claude Code 把这个仓库加为插件市场（可以从中安装插件的地方），从中装上 `funmedal` 插件。终端版和桌面 App 用同一个 `~/.claude/settings.json`，所以用哪一份装，两边开的会话都会加载这个插件。插件里只有 hooks（Claude Code 在各种事件发生时运行的外部命令），它们运行 `~/Applications` 里的桥接程序，不用你改 `~/.claude/settings.json`。hooks 把每个会话的状态交给桥接程序。
 
 **只用 Claude 桌面 App、没装终端版也行。** 上面这些命令仍然要在终端里运行：可以用桌面 App 会话里自带的终端（在会话里按 Ctrl+\` 打开），也可以用 Mac 的“终端”。`install.sh` 一份 Claude Code 都没找到时，先打开桌面 App，在 Code 页开一个会话，让它把自带的 Claude Code 准备好，再运行一次。装好后新开一个桌面会话；用下文“出问题时”的 `doctor` 看“插件”一行是不是“好”。桌面会话里运行 `/status` 能看到它用的 Claude Code 版本。
 
 插件直接从仓库目录加载，装好后不要挪动仓库；要挪，先照“卸载”一节卸掉插件、重开会话。已经开着的 Claude Code 会话要重开，才会用上插件。
 
-hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令；唯一的例外是要显示在卡片批准画面上的那一小段内容，它不写进任何记录。详见 [notes/bridge.md](notes/bridge.md) 和 [notes/approval.md](notes/approval.md)。
+hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进程等几项交给桥接程序，不传命令内容、文件内容和你的指令。详见 [notes/bridge.md](notes/bridge.md)。
 
 桥接程序不用你自己启动：Claude Code 的会话开始时，插件的 hook 发现它没在运行，就用 `open` 在后台启动 `~/Applications` 里的它，这一次会话开始要多等约 1.3 秒。它不跟着会话结束，关掉会话后照常运行，直到你让它退出或者重启 Mac。想先启动它也可以：
 
@@ -109,7 +109,7 @@ hook 只把事件名、会话编号、工具名、它属于哪个 `claude` 进�
 open -g ~/Applications/FunMedalBridge.app --args serve
 ```
 
-桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。它第一次启动时，macOS 会先后问是否允许它使用语音识别和蓝牙，都选允许。macOS 认程序时看的是签名里的“认定规则”：用证书签名时，规则是程序编号加证书上的名字，和程序内容无关，所以之后重新编译、重新安装都不会再问；换一张同名的证书也不会。用临时签名时，规则是程序内容的哈希，**每次重新编译后 macOS 都会再问一次**。从临时签名换成证书签名后，第一次启动也会再问一次。
+桥接程序必须用 `open` 启动，否则 macOS 会因为它用蓝牙而把它结束。它第一次启动时，macOS 会问是否允许它使用蓝牙，选允许。macOS 认程序时看的是签名里的“认定规则”：用证书签名时，规则是程序编号加证书上的名字，和程序内容无关，所以之后重新编译、重新安装都不会再问；换一张同名的证书也不会。用临时签名时，规则是程序内容的哈希，**每次重新编译后 macOS 都会再问一次**。从临时签名换成证书签名后，第一次启动也会再问一次。
 
 ### 4. 蓝牙配对
 
@@ -131,22 +131,21 @@ open -g ~/Applications/FunMedalBridge.app --args serve
 
 | 卡片上 | 做什么 |
 | --- | --- |
-| 看屏幕 | 小人的样子和下面的字告诉你 Claude Code 现在的状态 |
-| 等你批准时长按右侧最上面的键 | 批准屏幕上的那个操作 |
-| 等你批准时按一下右侧最下面的键 | 拒绝它，Claude 会收到“在卡片上拒绝了” |
-| 按住右侧中间的键说话，松开 | 把这句话送进最近需要你的那个会话：你刚给它发过指令、它刚答完、或者它刚请你批准；按住不到 0.5 秒算误触，最长 15 秒 |
+| 看屏幕 | 小人的样子和下面的字告诉你 Claude Code 现在的状态；“等你批准”时到电脑上去答 |
+| 配对画面上按右侧最上面的键 | 确认配对，见“安装”的第 4 步 |
+| 配对画面上按右侧最下面的键 | 取消配对 |
 
-左侧的键不接芯片的任何引脚，本项目的固件用不到它。
+其他时候按键不做任何事。左侧的键不接芯片的任何引脚，本项目的固件用不到它。
 
 ## 出问题时
 
-卡片不显示状态、批准或按住说话没反应时，先运行：
+卡片不显示状态时，先运行：
 
 ```bash
 ~/Applications/FunMedalBridge.app/Contents/MacOS/funmedal-bridge doctor
 ```
 
-它依次查 10 项：桥接程序在不在跑、蓝牙和语音识别是否允许、桥接程序的签名、卡片连没连上、卡片固件和桥接程序的版本配不配、插件装没装、hooks 有没有被 `disableAllHooks` 关掉、终端版和桌面 App 自带的 Claude Code 版本各够不够。只用其中一种时，另一种那行写“没找到”，仍是“好”；一种太旧、另一种够新时，太旧的那行是“注意”。每项一行，开头是“好”“注意”“不好”或“不知道”，不是“好”的行后面写改法。有一项“不好”时退出码是 1。蓝牙、语音识别、卡片和版本这 4 项要问正在跑的桥接程序，它没在跑时显示“不知道”，先照第一行把它启动起来再查。
+它依次查 9 项：桥接程序在不在跑、蓝牙是否允许、桥接程序的签名、卡片连没连上、卡片固件和桥接程序的版本配不配、插件装没装、hooks 有没有被 `disableAllHooks` 关掉、终端版和桌面 App 自带的 Claude Code 版本各够不够。只用其中一种时，另一种那行写“没找到”，仍是“好”；一种太旧、另一种够新时，太旧的那行是“注意”。每项一行，开头是“好”“注意”“不好”或“不知道”，不是“好”的行后面写改法。有一项“不好”时退出码是 1。蓝牙、卡片和版本这 3 项要问正在跑的桥接程序，它没在跑时显示“不知道”，先照第一行把它启动起来再查。
 
 ## 卸载
 
@@ -182,7 +181,7 @@ esptool --chip esp32c3 -p <端口> write_flash 0x0 firmware-backup/factory-full8
 
 ## 测试
 
-测试在 [tests/](tests/)，用 pytest 运行。大部分测试要接着卡片、开着蓝牙；有几个要启动真实的 Claude Code 会话，或者用 Mac 的扬声器朗读。启动真实会话的测试用插件里的 hooks 和 `~/Applications` 里的桥接程序，所以每次重新编译后先照第 3 步再运行一次 `install.sh`；它们用 `claude --plugin-dir` 加载仓库里的插件，不读你的 `~/.claude/settings.json`。
+测试在 [tests/](tests/)，用 pytest 运行。大部分测试要接着卡片、开着蓝牙；有几个要启动真实的 Claude Code 会话。启动真实会话的测试用插件里的 hooks 和 `~/Applications` 里的桥接程序，所以每次重新编译后先照第 3 步再运行一次 `install.sh`；它们用 `claude --plugin-dir` 加载仓库里的插件，不读你的 `~/.claude/settings.json`。
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt
@@ -192,11 +191,10 @@ python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt
 FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tests -v
 ```
 
-有四个测试要你本人在卡片旁边操作，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
+有两个测试要你本人在卡片旁边操作，平时自动跳过。设了环境变量才运行，值是每一步最多等多少秒：
 
 - `FM_KEY_PRESS_SECONDS=60`：依次长按右侧上、中、下三个键，检查卡片读到的按下、长按和松开。
 - `FM_BLUETOOTH_TOGGLE_SECONDS=300`：等 `FM_ARTIFACTS` 目录下的 `bridge/test_mac_bluetooth_off_and_on/ready-off.txt` 出现（单独跑这个测试时，启动后约 5 秒；跑全部测试时要等前面的测试跑完），在控制中心把 Mac 的蓝牙关掉约 10 秒再打开，检查桥接程序自己重连、补上关着时变的状态。
-- `FM_PERSON_AT_CARD_SECONDS=90`：在真实会话里长按确认键批准一次、按下键拒绝一次；再按住中间的键说“把测试跑一遍”3 次，检查认出的文字。测试记录会存下认出的文字，所以只说这句测试话。
 
 接着卡片的测试运行期间，会一直占着默认套接字的锁（`~/Library/Application Support/FunMedal/bridge.sock.lock`）。这时别的会话开始或压缩上下文，插件也启动不了常驻桥接程序，不会把卡片连走。所以跑测试前要先退出常驻桥接程序，测试结束后它要等下一个会话开始才会自动启动。
 
@@ -211,10 +209,8 @@ FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tes
 
 ## 已知的限制
 
-- 桥接程序每次重新编译后，macOS 都要你重新允许蓝牙和语音识别。
+- 用临时签名时，桥接程序每次重新编译后，macOS 都要你重新允许蓝牙。
 - 卡片固件和桥接程序要一起更新。两边的连接协议版本不一样时，桥接程序断开、不再重连，`status` 里 `card` 是 `mismatch`；卡片会显示红底的“版本不配”，并写明该更新哪一边。更新后退出再启动桥接程序就好，见 [notes/bridge.md](notes/bridge.md) 的“先核对版本”。OB-13 之前的固件没有版本号，会被当成版本不配，但卡片上不会出现这个画面。
-- 在电脑上按过停止（终端里按 Esc，桌面 App 里点停止）之后，Claude Code 2.1.299 起不收插件送来的话，卡片显示“没送进去 / 你按过停止”，要先在电脑上打一句话。停止时还排着的话会被清掉，卡片显示“没送进去 / 刚才那句被停止清掉了”。
-- 按住说话时，Mac 把结果写给卡片如果连续两次蓝牙出错（桥接程序只重写一次），文字其实已经送进会话，卡片却会显示“没送进去 / Mac 没有回音”。看到这句时先看终端里会话有没有收到，再决定要不要重说，见 [notes/voice.md](notes/voice.md) 的“还没做的”。
 - 卡片还不会睡眠省电，也不读电池电量；原厂的电子名片功能不保留，要用就写回原厂固件。
 - 附近有两张卡片时，桥接程序会连第一张搜到的，这种情况没有实测，见 [notes/bridge.md](notes/bridge.md) 的“还没做的”。
 

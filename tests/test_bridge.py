@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 
-from bridge_harness import (artifacts, bash, ble_writes, bridge, bridge_cli, card, card_lines,  # noqa: F401
+from bridge_harness import (Bridge, artifacts, bash, ble_writes, bridge, bridge_cli, card, card_lines,  # noqa: F401
                             card_states, event, hook_times, info_fields, raw_exchange, real_session, request_touch,
                             require_bridge_app, run_dir, start_and_mark, wait_session_ready, wait_until, write_summary)
 
@@ -21,6 +21,9 @@ ALREADY_RUNNING_EXIT = 3
 FIXED_CHANGED_HANDLE = 3
 TOGGLE_SECONDS = os.environ.get("FM_BLUETOOTH_TOGGLE_SECONDS")
 RECONNECT_S = 60.0
+SECURE = "encrypted,authenticated,bonded"
+NO_OPTION = re.compile(r"(\d)\.No(?:,|(?=[A-Z])|$)")
+IDLE_AFTER_REJECTION_S = 1.0
 
 
 @pytest.mark.parametrize("case", ["[FM-13] real session shows working, waiting, working, done, idle"])
@@ -44,13 +47,24 @@ def test_real_session_states(case, card, bridge, run_dir):
             summary = {"states": card_states(card, start), "writes": ble_writes(card, start),
                        "permission_request_t": permission_t, "card_waiting_t": waiting_t,
                        "latency_s": waiting_t - permission_t[0] if permission_t else None,
-                       "status": bridge.status()}
+                       "status": bridge.status(), "waits": wait_log(bridge)}
     finally:
         write_summary(run_dir, summary)
     assert summary["states"] == ["working", "waiting", "working", "done", "idle"], summary
     assert summary["writes"] == summary["states"], summary
     assert len(summary["permission_request_t"]) == 1, summary
     assert 0 <= summary["latency_s"] < 1.0, summary
+    assert summary["waits"] == [("wait_released", "post_tool_use"), ("wait_closed", "released")], summary
+
+
+def wait_log(bridge):
+    detail = {"wait_released": "why", "wait_closed": "how"}
+    return [(e["kind"], e[detail[e["kind"]]]) for e in bridge.log_entries() if e.get("kind") in detail]
+
+
+def wait_for_waits(bridge, count):
+    return wait_until(lambda: (w := bridge.waits()) is not None and len(w) == count and w, 5.0,
+                      f"{count} waiting hooks")
 
 
 @pytest.mark.parametrize("case", ["[FM-13] connecting writes the current state over what the card showed"])
@@ -99,8 +113,8 @@ def test_sessions_aggregate(case, card, bridge, run_dir):
     assert ble_writes(card, start) == expected_states
 
 
-@pytest.mark.parametrize("case", ["[FM-13] parallel approvals keep waiting until each one resolves"])
-def test_parallel_approvals(case, card, bridge, run_dir):
+@pytest.mark.parametrize("case", ["[FM-13] parallel permission requests keep waiting until each one resolves"])
+def test_parallel_permission_requests(case, card, bridge, run_dir):
     start = start_and_mark(bridge, card)
     first = {"tool_name": "Bash", "tool_input": {"command": "npm test", "description": "run tests"}}
     first_reordered = {"tool_name": "Bash", "tool_input": {"description": "run tests", "command": "npm test"}}
@@ -261,7 +275,7 @@ def test_card_stack_headroom(case, card, artifacts):
     info = card.request("info")
     (artifacts / "card-stacks.txt").write_text(line + "\n" + info + "\n", encoding="utf-8")
     free = {name: int(value) for name, value in (p.split("=", 1) for p in line.split()[2:])}
-    assert set(free) == {"keys", "display", "console", "nimble_host", "voice"}, line
+    assert set(free) == {"keys", "display", "console", "nimble_host"}, line
     assert all(value >= MIN_STACK_FREE_BYTES for value in free.values()), free
 
 
@@ -376,3 +390,138 @@ def test_mac_bluetooth_off_and_on(case, card, bridge, run_dir):
     dropped = next(i for i, line in enumerate(lines) if line.startswith("BLE disconnected"))
     assert "BLE connected" in lines[dropped:], summary
     assert summary["states_after_on"] == ["done"], summary
+
+
+@pytest.mark.parametrize("case", ["[FM-13] the bluetooth link is encrypted, authenticated and bonded"])
+def test_link_is_secure(case, card, bridge, run_dir):
+    start = card.mark()
+    bridge.start()
+    first = info_fields(card.request("info"))
+    bridge.quit()
+    wait_until(lambda: info_fields(card.request("info"))["ble"] == "advertising", 10.0, "card advertising again")
+    (run_dir / "again").mkdir(exist_ok=True)
+    again = Bridge(run_dir / "again")
+    try:
+        again.start()
+        second = info_fields(card.request("info"))
+    finally:
+        again.quit()
+    lines = [line for _, line in card.since(start) if line.startswith(("BLE sec", "PAIR"))]
+    write_summary(run_dir, {"first": first, "second": second, "lines": lines})
+    assert first["sec"] == SECURE and second["sec"] == SECURE, (first, second)
+    assert not any(line.startswith("PAIR") for line in lines), lines
+    assert lines.count("BLE sec encrypted=1 authenticated=1 bonded=1 key_size=16") >= 2, lines
+
+
+@pytest.mark.parametrize("case", ["[FM-13] a permission hook never answers, gives up at its wait limit, and the "
+                                  "card keeps waiting"])
+def test_hook_gives_up(case, card, bridge, run_dir):
+    start_and_mark(bridge, card)
+    run = bridge.hook_async(event("PermissionRequest", "g", **bash("sleep 1")), wait_limit=2)
+    wait_for_waits(bridge, 1)
+    result = run.result()
+    status = bridge.settle("waiting")
+    write_summary(run_dir, {"result": result, "status": status, "waits": wait_log(bridge)})
+    assert result["exit"] == 0 and result["stdout"] == "", result
+    assert 1.8 <= result["s"] < 3.0, result
+    assert status["waits"] == [] and status["sessions"]["g"]["pending"] == 1, status
+    assert wait_log(bridge) == [("wait_closed", "gave_up")]
+
+
+@pytest.mark.parametrize("case,way,fields,why", [
+    ("[FM-13] the tool running releases its waiting hook", "PostToolUse", {"tool_use_id": "t1", "tool_response": {}},
+     "post_tool_use"),
+    ("[FM-13] the next prompt releases waiting hooks", "UserPromptSubmit", {}, "prompt"),
+    ("[FM-13] the end of a turn releases waiting hooks", "Stop", {"stop_hook_active": False}, "stop"),
+    ("[FM-13] a failed turn releases waiting hooks", "StopFailure", {"error": "rate_limit"}, "stop_failure"),
+    ("[FM-13] the end of the session releases waiting hooks", "SessionEnd", {"reason": "other"}, "session_end"),
+])
+def test_events_release_waiting_hooks(case, way, fields, why, card, bridge, run_dir):
+    start_and_mark(bridge, card)
+    release = bash("make release")
+    run = bridge.hook_async(event("PermissionRequest", "r", **release))
+    wait_for_waits(bridge, 1)
+    bridge.settle("waiting")
+    extra = release if way == "PostToolUse" else {}
+    bridge.hook(event(way, "r", **fields, **extra), wait_limit=0)
+    result = run.result()
+    status = bridge.status()
+    write_summary(run_dir, {"result": result, "status": status, "waits": wait_log(bridge)})
+    assert result["exit"] == 0 and result["stdout"] == "", result
+    assert result["s"] < 5.0, result
+    assert wait_log(bridge) == [("wait_released", why), ("wait_closed", "released")]
+    assert status["waits"] == [] and status["desired"] != "waiting", status
+
+
+@pytest.mark.parametrize("case", ["[FM-13] the tool running releases only one of two identical waiting hooks"])
+def test_identical_requests(case, card, bridge, run_dir):
+    start_and_mark(bridge, card)
+    same = bash("make same")
+    first = bridge.hook_async(event("PermissionRequest", "i", **same))
+    wait_for_waits(bridge, 1)
+    second = bridge.hook_async(event("PermissionRequest", "i", **same))
+    waits = wait_for_waits(bridge, 2)
+    bridge.hook(event("PostToolUse", "i", tool_use_id="t1", tool_response={}, **same), wait_limit=0)
+    first_result = first.result()
+    time.sleep(1.0)
+    after = {"status": bridge.status(), "second_running": second.running()}
+    write_summary(run_dir, {"waits": waits, "first": first_result, "after": after})
+    assert first_result["exit"] == 0 and first_result["stdout"] == "", first_result
+    assert after["second_running"], after
+    assert after["status"]["waits"] == [waits[1]], after
+    assert after["status"]["sessions"]["i"]["pending"] == 1 and after["status"]["desired"] == "waiting", after
+
+
+@pytest.mark.parametrize("case", ["[FM-13] a permission hook that is ended counts as answered in the terminal and "
+                                  "the card goes back to idle"])
+def test_ended_hook_counts_as_answered(case, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    run = bridge.hook_async(event("PermissionRequest", "e", **bash("make clean")))
+    wait_for_waits(bridge, 1)
+    bridge.settle("waiting")
+    run.proc.kill()
+    run.proc.wait(5.0)
+    status = bridge.settle("idle")
+    write_summary(run_dir, {"status": status, "states": card_states(card, start), "waits": wait_log(bridge)})
+    assert status["waits"] == [] and status["sessions"]["e"]["pending"] == 0, status
+    assert card_states(card, start) == ["waiting", "idle"]
+    assert wait_log(bridge) == [("wait_closed", "hung_up")]
+
+
+def reject_in_terminal(session, way, asked):
+    if way == "esc":
+        session.send("\x1b", "esc (reject in terminal)")
+        return
+    found = wait_until(lambda: NO_OPTION.search(session.screen(), asked), 5.0, "the No option of the dialog")
+    session.send(found.group(1), f"{found.group(1)} (choose No in terminal)")
+
+
+@pytest.mark.parametrize("way,case", [
+    ("esc", "[FM-13] rejecting with Esc in the terminal shows idle on the card"),
+    ("no", "[FM-13] choosing No in the terminal shows idle on the card"),
+])
+def test_terminal_rejection(way, case, card, bridge, run_dir):
+    summary = {}
+    try:
+        with real_session(bridge, run_dir) as (session, marker):
+            wait_session_ready(session, bridge)
+            start = card.mark()
+            request_touch(session, marker)
+            waiting, _, _ = card.wait_for(lambda line: line == "STATE waiting", 120.0, start)
+            asked = session.wait_screen("Do you want to proceed", 10.0)
+            reject_in_terminal(session, way, asked)
+            rejected_t = session.timeline[-1]["t"]
+            _, idle_t, _ = card.wait_for(lambda line: line == "STATE idle", 5.0, waiting)
+            session.wait_screen("Interrupted", 10.0)
+            session.type_line("Reply with the single word done.", "enter (next prompt)")
+            card.wait_for(lambda line: line == "STATE done", 90.0, start)
+            session.exit()
+            card.wait_for(lambda line: line == "STATE idle", 20.0, start)
+            summary = {"idle_after_s": idle_t - rejected_t, "states": card_states(card, start),
+                       "marker_exists": marker.exists(), "waits": wait_log(bridge)}
+    finally:
+        write_summary(run_dir, summary)
+    assert not summary["marker_exists"], summary
+    assert 0 <= summary["idle_after_s"] < IDLE_AFTER_REJECTION_S, summary
+    assert summary["states"] == ["working", "waiting", "idle", "working", "done", "idle"], summary
+    assert summary["waits"] == [("wait_closed", "hung_up")], summary

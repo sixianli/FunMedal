@@ -112,7 +112,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 **整屏状态**：卡片自己判断“未连接”（BLE 断开事件，或 90 秒没写入）；Mac 发一张空表（总数 0、`shown = 0`、不带 heartbeat 位）时卡片显示“没有会话”。桥接程序正常退出前主动断开蓝牙。
 
-**要删的**：`Bridge.swift` 里批准（`Approval`、`approvals`、`approve/ended/gaveUp/send/finish/answer`、PROMPT 和 DECISION 两个特征值）和语音（`import Speech`、`Listener`、`CardWrite`、`lastActive`、`listen/said/follow/beginClip…conclude`、AUDIO/VOICE/VOICE_IMAGE 特征值）两组；`Voice.swift`、`Listen.swift`、`TextImage.swift` 整个删；`main.swift` 的 `listen`、`said`、`speech-access` 三个子命令和 `--wait-limit`、`--voice-locale`、`--clip`、`--result` 选项；`Doctor.swift:102-117` 的语音识别检查和 `:212` 的文案；`mac/bridge/Info.plist:19` 的语音权限说明。`claude_pid` 保留（幽灵会话要用）。`push()` 的三级优先队列（`Bridge.swift:536-548`）简化成“只有一份 ROWS 要写，写失败 1 秒后重试”，重试机制沿用 `writeRetrySeconds`。`tests/test_no_channel.py:22` 和 `tests/test_release.py:293` 断言 usage 文本含 `listen`，改成断言新的子命令集合。
+**要删的**：`Bridge.swift` 里批准（`Approval`、`approvals`、`approve/ended/gaveUp/send/finish/answer`、PROMPT 和 DECISION 两个特征值）和语音（`import Speech`、`Listener`、`CardWrite`、`lastActive`、`listen/said/follow/beginClip…conclude`、AUDIO/VOICE/VOICE_IMAGE 特征值）两组；`Voice.swift`、`Listen.swift`、`TextImage.swift` 整个删；`main.swift` 的 `listen`、`said`、`speech-access` 三个子命令和 `--voice-locale`、`--clip`、`--result` 选项；`--wait-limit` 保留，只给测试用：测试要用几秒的上限测 hook 等到上限的情况，不能真等 590 秒（Task 1 动手时定）；`Doctor.swift:102-117` 的语音识别检查和 `:212` 的文案；`mac/bridge/Info.plist:19` 的语音权限说明。`claude_pid` 保留（幽灵会话要用）。`push()` 的三级优先队列（`Bridge.swift:536-548`）简化成“只有一份 ROWS 要写，写失败 1 秒后重试”，重试机制沿用 `writeRetrySeconds`。`tests/test_no_channel.py:22` 和 `tests/test_release.py:293` 断言 usage 文本含 `listen`，改成断言新的子命令集合。
 
 ### 4. 蓝牙协议
 

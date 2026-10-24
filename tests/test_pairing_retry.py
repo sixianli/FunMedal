@@ -68,7 +68,6 @@ def test_stops_after_limit(case, card, run_dir):
                    "connected_lines": card_lines(card, start, "BLE connected")}
     finally:
         stuck.quit()
-        stuck.activity.unlink(missing_ok=True)
         summary["cleared"] = card.request("ble reject none")
     restarted = Bridge(run_dir / "restarted")
     (run_dir / "restarted").mkdir(exist_ok=True)
@@ -77,7 +76,6 @@ def test_stops_after_limit(case, card, run_dir):
     finally:
         write_summary(run_dir, summary)
         restarted.quit()
-        restarted.activity.unlink(missing_ok=True)
     after = summary["after_quiet"]
     assert after["card"] == "pairing_failed" and after["connects"] == PAIRING_ATTEMPTS, summary
     assert len(summary["connected_lines"]) == PAIRING_ATTEMPTS, summary

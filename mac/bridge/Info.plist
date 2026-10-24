@@ -16,7 +16,5 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>把 Claude Code 的状态显示到 FunMedal 卡片上</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>把你对着 FunMedal 卡片说的话转成文字，发给 Claude Code</string>
 </dict>
 </plist>

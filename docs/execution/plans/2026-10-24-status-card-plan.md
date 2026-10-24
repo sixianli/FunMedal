@@ -22,7 +22,7 @@ date: "2026-10-24"
 
 - Create：`firmware/partitions.csv`、`firmware/main/theme.h`、`firmware/main/theme_*.c`（四套）、`firmware/main/rows.c/h`（ROWS 解析和会话表）、`firmware/main/character.c/h`、`firmware/main/audio.c/h`、`firmware/main/power.c/h`、`tools/gen_assets.py`、`assets/default/`、`third_party/fusion-pixel/` 和 `third_party/zcool-kuaile/`（只放 LICENSE 和 README，字体文件不进 git）、`tests/host/render_png.c`、`tests/host/test_rows.c`、`tests/host/test_audio.c`、`tests/host/test_character.c`、`tests/test_rows.py`、`tests/test_assets.py`、`experiments/hook-probe/`（T0 的最小插件和记录）。
 - Modify：`plugin/hooks/hooks.json`、`plugin/plugin.json`、`mac/bridge/Sources/{main,Bridge,Hook,Sessions,Doctor}.swift`、`mac/bridge/Info.plist`、`firmware/main/{main,scene,display,ble_link,console,link_version}.c`、`firmware/main/CMakeLists.txt`、`firmware/sdkconfig.defaults`、`tools/gen_fonts.py`、`tools/update-prebuilt.sh`、`flash.sh`、`tests/bridge_harness.py`、`tests/test_bridge.py`、`tests/test_bridge_start.py`、`tests/test_plugin.py`、`tests/test_doctor.py`、`tests/test_signing.py`、`tests/test_release.py`、`tests/test_no_channel.py`、`tests/test_card_display.py`、`tests/test_firmware_host.py`、`tests/test_flash.py`、`tests/test_link_version.py`、`README.md`、`notes/bridge.md`、`notes/firmware.md`、`notes/claude-code.md`、`notes/hardware.md`、`notes/ble-link.md`、`.gitignore`。
-- Delete：`mac/bridge/Sources/{Voice,Listen,TextImage}.swift`、`plugin/hooks/voice.js`、`firmware/main/{prompt,voice,voice_codec,pet_art}.c/h`（`voice.c` 的 ES8311 和 I2S 初始化先挪进 `audio.c` 再删）、`firmware/main/{font,font_text,font_large}.c`、`tools/gen_pet.py`、`tests/{test_approval,test_voice,test_voice_mod,voice_audio}.py`、`tests/host/{test_prompt,test_voice_codec}.c`；`notes/approval.md` 和 `notes/voice.md` 留在 `notes/`，只在开头加一行“2026-10-24 起功能已拿掉”。
+- Delete：`mac/bridge/Sources/{Voice,Listen,TextImage}.swift`、`plugin/hooks/voice.js`、`firmware/main/{prompt,voice,voice_codec}.c/h`（`voice.c` 的 ES8311 和 I2S 初始化先挪进 `audio.c` 再删）；`firmware/main/pet_art.c/h`、`firmware/main/{font,font_text,font_large}.c`、`tools/gen_pet.py` 等新画面换掉旧画面（Task 3c、3d）后再删，因为在那之前现有画面和 `test_card_display.py` 还要用小人和字库；`tests/{test_approval,test_voice,test_voice_mod,voice_audio}.py`、`tests/host/{test_prompt,test_voice_codec}.c`；`notes/approval.md` 和 `notes/voice.md` 留在 `notes/`，只在开头加一行“2026-10-24 起功能已拿掉”。
 - Test：带 `[SC-3]` 到 `[SC-12]`、`[SC-15]` 标签的新测试；带 `[OB-7]`、`[OB-9]`、`[OB-11]`、`[OB-12]`、`[OB-13]`、`[OB-14]`、`[OB-15]`、`[OB-17]` 标签的现有测试继续通过。
 
 ## Implementation Tasks
@@ -42,7 +42,7 @@ date: "2026-10-24"
 ### Task 1: 拆掉批准和按住说话，不动蓝牙功能表（SC-16 的回归）
 
 - [ ] 删 Mac、插件、固件、测试里批准和语音的代码（设计规格第 3、8 节的清单），**保留** `ble_link.c` 的六个旧特征值定义和 STATE 的写入路径，让 `[OB-*]` 测试和现有 `test_card_display.py` 继续通过；旧特征值的删除放到 Task 2。
-- [ ] `voice.c` 的 ES8311 和 I2S 初始化挪进 `audio.c`（只初始化，不放音）；`voice_codec.c/h`、`pet_art.c/h`、`gen_pet.py` 删。
+- [ ] `voice.c` 的 ES8311 和 I2S 初始化挪进 `audio.c`（只初始化，不放音）；`voice_codec.c/h` 删。`pet_art.c/h`、`gen_pet.py` 留到 Task 3c、3d：现有画面还要画小人，`test_card_display.py` 也要看它（Task 1 动手时发现，原计划写的是这一步删）。
 - [ ] 配对确认的按键保留，`tests/test_pairing_retry.py` 仍通过。
 - [ ] 跑 SC-16 的全部 OB 标签测试和 `tests/test_release.py` 的隐私扫描，全部通过；`test_no_channel.py`、`test_release.py` 的 usage 断言改成新子命令集合。
 - [ ] 更新 `README.md`、`notes/bridge.md` 的功能描述；`notes/approval.md`、`notes/voice.md` 开头加“已拿掉”说明；`plugin.json` 的 description 改成状态卡片，`test_plugin.py` 跟着改。

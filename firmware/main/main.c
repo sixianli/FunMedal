@@ -1,6 +1,5 @@
-#include <string.h>
-
 #include "app.h"
+#include "audio.h"
 #include "ble_link.h"
 #include "console.h"
 #include "display.h"
@@ -11,7 +10,6 @@
 #include "key_input.h"
 #include "link_version.h"
 #include "nvs_flash.h"
-#include "voice.h"
 
 #define FRAME_PERIOD_MS 500
 
@@ -23,7 +21,6 @@ static int frame_mode = APP_FRAME_AUTO;
 static uint32_t draws;
 static uint32_t draw_errors;
 static int shown_frame = -1;
-static uint8_t voice_pixels[VOICE_IMAGE_BYTES];
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -129,46 +126,6 @@ static void display_task(void *arg)
     }
 }
 
-void app_set_prompt(const prompt_t *prompt)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    bool changed = !prompt_equal(&scene.prompt, prompt);
-    if (changed) {
-        scene.prompt = *prompt;
-        scene.decision = SCENE_DECISION_NONE;
-    }
-    xSemaphoreGive(lock);
-    if (!changed) {
-        return;
-    }
-    xTaskNotifyGive(display_task_handle);
-    if (prompt->active) {
-        console_event("PROMPT %lu %u/%u %s\n", (unsigned long)prompt->id, (unsigned)prompt->index,
-                      (unsigned)prompt->count, prompt->tool);
-    } else {
-        console_event("PROMPT none\n");
-    }
-}
-
-void app_set_voice(scene_voice_t voice, voice_result_t result)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    scene.voice = voice;
-    scene.voice_result = result;
-    xSemaphoreGive(lock);
-    xTaskNotifyGive(display_task_handle);
-}
-
-void app_set_voice_image(const uint8_t *pixels)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    if (pixels != NULL) {
-        memcpy(voice_pixels, pixels, sizeof(voice_pixels));
-    }
-    scene.voice_image = pixels != NULL ? voice_pixels : NULL;
-    xSemaphoreGive(lock);
-}
-
 void app_set_pairing(scene_pairing_t pairing, uint32_t code)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -202,48 +159,6 @@ void app_link_in_use(void)
     }
 }
 
-static bool mark_decision(uint32_t id, scene_decision_t decision)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    bool open = scene.prompt.active && scene.prompt.id == id && scene.decision == SCENE_DECISION_NONE;
-    if (open) {
-        scene.decision = decision;
-    }
-    xSemaphoreGive(lock);
-    return open;
-}
-
-static void unmark_decision(uint32_t id)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    if (scene.prompt.active && scene.prompt.id == id) {
-        scene.decision = SCENE_DECISION_NONE;
-    }
-    xSemaphoreGive(lock);
-}
-
-static void decide(uint32_t id, bool allow)
-{
-    if (!mark_decision(id, allow ? SCENE_DECISION_ALLOW : SCENE_DECISION_DENY)) {
-        return;
-    }
-    const char *word = allow ? "allow" : "deny";
-    if (!ble_link_send_decision(id, allow)) {
-        unmark_decision(id);
-        console_event("DECISION %lu %s unsent\n", (unsigned long)id, word);
-        return;
-    }
-    xTaskNotifyGive(display_task_handle);
-    console_event("DECISION %lu %s\n", (unsigned long)id, word);
-}
-
-typedef struct {
-    bool armed;
-    uint32_t id;
-} held_approval_t;
-
-static held_approval_t held_approval;
-
 static void on_pairing_key(const scene_t *now, const key_event_t *event)
 {
     if (now->pairing == SCENE_PAIRING_NUMCMP && event->type == KEY_EVENT_PRESS
@@ -252,41 +167,11 @@ static void on_pairing_key(const scene_t *now, const key_event_t *event)
     }
 }
 
-static void on_ok_key(const scene_t *now, bool open, key_event_type_t type)
-{
-    if (type == KEY_EVENT_PRESS) {
-        held_approval = (held_approval_t){open, now->prompt.id};
-        return;
-    }
-    if (type == KEY_EVENT_LONG && held_approval.armed && open && now->prompt.id == held_approval.id) {
-        decide(held_approval.id, true);
-    }
-    held_approval.armed = false;
-}
-
 static void on_key(const key_event_t *event)
 {
     scene_t now;
     app_get_scene(&now);
-    if (now.pairing != SCENE_PAIRING_NONE) {
-        held_approval.armed = false;
-        on_pairing_key(&now, event);
-        return;
-    }
-    if (event->key == KEY_UP) {
-        if (event->type == KEY_EVENT_PRESS) {
-            voice_press();
-        } else if (event->type == KEY_EVENT_RELEASE) {
-            voice_release();
-        }
-        return;
-    }
-    bool open = now.voice == SCENE_VOICE_NONE && now.prompt.active && now.decision == SCENE_DECISION_NONE;
-    if (event->key == KEY_OK) {
-        on_ok_key(&now, open, event->type);
-    } else if (event->key == KEY_DOWN && event->type == KEY_EVENT_PRESS && open) {
-        decide(now.prompt.id, false);
-    }
+    on_pairing_key(&now, event);
 }
 
 void app_main(void)
@@ -303,10 +188,10 @@ void app_main(void)
     ESP_ERROR_CHECK(console_start());
     ESP_ERROR_CHECK(key_input_start(on_key));
     ESP_ERROR_CHECK(ble_link_start());
-    err = voice_start();
+    err = audio_start();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "voice unavailable: %s", esp_err_to_name(err));
-        console_event("VOICE unavailable %s\n", esp_err_to_name(err));
+        ESP_LOGE(TAG, "audio unavailable: %s", esp_err_to_name(err));
+        console_event("AUDIO unavailable %s\n", esp_err_to_name(err));
     }
     console_event("READY funmedal-0.1\n");
 }

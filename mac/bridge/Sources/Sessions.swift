@@ -5,7 +5,6 @@ enum Activity: String {
 struct Session {
     var activity: Activity = .idle
     var pending: [String: Int] = [:]
-    var allowedOnCard: [String: Int] = [:]
 
     var pendingCount: Int { pending.values.reduce(0, +) }
     var shown: String { pendingCount == 0 ? activity.rawValue : "waiting" }
@@ -33,18 +32,16 @@ struct Sessions {
 
     private(set) var table: [String: Session] = [:]
 
-    mutating func apply(_ event: HookEvent) -> Bool {
+    mutating func apply(_ event: HookEvent) {
         if event.name == "SessionEnd" {
             table[event.session] = nil
-            return false
+            return
         }
         var session = table[event.session] ?? Session()
-        var followsCardAllow = false
         switch event.name {
         case "UserPromptSubmit":
             session.activity = .working
             session.pending.removeAll()
-            session.allowedOnCard.removeAll()
         case "PreToolUse":
             session.activity = .working
         case "PermissionRequest":
@@ -52,32 +49,20 @@ struct Sessions {
             Session.add(event.toolKey, to: &session.pending)
         case "PostToolUse", "PostToolUseFailure":
             session.activity = .working
-            followsCardAllow = Session.take(event.toolKey, from: &session.allowedOnCard)
-            if !followsCardAllow {
-                _ = Session.take(event.toolKey, from: &session.pending)
-            }
+            _ = Session.take(event.toolKey, from: &session.pending)
         case "Stop":
             session.activity = .done
             session.pending.removeAll()
-            session.allowedOnCard.removeAll()
         case "StopFailure":
             session.activity = .error
             session.pending.removeAll()
-            session.allowedOnCard.removeAll()
         default:
             break
         }
         table[event.session] = session
-        return followsCardAllow
     }
 
-    mutating func answeredOnCard(session name: String, toolKey: String?, allowed: Bool) {
-        guard var session = table[name], Session.take(toolKey, from: &session.pending) else { return }
-        if allowed { Session.add(toolKey, to: &session.allowedOnCard) }
-        table[name] = session
-    }
-
-    mutating func rejectedInTerminal(session name: String, toolKey: String?) {
+    mutating func answeredInTerminal(session name: String, toolKey: String?) {
         guard var session = table[name], Session.take(toolKey, from: &session.pending) else { return }
         if session.pendingCount == 0 { session.activity = .idle }
         table[name] = session

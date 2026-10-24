@@ -19,7 +19,7 @@ def test_no_channel_mode(case, run_dir):
                "usage": usage.stderr.decode(), "source_left": (ROOT / "mac/bridge/Sources/Channel.swift").exists()}
     write_summary(run_dir, summary)
     assert summary["channel_exit"] == USAGE_EXIT and "unknown mode channel" in summary["channel_stderr"], summary
-    assert "channel" not in summary["usage"] and "listen" in summary["usage"], summary
+    assert "channel" not in summary["usage"] and "serve|hook|status|quit|doctor" in summary["usage"], summary
     assert not summary["source_left"], summary
 
 

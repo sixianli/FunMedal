@@ -52,7 +52,7 @@ def running_program(pid):
 
 
 @pytest.mark.parametrize("case", ["[OB-10] a bridge rebuilt with different content is signed with the same "
-                                  "certificate rule and gets Bluetooth and speech access without asking again"])
+                                  "certificate rule and gets Bluetooth access without asking again"])
 def test_rebuilt_bridge_keeps_access(case, card, run_dir, tmp_path):
     require_bridge_app()
     repo = signature(APP)
@@ -71,7 +71,6 @@ def test_rebuilt_bridge_keeps_access(case, card, run_dir, tmp_path):
     finally:
         write_summary(run_dir, summary)
         bridge.quit()
-        bridge.activity.unlink(missing_ok=True)
     status = summary["status"]
     assert summary["program"] == str(rebuilt_app / "Contents" / "MacOS" / "funmedal-bridge"), summary
-    assert (status["authorization"], status["speech"]) == ("allowedAlways", "authorized"), summary
+    assert status["authorization"] == "allowedAlways", summary
