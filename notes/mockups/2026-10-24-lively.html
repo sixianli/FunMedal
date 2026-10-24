@@ -1,0 +1,297 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FunMedal 生动版效果图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg: #f6f3ea; --fg: #262420; --muted: #6f6a60; --panel: #fffdf7; --line: #ddd7c8; --accent: #c2531f; --shell: #2b2a28;
+    --body: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+    --fun: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+    --hand: "Ma Shan Zheng", "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #1c1b19; --fg: #ece8df; --muted: #a39e92; --panel: #262523; --line: #3b3935; --accent: #f08a56; --shell: #0e0e0d; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #1c1b19; --fg: #ece8df; --muted: #a39e92; --panel: #262523; --line: #3b3935; --accent: #f08a56; --shell: #0e0e0d; color-scheme: dark; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }
+  main { max-width: 1040px; margin: 0 auto; display: grid; gap: 44px; }
+  h1 { font-family: var(--fun); font-weight: 400; font-size: 32px; margin: 0; letter-spacing: .02em; }
+  h2 { font-family: var(--fun); font-weight: 400; font-size: 24px; margin: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .lead, .note { color: var(--muted); } .note { font-size: 14px; }
+  section { display: grid; gap: 14px; }
+  .options { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .option { display: grid; gap: 10px; width: min(100%, 280px); }
+  .tag { font-weight: 700; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .reply { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; display: grid; gap: 6px; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+
+  .device { --zoom: 1; width: calc(240px * var(--zoom) + 24px); padding: 12px; border-radius: 18px; background: var(--shell); box-sizing: border-box; max-width: 100%; }
+  .screen { width: 240px; height: 320px; transform: scale(var(--zoom)); transform-origin: top left; margin-bottom: calc(320px * (var(--zoom) - 1));
+    overflow: hidden; position: relative; font-size: 16px; line-height: 1.2; }
+  @media (prefers-reduced-motion: reduce) { .screen * { animation: none !important; } }
+
+  .s1 { background: #2a2140; color: #fff; font-family: var(--body); }
+  .s1 .top { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 13px; color: #c9bfe6; background: #1d1731; }
+  .s1 .grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 96px; gap: 2px; padding: 2px; }
+  .s1 .tile { background: #3a2f5c; display: grid; grid-template-rows: 20px 1fr 18px; padding: 4px 6px; box-sizing: border-box; position: relative; }
+  .s1 .tile .name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s1 .tile .word { font-size: 12px; text-align: right; }
+  .s1 .tile svg { width: 100%; height: 100%; shape-rendering: crispEdges; }
+  .s1 .wait { background: #5a4a14; } .s1 .wait .word { color: #ffd54a; }
+  .s1 .err { background: #5e2424; } .s1 .err .word { color: #ff8a80; }
+  .s1 .done { background: #1f4a3a; } .s1 .done .word { color: #8fe3b6; }
+  .s1 .run { background: #24375e; } .s1 .run .word { color: #9cc6ff; }
+  .s1 .empty { background: #2f2650; display: grid; place-items: center; color: #6e63a0; font-size: 12px; }
+  .s1 .mark { position: absolute; top: 24px; right: 10px; font-family: var(--fun); font-size: 22px; }
+  .s1 .wait .mark { color: #ffd54a; animation: bounce .6s ease-in-out infinite alternate; }
+  .s1 .err .mark { color: #ff8a80; animation: shake .35s linear infinite; }
+  .s1 .done .mark { color: #8fe3b6; font-size: 14px; animation: drift 1.8s ease-in-out infinite; }
+  .s1 .run .hands { animation: type .25s steps(2) infinite; }
+  .s1 .run .monitor { animation: flicker 1.2s steps(2) infinite; }
+  .s1 .err .body { animation: shake .35s linear infinite; }
+  .s1 .pop { position: absolute; inset: 0; background: rgba(20,12,40,.6); display: grid; align-content: end; }
+  .s1 .sheet { background: #ffd54a; color: #2a2140; padding: 10px; display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: end; animation: rise .5s ease-out both; }
+  .s1 .sheet svg { width: 90px; height: 110px; shape-rendering: crispEdges; animation: bob .7s ease-in-out infinite alternate; }
+  .s1 .bubble { background: #fff; border: 3px solid #2a2140; border-radius: 10px; padding: 8px; font-weight: 700; font-size: 15px; }
+  .s1 .who { font-size: 12px; margin-top: 4px; }
+
+  .s2 { background: #efe6d2; color: #3a3028; font-family: var(--hand); background-image: repeating-linear-gradient(0deg, transparent 0 23px, rgba(0,0,0,.05) 23px 24px); }
+  .s2 .top { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 15px; color: #7a6a55; }
+  .s2 .notes { display: grid; gap: 6px; padding: 4px 10px; }
+  .s2 .note { height: 56px; padding: 6px 10px; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; align-items: center; box-shadow: 2px 3px 0 rgba(0,0,0,.18); position: relative; }
+  .s2 .note::before { content: ""; position: absolute; top: -4px; left: 50%; width: 28px; height: 8px; background: rgba(255,255,255,.6); transform: translateX(-50%) rotate(-3deg); }
+  .s2 .note .name { font-size: 22px; line-height: 1; }
+  .s2 .note .sub { display: block; font-size: 13px; opacity: .7; margin-top: 2px; font-family: var(--body); }
+  .s2 .note .mark { font-size: 26px; line-height: 1; }
+  .s2 .wait { background: #ffe66d; transform: rotate(-1.5deg); } .s2 .wait .mark { animation: bounce .5s ease-in-out infinite alternate; }
+  .s2 .run { background: #a9dcf5; transform: rotate(1deg); } .s2 .run .mark { animation: dots 1.2s steps(3) infinite; }
+  .s2 .err { background: #ff9f9f; transform: rotate(-1deg); } .s2 .err .mark { animation: shake .4s linear infinite; }
+  .s2 .done { background: #bfe8b0; transform: rotate(1.5deg); }
+  .s2 .pop { position: absolute; inset: 0; background: rgba(60,40,20,.45); display: grid; align-content: end; }
+  .s2 .sheet { background: #ffe66d; padding: 10px; display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: end; transform: rotate(-1deg); animation: rise .5s ease-out both; box-shadow: 0 -3px 0 rgba(0,0,0,.15); }
+  .s2 .sheet svg { width: 84px; height: 104px; animation: bob .7s ease-in-out infinite alternate; }
+  .s2 .bubble { background: #fff; border-radius: 12px; padding: 8px 10px; font-size: 21px; line-height: 1.1; box-shadow: 2px 2px 0 rgba(0,0,0,.15); }
+  .s2 .who { font-size: 13px; margin-top: 4px; font-family: var(--body); opacity: .75; }
+  .s2 .center { display: grid; place-items: center; height: 250px; text-align: center; font-size: 26px; color: #7a6a55; gap: 4px; }
+  .s2 .center small { font-size: 14px; font-family: var(--body); }
+
+  .s3 { background: #1e8a7a; color: #1b1b1b; font-family: var(--fun); background-image: radial-gradient(circle at 20% 15%, rgba(255,255,255,.18) 0 40px, transparent 41px), radial-gradient(circle at 85% 80%, rgba(255,255,255,.12) 0 60px, transparent 61px); }
+  .s3 .top { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; color: #fff; font-size: 18px; }
+  .s3 .top .mascot { width: 30px; height: 30px; }
+  .s3 .bars { display: grid; gap: 7px; padding: 2px 10px; }
+  .s3 .bar { height: 48px; border: 3px solid #1b1b1b; border-radius: 14px; background: #fff; box-shadow: 0 4px 0 #1b1b1b; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 0 10px 0 12px; position: relative; overflow: hidden; }
+  .s3 .bar .name { font-size: 20px; position: relative; }
+  .s3 .bar .sub { display: block; font-size: 11px; font-family: var(--body); opacity: .7; }
+  .s3 .pill { font-size: 15px; padding: 2px 10px; border-radius: 999px; border: 2px solid #1b1b1b; position: relative; }
+  .s3 .wait { background: #ffd23f; animation: pulse 1s ease-in-out infinite; } .s3 .wait .pill { background: #1b1b1b; color: #ffd23f; }
+  .s3 .run { background: #7cc6ff; } .s3 .run::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 10px, transparent 10px 20px); animation: stripes .8s linear infinite; }
+  .s3 .run .pill { background: #fff; }
+  .s3 .err { background: #ff6b6b; } .s3 .err .pill { background: #1b1b1b; color: #ff6b6b; animation: shake .35s linear infinite; }
+  .s3 .done { background: #9be38b; } .s3 .done .pill { background: #fff; }
+  .s3 .pop { position: absolute; inset: 0; background: rgba(0,40,36,.55); display: grid; place-items: center; }
+  .s3 .card { width: 200px; background: #ffd23f; border: 4px solid #1b1b1b; border-radius: 18px; box-shadow: 0 6px 0 #1b1b1b; padding: 12px; display: grid; justify-items: center; gap: 8px; text-align: center; animation: pop .45s cubic-bezier(.3,1.6,.5,1) both; }
+  .s3 .card svg { width: 110px; height: 130px; animation: bob .7s ease-in-out infinite alternate; }
+  .s3 .bubble { background: #fff; border: 3px solid #1b1b1b; border-radius: 12px; padding: 8px 10px; font-size: 18px; line-height: 1.15; }
+  .s3 .who { font-size: 13px; font-family: var(--body); }
+  .s3 .center { display: grid; place-items: center; height: 260px; text-align: center; color: #fff; font-size: 28px; gap: 6px; }
+  .s3 .center small { font-size: 14px; font-family: var(--body); }
+
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+  @keyframes drift { 0% { transform: translateY(0); opacity: .4; } 100% { transform: translateY(-10px); opacity: 1; } }
+  @keyframes type { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+  @keyframes flicker { from { opacity: 1; } to { opacity: .6; } }
+  @keyframes dots { from { clip-path: inset(0 66% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes pulse { 0%,100% { box-shadow: 0 4px 0 #1b1b1b; } 50% { box-shadow: 0 4px 0 #1b1b1b, 0 0 0 5px rgba(255,210,63,.6); } }
+  @keyframes stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <h1>FunMedal 生动版效果图</h1>
+    <p class="lead">同一个场景，三种风格。每张都是 240×320 的真实尺寸，带动画（刷新页面能重看冒头）。角色仍是占位，等你给素材。三种风格卡片硬件都做得到：动画都只动一小块，不用整屏重画。</p>
+    <div class="controls">
+      <span class="note">放大：</span>
+      <button type="button" aria-pressed="true" data-zoom="1">1×</button>
+      <button type="button" aria-pressed="false" data-zoom="1.5">1.5×</button>
+      <button type="button" aria-pressed="false" data-zoom="2">2×</button>
+    </div>
+  </header>
+
+  <section id="s1">
+    <h2>风格一：像素工位</h2>
+    <p>每个会话是一个小工位，里面一个小人：在跑的在敲键盘，等你的举手冒叹号，出错的在发抖，答完了的趴着睡。一屏放 6 个工位。</p>
+    <div class="options">
+      <div class="option">
+        <span class="tag">列表</span>
+        <div class="device"><div class="screen s1">
+          <div class="top"><span>Claude Code</span><span>4 个会话</span></div>
+          <div class="grid">
+            <div class="tile wait"><span class="name">FunMedal</span>
+              <svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#8a7430"/><rect x="18" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="16" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="20" y="22" width="8" height="6" fill="#e85d8a"/><rect x="31" y="4" width="4" height="12" fill="#f5c7a1"/><rect x="20" y="14" width="2" height="2" fill="#222"/><rect x="26" y="14" width="2" height="2" fill="#222"/></svg>
+              <span class="mark">!</span><span class="word">等你</span></div>
+            <div class="tile run"><span class="name">FunMedal</span>
+              <svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#3b4f82"/><rect class="monitor" x="30" y="10" width="12" height="10" fill="#9cc6ff"/><rect x="12" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="10" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="14" y="22" width="8" height="6" fill="#e85d8a"/><g class="hands"><rect x="22" y="20" width="4" height="3" fill="#f5c7a1"/><rect x="27" y="20" width="4" height="3" fill="#f5c7a1"/></g><rect x="14" y="14" width="2" height="2" fill="#222"/><rect x="20" y="14" width="2" height="2" fill="#222"/></svg>
+              <span class="word">在跑</span></div>
+            <div class="tile err"><span class="name">SiBlog</span>
+              <svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#8a3a3a"/><g class="body"><rect x="18" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="16" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="20" y="22" width="8" height="6" fill="#e85d8a"/><rect x="20" y="14" width="2" height="2" fill="#222"/><rect x="26" y="14" width="2" height="2" fill="#222"/><rect x="22" y="18" width="4" height="2" fill="#222"/></g><rect x="32" y="8" width="2" height="4" fill="#7fd3ff"/></svg>
+              <span class="mark">✕</span><span class="word">出错</span></div>
+            <div class="tile done"><span class="name">himawari-agent</span>
+              <svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#2d6b52"/><rect x="14" y="16" width="20" height="6" fill="#f5c7a1"/><rect x="10" y="14" width="10" height="8" fill="#4a2e1a"/><rect x="24" y="18" width="12" height="4" fill="#e85d8a"/><rect x="14" y="18" width="2" height="1" fill="#222"/></svg>
+              <span class="mark">zZ</span><span class="word">2 小时前 · 答完了</span></div>
+            <div class="tile empty">空位</div>
+            <div class="tile empty">空位</div>
+          </div>
+        </div></div>
+        <p class="note">同名的两个 FunMedal 各占一个工位，靠小人动作看区别。</p>
+      </div>
+      <div class="option">
+        <span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen s1">
+          <div class="top"><span>Claude Code</span><span>4 个会话</span></div>
+          <div class="grid">
+            <div class="tile wait"><span class="name">FunMedal</span><svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#8a7430"/><rect x="18" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="16" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="20" y="22" width="8" height="6" fill="#e85d8a"/><rect x="31" y="4" width="4" height="12" fill="#f5c7a1"/></svg><span class="mark">!</span><span class="word">等你</span></div>
+            <div class="tile run"><span class="name">FunMedal</span><svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#3b4f82"/><rect x="30" y="10" width="12" height="10" fill="#9cc6ff"/><rect x="12" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="10" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="14" y="22" width="8" height="6" fill="#e85d8a"/></svg><span class="word">在跑</span></div>
+            <div class="tile err"><span class="name">SiBlog</span><svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#8a3a3a"/><rect x="18" y="10" width="12" height="12" fill="#f5c7a1"/><rect x="16" y="6" width="16" height="6" fill="#4a2e1a"/><rect x="20" y="22" width="8" height="6" fill="#e85d8a"/></svg><span class="word">出错</span></div>
+            <div class="tile done"><span class="name">himawari-agent</span><svg viewBox="0 0 48 32"><rect x="4" y="22" width="40" height="6" fill="#2d6b52"/><rect x="14" y="16" width="20" height="6" fill="#f5c7a1"/><rect x="10" y="14" width="10" height="8" fill="#4a2e1a"/><rect x="24" y="18" width="12" height="4" fill="#e85d8a"/></svg><span class="word">答完了</span></div>
+            <div class="tile empty">空位</div><div class="tile empty">空位</div>
+          </div>
+          <div class="pop"><div class="sheet">
+            <svg viewBox="0 0 24 30"><rect x="6" y="2" width="12" height="4" fill="#4a2e1a"/><rect x="4" y="6" width="16" height="4" fill="#4a2e1a"/><rect x="6" y="6" width="12" height="10" fill="#f5c7a1"/><rect x="8" y="10" width="2" height="2" fill="#222"/><rect x="14" y="10" width="2" height="2" fill="#222"/><rect x="10" y="14" width="4" height="1" fill="#c0392b"/><rect x="6" y="16" width="12" height="10" fill="#e85d8a"/><rect x="2" y="12" width="4" height="4" fill="#f5c7a1"/><rect x="18" y="8" width="4" height="8" fill="#f5c7a1"/><rect x="8" y="26" width="3" height="3" fill="#4a2e1a"/><rect x="13" y="26" width="3" height="3" fill="#4a2e1a"/></svg>
+            <div><div class="bubble">爸爸快看一下，需要你去做决定</div><div class="who">FunMedal 在等你</div></div>
+          </div></div>
+        </div></div>
+        <p class="note">角色也是像素风，和工位里的小人一个画法，到时候用你女儿的形象画成像素图。</p>
+      </div>
+      <div class="option">
+        <span class="tag">没有会话</span>
+        <div class="device"><div class="screen s1">
+          <div class="top"><span>Claude Code</span><span>0 个会话</span></div>
+          <div class="grid"><div class="tile empty">空位</div><div class="tile empty">空位</div><div class="tile empty">空位</div><div class="tile empty">空位</div><div class="tile empty">空位</div><div class="tile empty">空位</div></div>
+          <div class="pop" style="background:transparent"><div class="sheet" style="background:#3a2f5c;color:#c9bfe6">
+            <svg viewBox="0 0 24 30"><rect x="6" y="2" width="12" height="4" fill="#4a2e1a"/><rect x="4" y="6" width="16" height="4" fill="#4a2e1a"/><rect x="6" y="6" width="12" height="10" fill="#f5c7a1"/><rect x="8" y="11" width="2" height="1" fill="#222"/><rect x="14" y="11" width="2" height="1" fill="#222"/><rect x="6" y="16" width="12" height="10" fill="#e85d8a"/><rect x="8" y="26" width="3" height="3" fill="#4a2e1a"/><rect x="13" y="26" width="3" height="3" fill="#4a2e1a"/></svg>
+            <div><div class="bubble" style="border-color:#c9bfe6">大家都下班啦</div><div class="who">开一个会话就会出现在这里</div></div>
+          </div></div>
+        </div></div>
+        <p class="note">没事的时候角色也在，只是换一句话。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="s2">
+    <h2>风格二：便签墙</h2>
+    <p>每个会话是一张贴在墙上的便签，手写字，歪歪的。等你的便签上叹号在跳，在跑的省略号在走，出错的在抖。</p>
+    <div class="options">
+      <div class="option">
+        <span class="tag">列表</span>
+        <div class="device"><div class="screen s2">
+          <div class="top"><span>Claude Code</span><span>4 个会话</span></div>
+          <div class="notes">
+            <div class="note wait"><span class="name">FunMedal<span class="sub">等你</span></span><span class="mark">!!</span></div>
+            <div class="note run"><span class="name">FunMedal<span class="sub">在跑</span></span><span class="mark">…</span></div>
+            <div class="note err"><span class="name">SiBlog<span class="sub">出错</span></span><span class="mark">✗</span></div>
+            <div class="note done"><span class="name">himawari-agent<span class="sub">答完了 · 2 小时前</span></span><span class="mark">✓</span></div>
+          </div>
+        </div></div>
+        <p class="note">颜色就是状态：黄等你、蓝在跑、红出错、绿答完了。一屏放 5 张。</p>
+      </div>
+      <div class="option">
+        <span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen s2">
+          <div class="top"><span>Claude Code</span><span>4 个会话</span></div>
+          <div class="notes">
+            <div class="note wait"><span class="name">FunMedal<span class="sub">等你</span></span><span class="mark">!!</span></div>
+            <div class="note run"><span class="name">FunMedal<span class="sub">在跑</span></span><span class="mark">…</span></div>
+            <div class="note err"><span class="name">SiBlog<span class="sub">出错</span></span><span class="mark">✗</span></div>
+            <div class="note done"><span class="name">himawari-agent<span class="sub">答完了 · 2 小时前</span></span><span class="mark">✓</span></div>
+          </div>
+          <div class="pop"><div class="sheet">
+            <svg viewBox="0 0 84 104"><circle cx="42" cy="34" r="26" fill="#6b4a2b"/><circle cx="42" cy="40" r="20" fill="#f5d2b8"/><circle cx="35" cy="38" r="2" fill="#222"/><circle cx="49" cy="38" r="2" fill="#222"/><path d="M36 48 q6 5 12 0" stroke="#c0392b" stroke-width="2" fill="none"/><path d="M12 104 C12 76 72 76 72 104 Z" fill="#e85d8a"/></svg>
+            <div><div class="bubble">爸爸快看一下，需要你去做决定</div><div class="who">FunMedal 在等你</div></div>
+          </div></div>
+        </div></div>
+        <p class="note">角色从墙底下探出来，举着一张新便签。这里角色可以是手绘风，不用像素。</p>
+      </div>
+      <div class="option">
+        <span class="tag">没有会话</span>
+        <div class="device"><div class="screen s2">
+          <div class="top"><span>Claude Code</span><span>0 个会话</span></div>
+          <div class="center"><span>墙上空空的</span><small>开一个会话就会贴上来</small></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2>风格三：游戏任务板</h2>
+    <p>像手机游戏的任务列表：粗边框、大颜色、圆角条。等你的条在闪光，在跑的条上斜纹在流动。角色常驻右上角当吉祥物，有事就跳到中间。</p>
+    <div class="options">
+      <div class="option">
+        <span class="tag">列表</span>
+        <div class="device"><div class="screen s3">
+          <div class="top"><span>今天的任务</span><svg class="mascot" viewBox="0 0 24 30"><circle cx="12" cy="10" r="8" fill="#4a2e1a"/><circle cx="12" cy="12" r="6" fill="#f5d2b8"/><rect x="6" y="18" width="12" height="10" rx="3" fill="#e85d8a"/></svg></div>
+          <div class="bars">
+            <div class="bar wait"><span class="name">FunMedal</span><span class="pill">等你</span></div>
+            <div class="bar run"><span class="name">FunMedal</span><span class="pill">在跑</span></div>
+            <div class="bar err"><span class="name">SiBlog</span><span class="pill">出错</span></div>
+            <div class="bar done"><span class="name">himawari-agent<span class="sub">2 小时前</span></span><span class="pill">答完了</span></div>
+          </div>
+        </div></div>
+        <p class="note">一屏放 5 条。等你的条一直在脉动，不用看字就知道有事。</p>
+      </div>
+      <div class="option">
+        <span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen s3">
+          <div class="top"><span>今天的任务</span><span></span></div>
+          <div class="bars">
+            <div class="bar wait"><span class="name">FunMedal</span><span class="pill">等你</span></div>
+            <div class="bar run"><span class="name">FunMedal</span><span class="pill">在跑</span></div>
+            <div class="bar err"><span class="name">SiBlog</span><span class="pill">出错</span></div>
+            <div class="bar done"><span class="name">himawari-agent<span class="sub">2 小时前</span></span><span class="pill">答完了</span></div>
+          </div>
+          <div class="pop"><div class="card">
+            <svg viewBox="0 0 84 104"><circle cx="42" cy="34" r="26" fill="#6b4a2b"/><circle cx="42" cy="40" r="20" fill="#f5d2b8"/><circle cx="35" cy="38" r="2" fill="#222"/><circle cx="49" cy="38" r="2" fill="#222"/><path d="M36 48 q6 5 12 0" stroke="#c0392b" stroke-width="2" fill="none"/><path d="M12 104 C12 76 72 76 72 104 Z" fill="#e85d8a"/><rect x="64" y="20" width="8" height="26" rx="4" fill="#f5d2b8"/></svg>
+            <div class="bubble">爸爸快看一下，需要你去做决定</div><div class="who">FunMedal 在等你</div>
+          </div></div>
+        </div></div>
+        <p class="note">右上角的吉祥物弹到中间，像游戏里弹出的奖励卡。</p>
+      </div>
+      <div class="option">
+        <span class="tag">没有会话</span>
+        <div class="device"><div class="screen s3">
+          <div class="top"><span>今天的任务</span><svg class="mascot" viewBox="0 0 24 30"><circle cx="12" cy="10" r="8" fill="#4a2e1a"/><circle cx="12" cy="12" r="6" fill="#f5d2b8"/><rect x="6" y="18" width="12" height="10" rx="3" fill="#e85d8a"/></svg></div>
+          <div class="center"><span>任务清空！</span><small>开一个会话就会出现在这里</small></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reply">
+    <h2>怎么回复</h2>
+    <p>选一种风格，或者说“风格二的便签加风格三的角色”这样混搭也行。也可以说哪里不够生动，我接着改。上一套（规整版）还在：<a href="https://claude.ai/artifact/Exyov7jwx4b2f47UtZDAek">FunMedal 屏幕效果图</a>。</p>
+  </section>
+</main>
+
+<script>
+  (function () {
+    var buttons = document.querySelectorAll('button[data-zoom]');
+    var devices = document.querySelectorAll('.device');
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        devices.forEach(function (d) { d.style.setProperty('--zoom', b.getAttribute('data-zoom')); });
+        buttons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      });
+    });
+  })();
+</script>

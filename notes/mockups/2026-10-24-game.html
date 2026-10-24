@@ -1,0 +1,362 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FunMedal 游戏风效果图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg: #f4f1ea; --fg: #24221f; --muted: #6e6a62; --panel: #fffdf8; --line: #dcd6c8; --accent: #1f6f8b; --shell: #2b2a28;
+    --body: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+    --fun: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+    --pixel: "Press Start 2P", "ZCOOL KuaiLe", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #1b1b1a; --fg: #ebe8e1; --muted: #a29e94; --panel: #262523; --line: #3b3935; --accent: #7fc0da; --shell: #0e0e0d; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #1b1b1a; --fg: #ebe8e1; --muted: #a29e94; --panel: #262523; --line: #3b3935; --accent: #7fc0da; --shell: #0e0e0d; color-scheme: dark; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }
+  main { max-width: 1040px; margin: 0 auto; display: grid; gap: 44px; }
+  h1 { font-family: var(--fun); font-weight: 400; font-size: 32px; margin: 0; }
+  h2 { font-family: var(--fun); font-weight: 400; font-size: 24px; margin: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .lead, .note { color: var(--muted); } .note { font-size: 14px; }
+  section { display: grid; gap: 14px; }
+  .options { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .option { display: grid; gap: 10px; width: min(100%, 280px); }
+  .tag { font-weight: 700; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .reply { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; display: grid; gap: 6px; }
+  .device { --zoom: 1; width: calc(240px * var(--zoom) + 24px); padding: 12px; border-radius: 18px; background: var(--shell); box-sizing: border-box; max-width: 100%; }
+  .screen { width: 240px; height: 320px; transform: scale(var(--zoom)); transform-origin: top left; margin-bottom: calc(320px * (var(--zoom) - 1)); overflow: hidden; position: relative; line-height: 1.2; }
+  @media (prefers-reduced-motion: reduce) { .screen * { animation: none !important; } }
+  .pop { position: absolute; inset: 0; display: grid; place-items: center; }
+
+  .a { background: #0b0f0a; color: #7dff7d; font-family: var(--pixel); font-size: 9px; }
+  .a::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 2px, transparent 2px 4px); }
+  .a .top { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; color: #ffe95c; border-bottom: 2px dashed #2d5a2d; }
+  .a .list { padding: 8px 10px; display: grid; gap: 10px; }
+  .a .line { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; padding: 8px 0 8px 10px; border-left: 4px solid currentColor; }
+  .a .zh { font-family: var(--fun); font-size: 15px; }
+  .a .name { font-size: 9px; letter-spacing: -.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a .wait { color: #ffe95c; animation: blink 1s steps(2) infinite; } .a .run { color: #7dff7d; } .a .err { color: #ff5c5c; animation: shake .3s linear infinite; } .a .done { color: #6fd3ff; }
+  .a .run .zh::after { content: "▮"; animation: blink .4s steps(2) infinite; }
+  .a .bottom { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: #ffe95c; animation: blink 1.2s steps(2) infinite; }
+  .a .card { width: 200px; background: #0b0f0a; border: 4px double #ffe95c; padding: 12px; display: grid; justify-items: center; gap: 8px; text-align: center; animation: pop .4s steps(4) both; }
+  .a .card svg { width: 72px; height: 90px; shape-rendering: crispEdges; animation: bob .5s steps(2) infinite alternate; }
+  .a .card .zh { color: #fff; font-size: 17px; }
+  .a .card .who { color: #ffe95c; font-size: 8px; }
+
+  .b { background: linear-gradient(#8fd3ff 0 90px, #7ccf7c 90px); color: #2e3a2a; font-family: var(--fun); }
+  .b .top { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 15px; color: #2a4a6a; }
+  .b .island { position: absolute; left: 0; right: 0; top: 60px; bottom: 0; }
+  .b .house { position: absolute; width: 70px; display: grid; justify-items: center; gap: 2px; font-size: 13px; text-align: center; }
+  .b .house svg { width: 60px; height: 58px; overflow: visible; }
+  .b .house .lbl { background: rgba(255,255,255,.85); border-radius: 8px; padding: 1px 6px; white-space: nowrap; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  .b .smoke { animation: drift 1.6s ease-out infinite; transform-origin: center; }
+  .b .excl { animation: bounce .5s ease-in-out infinite alternate; }
+  .b .crack { animation: shake .4s linear infinite; }
+  .b .zz { animation: drift 2s ease-in-out infinite; }
+  .b .girl { position: absolute; width: 34px; height: 44px; animation: walk 4s ease-in-out infinite alternate; }
+  .b .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #fff7d6; border-top: 4px solid #2e3a2a; padding: 10px; display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: end; animation: rise .5s ease-out both; }
+  .b .sheet svg { width: 84px; height: 104px; animation: bob .7s ease-in-out infinite alternate; }
+  .b .bubble { background: #fff; border: 2px solid #2e3a2a; border-radius: 14px; padding: 8px 10px; font-size: 17px; line-height: 1.15; }
+  .b .who { font-size: 12px; font-family: var(--body); opacity: .75; margin-top: 4px; }
+
+  .c { background: #101a5a; color: #fff; font-family: var(--fun); }
+  .c .frame { position: absolute; inset: 6px; border: 3px solid #fff; border-radius: 4px; box-shadow: inset 0 0 0 2px #101a5a, inset 0 0 0 4px #fff; }
+  .c .top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; font-size: 15px; }
+  .c .party { position: absolute; top: 40px; left: 14px; right: 14px; display: grid; gap: 8px; }
+  .c .member { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: center; }
+  .c .face { width: 34px; height: 34px; border: 2px solid #fff; display: grid; place-items: center; font-size: 16px; background: #1e2c8a; }
+  .c .info { display: grid; gap: 3px; }
+  .c .nm { font-size: 15px; display: flex; justify-content: space-between; }
+  .c .st { font-size: 12px; opacity: .9; }
+  .c .hp { height: 8px; border: 2px solid #fff; background: #101a5a; position: relative; overflow: hidden; }
+  .c .hp i { position: absolute; left: 0; top: 0; bottom: 0; }
+  .c .wait .hp i { width: 100%; background: #ffd23f; animation: blink .8s steps(2) infinite; } .c .wait .face { background: #8a6a00; }
+  .c .run .hp i { width: 60%; background: #6fd3ff; animation: grow 2.4s linear infinite; } .c .run .face { background: #1e5a8a; }
+  .c .err .hp i { width: 12%; background: #ff5c5c; } .c .err .face { background: #7a1e1e; animation: shake .35s linear infinite; }
+  .c .done .hp i { width: 100%; background: #7dff7d; } .c .done .face { background: #1e6a3a; }
+  .c .msg { position: absolute; left: 14px; right: 14px; bottom: 14px; border: 2px solid #fff; padding: 6px 8px; font-size: 13px; min-height: 36px; }
+  .c .msg::after { content: "▼"; position: absolute; right: 6px; bottom: 2px; font-size: 9px; animation: bounce .5s ease-in-out infinite alternate; }
+  .c .card { width: 212px; background: #101a5a; border: 3px solid #fff; box-shadow: inset 0 0 0 2px #101a5a, inset 0 0 0 4px #fff; padding: 14px; display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: center; animation: pop .35s steps(3) both; }
+  .c .card svg { width: 70px; height: 86px; animation: bob .6s ease-in-out infinite alternate; }
+  .c .card .zh { font-size: 17px; line-height: 1.2; }
+  .c .card .who { font-size: 11px; opacity: .8; margin-top: 4px; font-family: var(--body); }
+
+  .d { background: #fff; color: #111; font-family: var(--fun); }
+  .d .top { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 15px; border-bottom: 3px solid #111; }
+  .d .panels { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 96px; gap: 6px; padding: 6px; }
+  .d .panel { border: 3px solid #111; position: relative; overflow: hidden; display: grid; grid-template-rows: auto 1fr; padding: 4px 6px; background-image: radial-gradient(#111 .7px, transparent .8px); background-size: 6px 6px; }
+  .d .panel .nm { font-size: 13px; background: #fff; padding: 0 3px; justify-self: start; border: 2px solid #111; }
+  .d .sfx { align-self: end; justify-self: center; font-size: 26px; line-height: 1; -webkit-text-stroke: 1px #111; text-shadow: 2px 2px 0 #111; }
+  .d .wait { background-color: #fff176; } .d .wait .sfx { color: #ff3d3d; animation: bounce .4s ease-in-out infinite alternate; }
+  .d .run { background-color: #b3e5fc; } .d .run .sfx { color: #fff; font-size: 20px; animation: shake .25s linear infinite; }
+  .d .err { background-color: #ff8a80; } .d .err .sfx { color: #fff; transform: rotate(-8deg); animation: shake .3s linear infinite; }
+  .d .done { background-color: #c8e6c9; } .d .done .sfx { color: #fff; font-size: 20px; animation: drift 2s ease-in-out infinite; }
+  .d .empty { border-style: dashed; background-image: none; color: #999; place-items: center; font-size: 12px; }
+  .d .burst { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.55); }
+  .d .burst .star { width: 230px; height: 260px; display: grid; place-items: center; background: #fff176; clip-path: polygon(50% 0%, 61% 20%, 82% 10%, 78% 33%, 100% 40%, 84% 58%, 95% 80%, 72% 78%, 65% 100%, 50% 84%, 35% 100%, 28% 78%, 5% 80%, 16% 58%, 0% 40%, 22% 33%, 18% 10%, 39% 20%); animation: pop .4s cubic-bezier(.3,1.6,.5,1) both; }
+  .d .burst svg { width: 80px; height: 100px; animation: bob .6s ease-in-out infinite alternate; }
+  .d .burst .zh { font-size: 22px; text-align: center; line-height: 1.1; -webkit-text-stroke: .5px #111; color: #ff3d3d; text-shadow: 2px 2px 0 #111; margin-top: 4px; }
+  .d .burst .who { font-size: 12px; font-family: var(--body); }
+
+  .e { background: #061423; color: #cfe8ff; font-family: var(--body); }
+  .e .top { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 12px; letter-spacing: .1em; color: #6fb7ff; border-bottom: 1px solid #1c3a5c; }
+  .e .mods { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 96px; gap: 6px; padding: 6px; }
+  .e .mod { border: 1px solid #1c3a5c; border-radius: 6px; background: #0a1f36; display: grid; grid-template-rows: auto 1fr auto; padding: 6px 8px; position: relative; }
+  .e .mod .nm { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .e .mod .lamp { width: 44px; height: 44px; border-radius: 50%; justify-self: center; align-self: center; position: relative; }
+  .e .mod .st { font-size: 11px; text-align: center; letter-spacing: .05em; }
+  .e .run .lamp { border: 2px solid #3fa0ff; background: radial-gradient(circle, rgba(63,160,255,.25), transparent 70%); overflow: hidden; }
+  .e .run .lamp::after { content: ""; position: absolute; inset: 0; background: conic-gradient(from 0deg, rgba(63,160,255,.9), transparent 60%); animation: sweep 1.6s linear infinite; }
+  .e .run .st { color: #3fa0ff; }
+  .e .wait .lamp { background: #ffb020; box-shadow: 0 0 18px #ffb020; animation: strobe .7s ease-in-out infinite alternate; } .e .wait .st { color: #ffb020; } .e .wait { border-color: #ffb020; }
+  .e .err .lamp { background: #ff3b3b; box-shadow: 0 0 18px #ff3b3b; animation: blink .35s steps(2) infinite; } .e .err .st { color: #ff6b6b; } .e .err { border-color: #ff3b3b; }
+  .e .done .lamp { background: #2ad67a; box-shadow: 0 0 10px #2ad67a; } .e .done .st { color: #2ad67a; }
+  .e .empty { border-style: dashed; color: #2b4f75; place-items: center; font-size: 11px; display: grid; }
+  .e .alarm { position: absolute; inset: 0; background: rgba(255,176,32,.12); display: grid; place-items: center; animation: strobe 1s ease-in-out infinite alternate; }
+  .e .card { width: 210px; background: #0a1f36; border: 2px solid #ffb020; border-radius: 8px; padding: 12px; display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: center; box-shadow: 0 0 24px rgba(255,176,32,.5); animation: pop .3s ease-out both; }
+  .e .card svg { width: 72px; height: 90px; animation: bob .7s ease-in-out infinite alternate; }
+  .e .card .zh { font-size: 16px; font-weight: 700; color: #fff; }
+  .e .card .who { font-size: 11px; color: #ffb020; margin-top: 4px; letter-spacing: .05em; }
+
+  @keyframes blink { from { opacity: 1; } to { opacity: .25; } }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+  @keyframes drift { 0% { transform: translateY(0); opacity: .3; } 100% { transform: translateY(-10px); opacity: 1; } }
+  @keyframes rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes grow { from { width: 20%; } to { width: 95%; } }
+  @keyframes walk { from { transform: translateX(0); } to { transform: translateX(90px); } }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+  @keyframes strobe { from { opacity: .5; } to { opacity: 1; } }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <h1>FunMedal 游戏风效果图</h1>
+    <p class="lead">你说游戏任务板的方向对，但还不够。这套往游戏感再走五步，每种都是一个完整的“世界”。场景不变：FunMedal 两个会话（等你、在跑）、SiBlog 出错、himawari-agent 两小时前答完。角色仍是占位。</p>
+    <div class="controls">
+      <span class="note">放大：</span>
+      <button type="button" aria-pressed="true" data-zoom="1">1×</button>
+      <button type="button" aria-pressed="false" data-zoom="1.5">1.5×</button>
+      <button type="button" aria-pressed="false" data-zoom="2">2×</button>
+    </div>
+  </header>
+
+  <section>
+    <h2>A · 街机厅</h2>
+    <p>黑底绿字、扫描线、像素字体，像八十年代的街机屏。等你的那行一闪一闪，像“PRESS START”。</p>
+    <div class="options">
+      <div class="option"><span class="tag">列表</span>
+        <div class="device"><div class="screen a">
+          <div class="top"><span>CLAUDE CODE</span><span>4P</span></div>
+          <div class="list">
+            <div class="line wait"><span class="name">FUNMEDAL</span><span class="zh">等你！</span></div>
+            <div class="line run"><span class="name">FUNMEDAL</span><span class="zh">在跑</span></div>
+            <div class="line err"><span class="name">SIBLOG</span><span class="zh">出错</span></div>
+            <div class="line done"><span class="name">HIMAWARI-AGENT</span><span class="zh">答完了 2H</span></div>
+          </div>
+          <div class="bottom">INSERT COIN</div>
+        </div></div>
+        <p class="note">项目名用英文大写像素字，状态用中文。底部那行闪烁的字可以换成别的。</p>
+      </div>
+      <div class="option"><span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen a">
+          <div class="top"><span>CLAUDE CODE</span><span>4P</span></div>
+          <div class="list">
+            <div class="line wait"><span class="name">FUNMEDAL</span><span class="zh">等你！</span></div>
+            <div class="line run"><span class="name">FUNMEDAL</span><span class="zh">在跑</span></div>
+            <div class="line err"><span class="name">SIBLOG</span><span class="zh">出错</span></div>
+            <div class="line done"><span class="name">HIMAWARI-AGENT</span><span class="zh">答完了 2H</span></div>
+          </div>
+          <div class="pop"><div class="card">
+            <svg viewBox="0 0 24 30"><rect x="6" y="2" width="12" height="4" fill="#ffe95c"/><rect x="4" y="6" width="16" height="4" fill="#ffe95c"/><rect x="6" y="6" width="12" height="10" fill="#7dff7d"/><rect x="8" y="10" width="2" height="2" fill="#0b0f0a"/><rect x="14" y="10" width="2" height="2" fill="#0b0f0a"/><rect x="10" y="14" width="4" height="1" fill="#0b0f0a"/><rect x="6" y="16" width="12" height="10" fill="#ff5c9a"/><rect x="18" y="8" width="4" height="8" fill="#7dff7d"/><rect x="8" y="26" width="3" height="3" fill="#ffe95c"/><rect x="13" y="26" width="3" height="3" fill="#ffe95c"/></svg>
+            <div class="zh">爸爸快看一下<br>需要你去做决定</div><div class="who">FUNMEDAL &gt; WAITING</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>B · 小岛</h2>
+    <p>像动物森友会：每个会话是岛上一栋小房子。在跑的烟囱冒烟，等你的屋顶上跳叹号，出错的房子在抖，答完了的房子在睡觉。角色在岛上走来走去。</p>
+    <div class="options">
+      <div class="option"><span class="tag">列表</span>
+        <div class="device"><div class="screen b">
+          <div class="top"><span>Claude 岛</span><span>4 栋</span></div>
+          <div class="island">
+            <div class="house" style="left:10px;top:0">
+              <svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#e85d8a"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><rect x="40" y="10" width="6" height="12" fill="#8a5a2b"/><text class="excl" x="26" y="4" font-size="18" font-weight="700" fill="#ff3d3d">!</text></svg>
+              <span class="lbl">FunMedal · 等你</span></div>
+            <div class="house" style="left:110px;top:4px">
+              <svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#4a8fd9"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><rect x="40" y="10" width="6" height="12" fill="#8a5a2b"/><circle class="smoke" cx="43" cy="4" r="4" fill="#fff" opacity=".9"/><circle class="smoke" cx="47" cy="-4" r="3" fill="#fff" opacity=".6"/></svg>
+              <span class="lbl">FunMedal · 在跑</span></div>
+            <div class="house" style="left:40px;top:90px">
+              <svg class="crack" viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#c0392b"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><polyline points="18,30 22,38 17,44 21,52" fill="none" stroke="#c0392b" stroke-width="2"/></svg>
+              <span class="lbl">SiBlog · 出错</span></div>
+            <div class="house" style="left:140px;top:96px">
+              <svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#3a9d5d"/><rect x="12" y="28" width="36" height="26" fill="#d9d1b8"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><text class="zz" x="40" y="8" font-size="12" fill="#2e3a2a">zZ</text></svg>
+              <span class="lbl">himawari · 2 小时前</span></div>
+            <svg class="girl" style="left:60px;top:196px" viewBox="0 0 34 44"><circle cx="17" cy="12" r="10" fill="#6b4a2b"/><circle cx="17" cy="15" r="8" fill="#f5d2b8"/><rect x="9" y="24" width="16" height="16" rx="4" fill="#e85d8a"/></svg>
+          </div>
+        </div></div>
+        <p class="note">房子位置固定按项目排，一屏放 6 栋。角色平时在岛上散步。</p>
+      </div>
+      <div class="option"><span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen b">
+          <div class="top"><span>Claude 岛</span><span>4 栋</span></div>
+          <div class="island">
+            <div class="house" style="left:10px;top:0"><svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#e85d8a"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><text class="excl" x="26" y="4" font-size="18" font-weight="700" fill="#ff3d3d">!</text></svg><span class="lbl">FunMedal · 等你</span></div>
+            <div class="house" style="left:110px;top:4px"><svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#4a8fd9"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/><rect x="40" y="10" width="6" height="12" fill="#8a5a2b"/><circle class="smoke" cx="43" cy="4" r="4" fill="#fff"/></svg><span class="lbl">FunMedal · 在跑</span></div>
+            <div class="house" style="left:40px;top:90px"><svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#c0392b"/><rect x="12" y="28" width="36" height="26" fill="#ffe9b3"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/></svg><span class="lbl">SiBlog · 出错</span></div>
+            <div class="house" style="left:140px;top:96px"><svg viewBox="0 0 60 58"><polygon points="30,6 6,28 54,28" fill="#3a9d5d"/><rect x="12" y="28" width="36" height="26" fill="#d9d1b8"/><rect x="26" y="40" width="10" height="14" fill="#8a5a2b"/></svg><span class="lbl">himawari · 2 小时前</span></div>
+            <div class="sheet">
+              <svg viewBox="0 0 84 104"><circle cx="42" cy="34" r="26" fill="#6b4a2b"/><circle cx="42" cy="40" r="20" fill="#f5d2b8"/><circle cx="35" cy="38" r="2" fill="#222"/><circle cx="49" cy="38" r="2" fill="#222"/><path d="M36 48 q6 5 12 0" stroke="#c0392b" stroke-width="2" fill="none"/><path d="M12 104 C12 76 72 76 72 104 Z" fill="#e85d8a"/><rect x="64" y="20" width="8" height="26" rx="4" fill="#f5d2b8"/></svg>
+              <div><div class="bubble">爸爸快看一下，需要你去做决定</div><div class="who">FunMedal 的房子在等你</div></div>
+            </div>
+          </div>
+        </div></div>
+        <p class="note">角色跑到屏幕前面来喊，后面的岛还在。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>C · RPG 队伍</h2>
+    <p>像勇者斗恶龙的队伍面板：每个会话是一个队员，有头像格和一条“血条”。在跑的血条在涨，等你的血条闪黄，出错的血条见底，答完了的满血。底部是游戏对话框。</p>
+    <div class="options">
+      <div class="option"><span class="tag">列表</span>
+        <div class="device"><div class="screen c">
+          <div class="frame"></div>
+          <div class="top"><span>队伍</span><span>4 人</span></div>
+          <div class="party">
+            <div class="member wait"><div class="face">F</div><div class="info"><div class="nm"><span>FunMedal</span><span class="st">等你</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member run"><div class="face">F</div><div class="info"><div class="nm"><span>FunMedal</span><span class="st">在跑</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member err"><div class="face">S</div><div class="info"><div class="nm"><span>SiBlog</span><span class="st">出错</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member done"><div class="face">H</div><div class="info"><div class="nm"><span>himawari-agent</span><span class="st">答完了</span></div><div class="hp"><i></i></div></div></div>
+          </div>
+          <div class="msg">FunMedal 在等你的指示。</div>
+        </div></div>
+        <p class="note">头像格先放项目首字母，以后可以给每个项目配一个小图标。底部对话框轮流说每个会话的近况。</p>
+      </div>
+      <div class="option"><span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen c">
+          <div class="frame"></div>
+          <div class="top"><span>队伍</span><span>4 人</span></div>
+          <div class="party" style="opacity:.35">
+            <div class="member wait"><div class="face">F</div><div class="info"><div class="nm"><span>FunMedal</span><span class="st">等你</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member run"><div class="face">F</div><div class="info"><div class="nm"><span>FunMedal</span><span class="st">在跑</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member err"><div class="face">S</div><div class="info"><div class="nm"><span>SiBlog</span><span class="st">出错</span></div><div class="hp"><i></i></div></div></div>
+            <div class="member done"><div class="face">H</div><div class="info"><div class="nm"><span>himawari-agent</span><span class="st">答完了</span></div><div class="hp"><i></i></div></div></div>
+          </div>
+          <div class="pop"><div class="card">
+            <svg viewBox="0 0 84 104"><circle cx="42" cy="34" r="26" fill="#6b4a2b"/><circle cx="42" cy="40" r="20" fill="#f5d2b8"/><circle cx="35" cy="38" r="2" fill="#222"/><circle cx="49" cy="38" r="2" fill="#222"/><path d="M36 48 q6 5 12 0" stroke="#c0392b" stroke-width="2" fill="none"/><path d="M12 104 C12 76 72 76 72 104 Z" fill="#e85d8a"/></svg>
+            <div><div class="zh">爸爸快看一下，需要你去做决定</div><div class="who">▶ FunMedal 在等你</div></div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>D · 漫画分格</h2>
+    <p>每个会话是一格漫画，有网点和拟声词：在跑的“哒哒哒”在抖，等你的“！！”在跳，出错的“啊！”，答完了的“呼～”。有事时角色从纸上撞出来。</p>
+    <div class="options">
+      <div class="option"><span class="tag">列表</span>
+        <div class="device"><div class="screen d">
+          <div class="top"><span>Claude 日常</span><span>第 4 话</span></div>
+          <div class="panels">
+            <div class="panel wait"><span class="nm">FunMedal</span><span class="sfx">！！</span></div>
+            <div class="panel run"><span class="nm">FunMedal</span><span class="sfx">哒哒哒</span></div>
+            <div class="panel err"><span class="nm">SiBlog</span><span class="sfx">啊！</span></div>
+            <div class="panel done"><span class="nm">himawari-agent</span><span class="sfx">呼～</span></div>
+            <div class="panel empty">（空格）</div><div class="panel empty">（空格）</div>
+          </div>
+        </div></div>
+        <p class="note">拟声词本身就是状态，不用再写“在跑”“等你”。一屏六格。</p>
+      </div>
+      <div class="option"><span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen d">
+          <div class="top"><span>Claude 日常</span><span>第 4 话</span></div>
+          <div class="panels">
+            <div class="panel wait"><span class="nm">FunMedal</span><span class="sfx">！！</span></div>
+            <div class="panel run"><span class="nm">FunMedal</span><span class="sfx">哒哒哒</span></div>
+            <div class="panel err"><span class="nm">SiBlog</span><span class="sfx">啊！</span></div>
+            <div class="panel done"><span class="nm">himawari-agent</span><span class="sfx">呼～</span></div>
+            <div class="panel empty">（空格）</div><div class="panel empty">（空格）</div>
+          </div>
+          <div class="burst"><div class="star">
+            <div style="display:grid;justify-items:center">
+              <svg viewBox="0 0 84 104"><circle cx="42" cy="34" r="26" fill="#6b4a2b"/><circle cx="42" cy="40" r="20" fill="#f5d2b8"/><circle cx="35" cy="38" r="2.5" fill="#222"/><circle cx="49" cy="38" r="2.5" fill="#222"/><ellipse cx="42" cy="50" rx="5" ry="4" fill="#c0392b"/><path d="M12 104 C12 76 72 76 72 104 Z" fill="#e85d8a"/><rect x="64" y="16" width="8" height="30" rx="4" fill="#f5d2b8"/></svg>
+              <div class="zh">爸爸快看！<br>要你做决定</div><div class="who">FunMedal 在等你</div>
+            </div>
+          </div></div>
+        </div></div>
+        <p class="note">爆炸星形是漫画里的“惊”格，角色和大字一起撞出来。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>E · 控制塔</h2>
+    <p>像飞船驾驶舱：深蓝底，每个会话一个带指示灯的模块。在跑的是雷达在转，等你的是黄灯在呼吸，出错的是红灯急闪，答完了是绿灯常亮。有事时整屏泛黄光，角色穿着宇航服出来。</p>
+    <div class="options">
+      <div class="option"><span class="tag">列表</span>
+        <div class="device"><div class="screen e">
+          <div class="top"><span>CLAUDE · CONTROL</span><span>4 / 6</span></div>
+          <div class="mods">
+            <div class="mod wait"><span class="nm">FunMedal</span><div class="lamp"></div><span class="st">等你</span></div>
+            <div class="mod run"><span class="nm">FunMedal</span><div class="lamp"></div><span class="st">在跑</span></div>
+            <div class="mod err"><span class="nm">SiBlog</span><div class="lamp"></div><span class="st">出错</span></div>
+            <div class="mod done"><span class="nm">himawari-agent</span><div class="lamp"></div><span class="st">答完了 · 2h</span></div>
+            <div class="mod empty">— 空 —</div><div class="mod empty">— 空 —</div>
+          </div>
+        </div></div>
+        <p class="note">灯的动法就是状态，隔着房间也看得出黄灯在呼吸。</p>
+      </div>
+      <div class="option"><span class="tag">冒头提醒</span>
+        <div class="device"><div class="screen e">
+          <div class="top"><span>CLAUDE · CONTROL</span><span>4 / 6</span></div>
+          <div class="mods">
+            <div class="mod wait"><span class="nm">FunMedal</span><div class="lamp"></div><span class="st">等你</span></div>
+            <div class="mod run"><span class="nm">FunMedal</span><div class="lamp"></div><span class="st">在跑</span></div>
+            <div class="mod err"><span class="nm">SiBlog</span><div class="lamp"></div><span class="st">出错</span></div>
+            <div class="mod done"><span class="nm">himawari-agent</span><div class="lamp"></div><span class="st">答完了 · 2h</span></div>
+            <div class="mod empty">— 空 —</div><div class="mod empty">— 空 —</div>
+          </div>
+          <div class="alarm"><div class="card">
+            <svg viewBox="0 0 84 104"><circle cx="42" cy="36" r="30" fill="#dfe9f5"/><circle cx="42" cy="36" r="24" fill="#0a1f36"/><circle cx="42" cy="34" r="18" fill="#6b4a2b"/><circle cx="42" cy="38" r="14" fill="#f5d2b8"/><circle cx="37" cy="37" r="1.8" fill="#222"/><circle cx="47" cy="37" r="1.8" fill="#222"/><path d="M38 44 q4 3 8 0" stroke="#c0392b" stroke-width="1.5" fill="none"/><path d="M14 104 C14 72 70 72 70 104 Z" fill="#dfe9f5"/></svg>
+            <div><div class="zh">爸爸快看一下，需要你去做决定</div><div class="who">▲ FUNMEDAL · 等你</div></div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reply">
+    <h2>怎么回复</h2>
+    <p>说字母就行，比如“D”，或者“D 的分格 + E 的灯”这种混搭。也可以说“再往 X 方向走”，我接着出。前两套还在：<a href="https://claude.ai/artifact/Exyov7jwx4b2f47UtZDAek">规整版</a>、<a href="https://claude.ai/artifact/RSZUfhETGbXgv1jh4KK75r">生动版</a>。</p>
+  </section>
+</main>
+
+<script>
+  (function () {
+    var buttons = document.querySelectorAll('button[data-zoom]');
+    var devices = document.querySelectorAll('.device');
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        devices.forEach(function (d) { d.style.setProperty('--zoom', b.getAttribute('data-zoom')); });
+        buttons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      });
+    });
+  })();
+</script>
