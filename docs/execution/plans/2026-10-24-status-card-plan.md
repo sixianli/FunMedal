@@ -32,7 +32,7 @@ date: "2026-10-24"
 ### Task 0: 开工前的实测（T0、T1、性能）
 
 - [ ] 写最小插件 `experiments/hook-probe/`，只把 hooks 事件和环境变量记到文件；在终端和桌面 App（含一个工作副本会话）各跑一遍，回答：`AskUserQuestion` 是否触发 `PermissionRequest`；桌面 App 里 `PermissionRequest` 是否触发；强杀 Claude Code 有没有 `SessionEnd`；`/clear` 后 `session_id` 变不变；hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、工作副本会话里指向哪；`claude_pid` 在桌面 App 里是哪个进程、关会话后退不退出；权限弹窗等满 600 秒后还在不在。结果写进 `notes/claude-code.md`。
-- [ ] Mac 合盖 2 分钟，看卡片串口有没有蓝牙断开事件，写进 `notes/ble-link.md`。
+- [x] Mac 合盖 2 分钟，看卡片串口有没有蓝牙断开事件，写进 `notes/ble-link.md`。
 - [x] 真机放一声 1 kHz 测试音（I2S TX 走 GPIO2，ES8311 DAC），结果写进 `notes/hardware.md`。放不出来就先查原厂固件对 ES8311 和功放的写法，再决定声音这一块的做法。
 - [x] 真机测整屏一帧多少毫秒，写进 `notes/firmware.md`。
 - [ ] 按结果修订设计规格里的状态机、项目名和声音各节。
@@ -49,9 +49,9 @@ date: "2026-10-24"
 
 - [ ] `tests/test_bridge.py` 新增（标签 `[SC-3]`、`[SC-4]`、`[SC-5]`、`[SC-6]`、`[SC-7]`、`[SC-10]`）：事件序列 → 会话表状态，含 `SessionStart` 不建行、第一句话建行、`SessionEnd`（`reason: clear`）删旧行、`PermissionRequest` 连接 590 秒内断开清记录、超时标记保留记录、同 `tool_key` 的 `PostToolUse` 清记录并关连接、`Notification permission_prompt` 兜底、`UserPromptSubmit`/`Stop`/`StopFailure` 清全部；排序；7 个会话截 6 行且被挤掉的不是“等你”、总数为 7；ROWS 字节级编码（行号、状态、新进入位、分钟、名字截断）；“新进入”位只置一次，两个同名会话先后进入等你各提醒一次，重连重发不置位；只在表变化和重连时发，30 秒心跳帧为 4 字节；`project` 字段来自 `CLAUDE_PROJECT_DIR`，`.git` 是文件时取主仓库名；pid 不在时会话 15 秒内消失；重启读回会话表；20 条权限请求连发不丢。
 - [ ] `Hook.swift`：加 `project` 字段；`PermissionRequest` 只等不答，590 秒退出前发超时标记；`PostToolUse`、`PostToolUseFailure` 也算 `tool_key`。`hooks.json` 删 mod、加 `Notification` matcher `permission_prompt`。`HOOK_FIELDS` 白名单加 `project`。
-- [ ] `Sessions.swift` 重写会话表（行号、新进入位、`visible`）；`Bridge.swift` 改成只写 ROWS 加心跳，`linkVersion` 升 3，补 `didModifyServices` 回调，启动时打印 `maximumWriteValueLength`；会话表落盘到 `<套接字>.sessions.json`。
+- [ ] `Sessions.swift` 重写会话表（行号、新进入位、`visible`）；`Bridge.swift` 改成只写 ROWS 加心跳，`linkVersion` 升 3，补 `didModifyServices` 回调，蓝牙变成可用时先用 `retrieveConnectedPeripherals(withServices:)` 取回已经连着的卡片再扫描（T0 合盖实测发现醒来后桥接程序一直停在 `scanning`），启动时打印 `maximumWriteValueLength`；会话表落盘到 `<套接字>.sessions.json`。
 - [ ] 固件：`link_version.h` 升 3，`ble_link.c` 加 ROWS 特征值、`rows.c` 解析成会话表并本地累加分钟、心跳和 90 秒超时，串口 `rows` 命令打印“行号 状态字 分钟 名字”；旧画面暂时用新表里的第一行顶替 STATE 的作用，让画面不黑。新协议通了之后删六个旧特征值和 STATE 路径；`tests/test_link_version.py`、`test_bridge_start.py:181`、`test_card_display.py:49` 改到 ROWS。
-- [ ] 真机：三个假会话 → `rows` 看到三行、项目名和状态对；空表 → “没有会话”；7 个会话 → 6 行；断开重连不闪旧表；刷新固件后不重启 Mac 程序也能重连并写 ROWS。升级窗口内旧固件显示“版本不配”是预期，不算回归。
+- [ ] 真机：三个假会话 → `rows` 看到三行、项目名和状态对；空表 → “没有会话”；7 个会话 → 6 行；断开重连不闪旧表；刷新固件后不重启 Mac 程序也能重连并写 ROWS；Mac 合盖睡 2 分钟醒来后 1 分钟内卡片重新收到 ROWS。升级窗口内旧固件显示“版本不配”是预期，不算回归。
 - [ ] 重新生成预编译固件（`[OB-15]`）。
 
 ### Task 3a: 分区表、刷写脚本、预编译

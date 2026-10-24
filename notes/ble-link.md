@@ -75,7 +75,28 @@ Mac 往卡片发一个 13 字节的小包，卡片收到后马上原样送回；
 - 卡片同时连着 iPhone（收通知）时，和 Mac 之间的速度。
 - Mac 的 Wi-Fi 在大量传数据时的干扰。
 - 耗电。
-- 长时间连续传输（本次每轮只有 5 秒）、Mac 睡眠或锁屏后连接会不会断。
+- 长时间连续传输（本次每轮只有 5 秒）、Mac 用电池睡眠或锁屏后连接会不会断。接着电源合盖睡眠的结果见下文“Mac 合盖睡眠时连接断不断”。
+
+## Mac 合盖睡眠时连接断不断（2026-10-24 实测）
+
+这是状态卡片实施计划 Task 0 的一项。条件：卡片装的是自制固件，和 Mac 已配对并连着，Mac 接着电源（电量 100%）。负责人 19:49 合盖，Mac 19:49:55 进入睡眠（系统电源日志 `pmset -g log` 记的原因是 `Maintenance Sleep`），19:53:55 醒来，一共睡了约 4 分钟。
+
+| 看什么 | 结果 |
+| --- | --- |
+| 卡片串口 | 醒来后没有新的一行，没有 `BLE disconnected` 或 `BLE connected`。睡眠期间 USB 挂起，但卡片任何一行没发出去都会记进 `events_dropped`（`firmware/main/console.c` 的事件输出函数），这个数前后都是 0，说明卡片在这 4 分钟里一个事件都没产生 |
+| 卡片 `info` | 合盖前和醒来后都是 `ble=connected`、`link=match` |
+| macOS 系统蓝牙列表（`system_profiler SPBluetoothDataType`） | 醒来后 FunMedal 在“Connected”一组里 |
+| 常驻桥接程序 `status` | 醒来后一直是 `card: scanning`，2 分钟后还是，`connects` 次数没变 |
+| 系统日志里桥接程序的授权查询 | 19:49:45、19:49:55 和 19:53:55 各有一次。桥接程序只在“蓝牙状态变了”的回调 `centralManagerDidUpdateState` 里查授权，所以这三次对应入睡和醒来时它收到的蓝牙状态通知 |
+
+结论：
+
+- **确认**：Mac 合盖睡眠约 4 分钟（接着电源），卡片和 Mac 之间的蓝牙连接没有断。
+- **推断（证据较强，还没在代码里加日志直接看到）**：睡眠时 CoreBluetooth（macOS 给 App 用的蓝牙接口）告诉桥接程序蓝牙不可用，桥接程序把卡片对象丢掉；醒来后收到“蓝牙已打开”，它把状态设成 `scanning` 开始扫描。可是连接其实还在，卡片连着时不再广播，扫描永远找不到它，于是桥接程序再也不给卡片写状态。`mac/bridge/Sources/Bridge.swift` 的 `centralManagerDidUpdateState` 只调用 `scanForPeripherals`，没有用 `retrieveConnectedPeripherals(withServices:)` 去取已经连着的卡片。
+- **对状态卡片的影响**：照现在的写法，每次 Mac 睡醒后卡片都收不到新状态；新固件加上“90 秒没收到写入就显示未连接”后，卡片会一直显示“未连接”。桥接程序要在蓝牙打开时先取回已经连着的卡片再扫描。
+- **没测的**：Mac 用电池时睡眠（可能进更深的睡眠，连接可能会断）；睡更久。
+
+原始记录只在本机：`artifacts/t0-lid/`（`serial.log` 是带时间戳的串口记录，`after-info.txt` 是醒来后的 `info`；`artifacts/` 不进 git）。
 
 ## 测速程序怎么工作
 
