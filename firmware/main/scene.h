@@ -45,6 +45,5 @@ const char *scene_state_name(pet_state_t state);
 const char *scene_state_label(pet_state_t state);
 const char *scene_link_name(scene_link_t link);
 scene_link_t scene_link_for(uint16_t own, uint16_t peer);
-bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state);
 bool scene_state_from_name(const char *name, pet_state_t *state);
 uint16_t scene_rgb565_wire(uint32_t rgb);

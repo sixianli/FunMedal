@@ -119,20 +119,15 @@ static bool link_mismatch(const scene_t *scene)
     return scene->link == SCENE_LINK_UPDATE_FIRMWARE || scene->link == SCENE_LINK_UPDATE_BRIDGE;
 }
 
-bool scene_state_from_bytes(const char *data, size_t len, pet_state_t *state)
+bool scene_state_from_name(const char *name, pet_state_t *state)
 {
     for (int i = 0; i < PET_STATE_COUNT; i++) {
-        if (strlen(STYLES[i].name) == len && memcmp(data, STYLES[i].name, len) == 0) {
+        if (strcmp(name, STYLES[i].name) == 0) {
             *state = (pet_state_t)i;
             return true;
         }
     }
     return false;
-}
-
-bool scene_state_from_name(const char *name, pet_state_t *state)
-{
-    return scene_state_from_bytes(name, strlen(name), state);
 }
 
 static void add_run(runs_t *runs, const font_t *font, const char *text, size_t len, int x, int top)

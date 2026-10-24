@@ -62,9 +62,9 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | 任务 | 优先级 | 做什么 | 代码 |
 | --- | --- | --- | --- |
 | 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件；配对画面里的按键也在这里处理（见 [approval.md](approval.md)），其他时候按键只从串口报出来；串口 `key` 命令注入的按键同样在这个任务里处理。栈 4096 字节（FM-14 从 3072 加大，见 approval.md 的“实测结果”第 5 条） | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
-| 显示 | 5 | 状态变了就重画；没变时每 0.5 秒换一帧 | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c) |
+| 显示 | 5 | 状态变了就重画；没变时每 0.5 秒换一帧；连着 Mac 但 90 秒没收到 ROWS 时主动断开（报 `BLE silent rc=<码>`） | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c) |
 | 串口命令 | 4 | 读 USB 串口上的命令并回复 | [console.c](../firmware/main/console.c) |
-| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到状态写入和配对过程的消息时，都在这个任务里处理并报一行 | [ble_link.c](../firmware/main/ble_link.c) |
+| 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到 ROWS 写入和配对过程的消息时，都在这个任务里处理并报一行；ROWS 的检查和会话表在 [rows.c](../firmware/main/rows.c) | [ble_link.c](../firmware/main/ble_link.c)、[rows.c](../firmware/main/rows.c) |
 
 - **画面怎么送到屏幕**：一帧 240×320 像素，每像素 2 字节（RGB565，一种红 5 位、绿 6 位、蓝 5 位的颜色格式）。程序每次只算 40 行，放进两块轮流使用的内存，用 DMA（不占 CPU、由硬件自己搬数据的传输方式）经 40 MHz 的 SPI 送给屏幕。
 - **小人和字是生成的**：[tools/gen_pet.py](../tools/gen_pet.py) 用代码画出 5 种状态各两帧的小人，生成 [pet_art.c](../firmware/main/pet_art.c)。改了图案后要重新生成。2026-10-16 用下面的命令重新生成过一次，和仓库里的逐字节相同：
@@ -87,7 +87,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE state <状态>`（收到一次状态写入）、`BLE reject length|name`（写入的内容超过 16 字节，或者和状态名不是一字不差，被拒绝）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。配对相关的行（`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”；同一处写的 `PROMPT`、`DECISION` 两种行 2026-10-24 随批准一起删了。开机时音频芯片初始化失败会报 `AUDIO unavailable <错误名>`，这时 `tone` 用不了，其他照常。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，状态变化时 `STATE <状态>`，按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE rows total=<总数> shown=<行数> fresh=<0 或 1>`（收到一张会话表）、`BLE heartbeat`（收到心跳）、`BLE reject rows`、`BLE reject rows length`（会话表不合规矩或超过 226 字节，被拒绝，规矩见 [bridge.md](bridge.md) 的“卡片怎么收状态”）、`BLE silent rc=<码>`（90 秒没收到会话表或心跳，卡片主动断开）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。配对相关的行（`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”；同一处写的 `PROMPT`、`DECISION` 两种行 2026-10-24 随批准一起删了。开机时音频芯片初始化失败会报 `AUDIO unavailable <错误名>`，这时 `tone` 用不了，其他照常。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。
 
 两类输出的发送规则不同：
 
@@ -96,8 +96,9 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的状态写入）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一次状态写入就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
+| `info` | 回报固件版本、当前状态、帧设置、屏幕设置，以及几项运行情况：`shown_frame`（最近一次画到屏幕上的是第几帧）、`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的 ROWS 写入，心跳也算）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一张会话表就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
 | `state <idle\|working\|waiting\|done\|error>` | 切换状态 |
+| `rows` | 打印卡片手上的会话表：每行一行 `ROW <行号> <waiting\|error\|running\|done> <分钟或 -> <名字>`，分钟是卡片收到后自己往上加的；最后回 `OK rows total=<总数> shown=<行数> linked=<0 或 1>`，`linked` 是 1 表示版本核对一样、正在等 Mac 的会话表 |
 | `frame <0\|1\|auto>` | 固定显示某一帧，或恢复自动换帧 |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
 | `fill <rrggbb>` | 整屏填一种颜色 |
@@ -243,7 +244,7 @@ GATT 是蓝牙设备对外公布的功能表：卡片有哪些可以读写的项
 | --- | --- | --- |
 | [test_firmware_host.py](../tests/test_firmware_host.py) 的按键逻辑 | 在 Mac 上编译固件的按键代码：电压怎么归到键、判断范围的边界、抖动、长按只报一次、计时器绕回、电压表里每个键只出现一次且相邻两档不重叠 | 不要 |
 | 同一文件的录音回放 | 把 [hardware.md](hardware.md) 里录的真实按键电压交给按键代码，要求正好得到确认、上、下各一次“按下、长按、松开”。录音是每 20 ms 一个点，固件实际每 10 ms 读一次，所以回放时防抖要的 3 个点是 60 ms 而不是 30 ms；电压表又是从这份录音定出来的，回放通过只说明代码和表配得上，换一次按键能不能认对要看下面的真实按键测试 | 不要 |
-| 同一文件的蓝牙状态名（FM-13） | 在 Mac 上编译固件的状态名检查：5 个状态名原样写入才接受；空内容、少字、多字、夹着或结尾带空字节、带换行、大小写不同都拒绝 | 不要 |
+| 同一文件的会话表（SC-3） | 在 Mac 上编译 [rows.c](../firmware/main/rows.c)，跑 [tests/host/test_rows.c](../tests/host/test_rows.c)：合规的整表和心跳照收；格式、标志位、行数、行号、状态、新进入位、分钟、名字长度和 UTF-8、末尾多字节出错时整帧拒绝；会话表的 90 秒计时从版本核对起算、整表和心跳都重新计时，分钟按卡片时钟从 59 加到 60、不超过 44640，断开时清空。2026-10-24 以前这一行查的是 STATE 的状态名，随 STATE 一起删了 | 不要 |
 | [test_card_display.py](../tests/test_card_display.py) 的状态画面 | 5 种状态 × 2 帧：四角是该状态的背景色；小人区域里有足够多的非背景像素；标签是该状态的文字颜色、宽度符合字数、水平居中；同一状态两帧不同；不同状态画面不同 | 要 |
 | 同一文件的测试图 | 白边框、四角颜色、三角形位置 | 要 |
 | 同一文件的显示任务 | 自动换帧时，重建屏幕驱动之前和之后各看 2 秒：每段里两帧都真的画到了屏幕上，并且各画了至少 3 次；画失败次数不变 | 要 |

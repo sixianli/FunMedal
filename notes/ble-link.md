@@ -95,6 +95,7 @@ Mac 往卡片发一个 13 字节的小包，卡片收到后马上原样送回；
 - **推断（证据较强，还没在代码里加日志直接看到）**：睡眠时 CoreBluetooth（macOS 给 App 用的蓝牙接口）告诉桥接程序蓝牙不可用，桥接程序把卡片对象丢掉；醒来后收到“蓝牙已打开”，它把状态设成 `scanning` 开始扫描。可是连接其实还在，卡片连着时不再广播，扫描永远找不到它，于是桥接程序再也不给卡片写状态。`mac/bridge/Sources/Bridge.swift` 的 `centralManagerDidUpdateState` 只调用 `scanForPeripherals`，没有用 `retrieveConnectedPeripherals(withServices:)` 去取已经连着的卡片。
 - **对状态卡片的影响**：照现在的写法，每次 Mac 睡醒后卡片都收不到新状态；新固件加上“90 秒没收到写入就显示未连接”后，卡片会一直显示“未连接”。桥接程序要在蓝牙打开时先取回已经连着的卡片再扫描。
 - **没测的**：Mac 用电池时睡眠（可能进更深的睡眠，连接可能会断）；睡更久。
+- **改法（实施计划 Task 2）**：桥接程序在蓝牙变成可用时先调用 `retrieveConnectedPeripherals(withServices:)` 取回已经连着的卡片，取不到才扫描；卡片 90 秒没收到会话表或心跳就主动断开，让 Mac 重新连。改后的合盖复测见 [bridge.md](bridge.md) 的“实测结果”。
 
 原始记录只在本机：`artifacts/t0-lid/`（`serial.log` 是带时间戳的串口记录，`after-info.txt` 是醒来后的 `info`；`artifacts/` 不进 git）。
 

@@ -179,7 +179,7 @@ def test_real_session_starts_bridge(case, card, bridge, run_dir):
             wait_session_ready(session, bridge)
             started = bridge.status()
             connected = wait_until(lambda: (s := bridge.status()) and s["card"] == "connected"
-                                   and s["card_state"] == s["desired"] and s, 30.0, "started bridge on the card")
+                                   and s["synced"] and s, 30.0, "started bridge on the card")
             processes = serve_processes(bridge.socket)
             start = card.mark()
             session.type_line("Reply with the single word ok.", "enter (prompt)")

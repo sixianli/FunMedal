@@ -56,6 +56,8 @@ date: "2026-10-24"
 - [ ] 真机：三个假会话 → `rows` 看到三行、项目名和状态对；空表 → “没有会话”；7 个会话 → 6 行；断开重连不闪旧表；刷新固件后不重启 Mac 程序也能重连并写 ROWS；Mac 合盖睡 2 分钟醒来后 1 分钟内卡片重新收到 ROWS。升级窗口内旧固件显示“版本不配”是预期，不算回归。
 - [ ] 重新生成预编译固件（`[OB-15]`）。
 
+Task 2 动手时和上面不同的几处：新测试放进 `tests/test_rows.py`（`test_bridge.py` 只跟着改旧断言）；桥接程序每 5 秒核对一次进程号（测试仍要求 15 秒内消失）；卡片 90 秒没收到 ROWS 时主动断开，计时从版本核对一样那一刻起算；hook 多传 `notification_type`，桥接程序只认 `permission_prompt`；空表在旧画面上显示空闲，“没有会话”要等 Task 3 的新画面。
+
 ### Task 3a: 分区表、刷写脚本、预编译
 
 - [ ] `firmware/partitions.csv`：`nvs` 24 KB、`phy_init` 4 KB、`factory` 4 MB；`sdkconfig.defaults` 指向它；`flash.sh`、`tools/update-prebuilt.sh`、`firmware/prebuilt/partition-table.bin` 跟着改，`tests/test_flash.py` 通过。

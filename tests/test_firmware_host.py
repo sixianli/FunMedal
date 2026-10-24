@@ -10,7 +10,7 @@ KEY_SOURCES = [FIRMWARE_MAIN / "keys.c", FIRMWARE_MAIN / "key_levels.c"]
 KEY_CAPTURE = ROOT / "notes" / "data" / "key-adc-2026-10-16.txt"
 FONT_SOURCES = [FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_large.c", FIRMWARE_MAIN / "font_text.c"]
 LINK_SOURCES = [FIRMWARE_MAIN / "link_version.c"]
-SCENE_SOURCES = [FIRMWARE_MAIN / "scene.c", FIRMWARE_MAIN / "pet_art.c", *FONT_SOURCES]
+ROWS_SOURCES = [FIRMWARE_MAIN / "rows.c"]
 C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 GLYPH_ENTRY = re.compile(r"\{0x([0-9a-f]+), \d+, \d+\}")
 
@@ -47,10 +47,11 @@ def test_recorded_presses_replay(case, tmp_path):
     assert events == expected
 
 
-@pytest.mark.parametrize("case", ["[FM-13] bluetooth state value must be exactly one state name"])
-def test_state_value_parsing_on_host(case, tmp_path):
-    binary = tmp_path / "test_state_names"
-    build(ROOT / "tests" / "host" / "test_state_names.c", binary, SCENE_SOURCES)
+@pytest.mark.parametrize("case", ["[SC-3] the card accepts only well formed session tables and heartbeats, counts "
+                                  "the minutes of done rows itself and treats 90 silent seconds as a lost link"])
+def test_rows_on_host(case, tmp_path):
+    binary = tmp_path / "test_rows"
+    build(ROOT / "tests" / "host" / "test_rows.c", binary, ROWS_SOURCES)
     result = subprocess.run([str(binary)], capture_output=True, text=True)
     print(result.stdout)
     assert result.returncode == 0, result.stdout

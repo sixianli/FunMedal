@@ -18,10 +18,10 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "link_version.h"
+#include "rows.h"
 
 #define LINK_UUID(n) BLE_UUID128_INIT(0x64, 0x65, 0x4d, 0x6e, 0x75, 0x46, 0x4b, 0x9a, \
                                       0x8e, 0x4a, 0x0e, 0x6b, n, 0x10, 0x2f, 0x6d)
-#define STATE_VALUE_MAX 16
 #define PASSKEY_RANGE 1000000
 #define SECURE_FLAGS_READ (BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN)
 #define SECURE_FLAGS_WRITE (BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN)
@@ -29,28 +29,21 @@
 #define LAYOUT_KEY "gatt_layout"
 #define FNV_OFFSET 2166136261u
 #define FNV_PRIME 16777619u
-#define SECURE_FLAGS_NOTIFY \
-    (BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN)
 
 void ble_store_config_init(void);
 
 static const char *TAG = "ble";
 static const char *DEVICE_NAME = "FunMedal";
 static const ble_uuid128_t service_uuid = LINK_UUID(0x01);
-static const ble_uuid128_t state_uuid = LINK_UUID(0x02);
-static const ble_uuid128_t prompt_uuid = LINK_UUID(0x03);
-static const ble_uuid128_t decision_uuid = LINK_UUID(0x04);
-static const ble_uuid128_t audio_uuid = LINK_UUID(0x05);
-static const ble_uuid128_t voice_uuid = LINK_UUID(0x06);
-static const ble_uuid128_t voice_image_uuid = LINK_UUID(0x07);
 static const ble_uuid128_t version_uuid = LINK_UUID(0x08);
+static const ble_uuid128_t rows_uuid = LINK_UUID(0x09);
 
 static uint8_t own_addr_type;
 static uint16_t changed_handle;
 static uint32_t unconfirmed_layout;
 static bool layout_unconfirmed;
 static _Atomic uint32_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
-static _Atomic uint32_t state_writes;
+static _Atomic uint32_t rows_writes;
 static _Atomic bool pairing;
 static _Atomic uint32_t numcmp_conn = BLE_HS_CONN_HANDLE_NONE;
 static _Atomic uint32_t refusal;
@@ -73,43 +66,40 @@ static bool take_refusal(ble_refusal_t what)
     return false;
 }
 
-static int state_write(struct ble_gatt_access_ctxt *ctxt)
+static int fresh_rows(const rows_frame_t *frame)
 {
-    char value[STATE_VALUE_MAX];
+    int fresh = 0;
+    for (int i = 0; i < frame->shown; i++) {
+        fresh += frame->rows[i].fresh;
+    }
+    return fresh;
+}
+
+static int rows_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    uint8_t value[ROWS_FRAME_MAX];
     uint16_t len = 0;
     if (ble_hs_mbuf_to_flat(ctxt->om, value, sizeof(value), &len) != 0) {
-        console_event("BLE reject length\n");
+        console_event("BLE reject rows length\n");
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
-    pet_state_t state;
-    if (!scene_state_from_bytes(value, len, &state)) {
-        console_event("BLE reject name\n");
+    rows_frame_t frame;
+    rows_kind_t kind = rows_parse(value, len, &frame);
+    if (kind == ROWS_INVALID) {
+        console_event("BLE reject rows\n");
         return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
     }
-    atomic_fetch_add(&state_writes, 1);
-    console_event("BLE state %s\n", scene_state_name(state));
-    app_link_in_use();
-    app_set_state(state);
+    atomic_fetch_add(&rows_writes, 1);
+    if (kind == ROWS_HEARTBEAT) {
+        console_event("BLE heartbeat\n");
+    } else {
+        console_event("BLE rows total=%u shown=%u fresh=%d\n", frame.total, frame.shown, fresh_rows(&frame));
+    }
+    app_rows_heard(kind, &frame);
     return 0;
-}
-
-static int state_read(struct ble_gatt_access_ctxt *ctxt)
-{
-    scene_t scene;
-    app_get_scene(&scene);
-    const char *name = scene_state_name(scene.state);
-    return os_mbuf_append(ctxt->om, name, (uint16_t)strlen(name)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-}
-
-static int state_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        return state_write(ctxt);
-    }
-    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        return state_read(ctxt);
-    }
-    return BLE_ATT_ERR_UNLIKELY;
 }
 
 static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -135,12 +125,10 @@ static int version_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_c
     }
     scene_link_t link = app_set_link(peer);
     console_event("LINK peer=%u own=%u match=%d\n", (unsigned)peer, (unsigned)LINK_VERSION, link == SCENE_LINK_MATCH);
+    if (link == SCENE_LINK_MATCH) {
+        app_rows_link();
+    }
     return 0;
-}
-
-static int retired_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    return ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR ? 0 : BLE_ATT_ERR_UNLIKELY;
 }
 
 static const struct ble_gatt_svc_def services[] = {
@@ -149,39 +137,14 @@ static const struct ble_gatt_svc_def services[] = {
         .uuid = &service_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[]) {
             {
-                .uuid = &state_uuid.u,
-                .access_cb = state_access,
-                .flags = SECURE_FLAGS_READ | SECURE_FLAGS_WRITE,
-            },
-            {
-                .uuid = &prompt_uuid.u,
-                .access_cb = retired_access,
-                .flags = SECURE_FLAGS_WRITE,
-            },
-            {
-                .uuid = &decision_uuid.u,
-                .access_cb = retired_access,
-                .flags = SECURE_FLAGS_NOTIFY,
-            },
-            {
-                .uuid = &audio_uuid.u,
-                .access_cb = retired_access,
-                .flags = SECURE_FLAGS_NOTIFY,
-            },
-            {
-                .uuid = &voice_uuid.u,
-                .access_cb = retired_access,
-                .flags = SECURE_FLAGS_WRITE,
-            },
-            {
-                .uuid = &voice_image_uuid.u,
-                .access_cb = retired_access,
-                .flags = SECURE_FLAGS_WRITE,
-            },
-            {
                 .uuid = &version_uuid.u,
                 .access_cb = version_access,
                 .flags = SECURE_FLAGS_READ | SECURE_FLAGS_WRITE,
+            },
+            {
+                .uuid = &rows_uuid.u,
+                .access_cb = rows_access,
+                .flags = SECURE_FLAGS_WRITE,
             },
             {0},
         },
@@ -393,6 +356,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         atomic_store(&conn_handle, BLE_HS_CONN_HANDLE_NONE);
         atomic_store(&pairing, false);
         end_pairing_screen();
+        app_rows_lose();
         console_event("BLE disconnected reason=0x%x\n", event->disconnect.reason);
         advertise();
         return 0;
@@ -487,7 +451,7 @@ bool ble_link_connected(void)
 
 uint32_t ble_link_writes(void)
 {
-    return atomic_load(&state_writes);
+    return atomic_load(&rows_writes);
 }
 
 bool ble_link_ready(void)

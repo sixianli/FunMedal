@@ -335,6 +335,23 @@ static void ble_command(char *args)
     console_printf("OK ble unpair\n");
 }
 
+static void print_rows(void)
+{
+    rows_table_t table;
+    int64_t now_us;
+    app_get_rows(&table, &now_us);
+    for (int i = 0; i < table.frame.shown; i++) {
+        const row_t *row = &table.frame.rows[i];
+        uint16_t minutes = rows_minutes(&table, i, now_us);
+        if (minutes == ROWS_HIDDEN_MINUTES) {
+            console_printf("ROW %u %s - %s\n", row->id, rows_state_name(row->state), row->name);
+        } else {
+            console_printf("ROW %u %s %u %s\n", row->id, rows_state_name(row->state), minutes, row->name);
+        }
+    }
+    console_printf("OK rows total=%u shown=%u linked=%d\n", table.frame.total, table.frame.shown, table.linked);
+}
+
 static void tone_command(char *args)
 {
     int hz = 0;
@@ -370,6 +387,8 @@ static void handle(char *line)
         }
         app_set_state(state);
         console_printf("OK state %s\n", scene_state_name(state));
+    } else if (strcmp(line, "rows") == 0) {
+        print_rows();
     } else if (strcmp(line, "frame") == 0) {
         if (strcmp(args, "auto") == 0) {
             app_set_frame_mode(APP_FRAME_AUTO);

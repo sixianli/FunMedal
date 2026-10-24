@@ -4,6 +4,7 @@
 #include "console.h"
 #include "display.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -21,6 +22,14 @@ static int frame_mode = APP_FRAME_AUTO;
 static uint32_t draws;
 static uint32_t draw_errors;
 static int shown_frame = -1;
+static rows_table_t rows_table;
+
+static const pet_state_t ROW_PET_STATES[] = {
+    [ROW_WAITING] = PET_WAITING,
+    [ROW_ERROR] = PET_ERROR,
+    [ROW_RUNNING] = PET_WORKING,
+    [ROW_DONE] = PET_DONE,
+};
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -101,10 +110,58 @@ void app_set_frame_mode(int frame)
     xTaskNotifyGive(display_task_handle);
 }
 
+void app_rows_link(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    rows_link(&rows_table, esp_timer_get_time());
+    xSemaphoreGive(lock);
+}
+
+void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    rows_heard(&rows_table, kind, frame, esp_timer_get_time());
+    xSemaphoreGive(lock);
+    if (kind != ROWS_TABLE) {
+        return;
+    }
+    app_link_in_use();
+    app_set_state(frame->shown == 0 ? PET_IDLE : ROW_PET_STATES[frame->rows[0].state]);
+}
+
+void app_rows_lose(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    rows_lose(&rows_table);
+    xSemaphoreGive(lock);
+}
+
+void app_get_rows(rows_table_t *table, int64_t *now_us)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    *table = rows_table;
+    *now_us = esp_timer_get_time();
+    xSemaphoreGive(lock);
+}
+
+static void drop_silent_link(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool silent = rows_silent(&rows_table, esp_timer_get_time());
+    if (silent) {
+        rows_lose(&rows_table);
+    }
+    xSemaphoreGive(lock);
+    if (silent) {
+        console_event("BLE silent rc=%d\n", ble_link_disconnect());
+    }
+}
+
 static void display_task(void *arg)
 {
     for (;;) {
         bool notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FRAME_PERIOD_MS)) > 0;
+        drop_silent_link();
         xSemaphoreTake(lock, portMAX_DELAY);
         if (!notified && frame_mode == APP_FRAME_AUTO) {
             scene.frame = (uint8_t)((scene.frame + 1) % PET_FRAMES);

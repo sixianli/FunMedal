@@ -65,6 +65,7 @@ func serveClient(_ client: Int32, bridge: Bridge, socket: String, lockPath: Stri
     }
     close(client)
     if handled.quit {
+        bridge.stop()
         unlink(socket)
         unlink(lockPath)
         exit(0)

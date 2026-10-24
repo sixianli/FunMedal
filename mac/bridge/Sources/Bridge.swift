@@ -3,8 +3,8 @@ import Darwin
 import Foundation
 
 let serviceUUID = CBUUID(string: "6D2F1001-6B0E-4A8E-9A4B-46756E4D6564")
-let stateUUID = CBUUID(string: "6D2F1002-6B0E-4A8E-9A4B-46756E4D6564")
 let versionUUID = CBUUID(string: "6D2F1008-6B0E-4A8E-9A4B-46756E4D6564")
+let rowsUUID = CBUUID(string: "6D2F1009-6B0E-4A8E-9A4B-46756E4D6564")
 
 final class EventLog {
     private let handle: FileHandle?
@@ -38,14 +38,12 @@ final class EventLog {
 final class PermissionWait {
     let id: Int
     let session: String
-    let toolKey: String?
     let fd: Int32
     var outcome: String?
 
-    init(id: Int, session: String, toolKey: String?, fd: Int32) {
+    init(id: Int, session: String, fd: Int32) {
         self.id = id
         self.session = session
-        self.toolKey = toolKey
         self.fd = fd
     }
 }
@@ -56,9 +54,19 @@ struct Handled {
     var quit = false
 }
 
+struct RowsWrite {
+    let what: String
+    let data: Data
+    let key: [String]?
+    let fresh: [String: Int]
+}
+
 final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let writeRetrySeconds = 1.0
-    static let linkVersion = 2
+    static let heartbeatSeconds = 30.0
+    static let pidCheckSeconds = 5.0
+    static let quitDisconnectSeconds = 1.0
+    static let linkVersion = 3
     static let pairingAttempts = 3
     static let linkVersions = 1...9999
     static let releasingEvents = ["UserPromptSubmit": "prompt", "Stop": "stop", "StopFailure": "stop_failure",
@@ -66,6 +74,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     let queue = DispatchQueue(label: "funmedal.bridge")
     let socketPath: String
+    let savedPath: String
     let log: EventLog
     let linkVersion: Int
     private var central: CBCentralManager?
@@ -76,23 +85,54 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var pairingFailures = 0
     private var bluetooth = "unknown"
     private var sessions = Sessions()
-    private var desired = "idle"
-    private var cardState: String?
+    private var savedData: Data?
     private var waits: [PermissionWait] = []
     private var nextWaitID = 1
-    private var inFlight: String?
+    private var inFlight: RowsWrite?
+    private var ackedKey: [String]?
+    private var cardFrame: Data?
+    private var pendingFresh: [String: Int] = [:]
+    private var freshCount = 0
+    private var maxWrite: Int?
+    private var nameLimit = Rows.nameLimit
+    private var timers: [DispatchSourceTimer] = []
+    private var quitting: DispatchSemaphore?
     private var counts: [String: Int] = [:]
 
     init(socketPath: String, log: EventLog, linkVersion: Int) {
         self.socketPath = socketPath
+        self.savedPath = socketPath + ".sessions.json"
         self.linkVersion = linkVersion
         self.log = log
     }
 
     func start() {
         queue.async {
+            self.load()
+            self.checkPids()
+            self.timers = [self.every(Bridge.heartbeatSeconds) { self.heartbeat() },
+                           self.every(Bridge.pidCheckSeconds) { self.checkPids() }]
             self.central = CBCentralManager(delegate: self, queue: self.queue)
         }
+    }
+
+    func stop() {
+        let done = DispatchSemaphore(value: 0)
+        let waiting: Bool = queue.sync {
+            guard let peripheral, let central, peripheral.state != .disconnected else { return false }
+            quitting = done
+            central.cancelPeripheralConnection(peripheral)
+            return true
+        }
+        if waiting { _ = done.wait(timeout: .now() + Bridge.quitDisconnectSeconds) }
+    }
+
+    private func every(_ seconds: Double, _ body: @escaping () -> Void) -> DispatchSourceTimer {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + seconds, repeating: seconds)
+        timer.setEventHandler(handler: body)
+        timer.resume()
+        return timer
     }
 
     func handle(_ data: Data?, client: Int32) -> Handled {
@@ -122,7 +162,9 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         queue.sync {
             guard wait.outcome == nil else { return }
             finish(wait, as: "gave_up")
+            sessions.gaveUp(session: wait.session, hook: wait.id)
             log.write("wait_gave_up", ["id": wait.id])
+            refresh()
         }
     }
 
@@ -131,7 +173,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if wait.outcome == nil {
                 wait.outcome = "hung_up"
                 waits.removeAll { $0 === wait }
-                sessions.answeredInTerminal(session: wait.session, toolKey: wait.toolKey)
+                sessions.hungUp(session: wait.session, hook: wait.id)
                 refresh()
             }
             log.write("wait_closed", ["id": wait.id, "how": wait.outcome ?? "hung_up"])
@@ -150,23 +192,26 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return (name, session)
     }
 
-    private func record(_ message: [String: Any], name: String, session: String) {
+    private func record(_ message: [String: Any], name: String, session: String, hook: Int? = nil) {
         counts["events", default: 0] += 1
         var fields: [String: Any] = ["event": name, "session": session]
-        for key in ["tool_name", "tool_key", "source", "reason", "error"] {
+        for key in ["tool_name", "tool_key", "tool_use_id", "notification_type", "project", "source", "reason",
+                    "error"] {
             if let value = message[key] as? String { fields[key] = value }
         }
         log.write("event", fields)
-        let toolKey = message["tool_key"] as? String
-        sessions.apply(HookEvent(name: name, session: session, toolKey: toolKey))
-        if name == "PostToolUse" || name == "PostToolUseFailure",
-           let wait = waits.first(where: { $0.session == session && $0.toolKey == toolKey }) {
-            release(wait, why: "post_tool_use")
-        }
-        if let why = Bridge.releasingEvents[name] {
-            for wait in waits.filter({ $0.session == session }) {
-                release(wait, why: why)
-            }
+        let event = HookEvent(name: name, session: session, toolName: message["tool_name"] as? String,
+                              toolKey: message["tool_key"] as? String, toolUseID: message["tool_use_id"] as? String,
+                              notificationType: message["notification_type"] as? String,
+                              project: message["project"] as? String, pid: message["claude_pid"] as? Int,
+                              hook: hook, now: Date().timeIntervalSince1970)
+        let why = Bridge.releasingEvents[name] ?? "post_tool_use"
+        release(sessions.apply(event), why: why)
+    }
+
+    private func release(_ hooks: [Int], why: String) {
+        for id in hooks {
+            if let wait = waits.first(where: { $0.id == id }) { release(wait, why: why) }
         }
     }
 
@@ -181,11 +226,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard let event = Bridge.eventIdentity(message), event.name == "PermissionRequest" else {
             return Handled(reply: reject("wait needs a PermissionRequest with a session"))
         }
-        record(message, name: event.name, session: event.session)
-        let wait = PermissionWait(id: nextWaitID, session: event.session, toolKey: message["tool_key"] as? String,
-                                  fd: client)
+        let wait = PermissionWait(id: nextWaitID, session: event.session, fd: client)
         nextWaitID += 1
         waits.append(wait)
+        record(message, name: event.name, session: event.session, hook: wait.id)
         log.write("wait", ["id": wait.id, "session": wait.session])
         if let data = Hook.line(["ok": true, "id": wait.id]) { _ = UnixSocket.writeAll(client, data) }
         refresh()
@@ -205,48 +249,135 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     private func refresh() {
-        let shown = sessions.shown
-        if shown != desired {
-            desired = shown
-            log.write("state", ["desired": shown])
+        for id in sessions.takeEntered() {
+            freshCount += 1
+            pendingFresh[id] = freshCount
         }
+        save()
         push()
     }
 
+    private static func processGone(_ pid: Int) -> Bool {
+        kill(pid_t(pid), 0) != 0 && errno == ESRCH
+    }
+
+    private func checkPids() {
+        for (id, pid) in sessions.pids where Bridge.processGone(pid) {
+            log.write("session_gone", ["session": id, "pid": pid])
+            pendingFresh[id] = nil
+            release(sessions.remove(id), why: "session_gone")
+        }
+        refresh()
+    }
+
+    private func load() {
+        guard let data = FileManager.default.contents(atPath: savedPath) else { return }
+        do {
+            sessions = try JSONDecoder().decode(Sessions.self, from: data)
+            savedData = data
+            log.write("loaded", ["sessions": sessions.table.count])
+        } catch {
+            log.write("load_failed", ["error": String(describing: error)])
+        }
+    }
+
+    private func save() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(sessions), data != savedData else { return }
+        let written = FileManager.default.createFile(atPath: savedPath + ".new", contents: data,
+                                                     attributes: [.posixPermissions: 0o600])
+        guard written, rename(savedPath + ".new", savedPath) == 0 else {
+            log.write("save_failed", ["errno": Int(errno)])
+            return
+        }
+        savedData = data
+    }
+
     private func status() -> [String: Any] {
-        [
+        let now = Date().timeIntervalSince1970
+        let table = Rows.table(sessions)
+        return [
             "ok": true,
             "pid": Int(getpid()),
             "socket": socketPath,
             "bluetooth": bluetooth,
             "authorization": Bridge.name(CBManager.authorization),
             "card": link,
-            "desired": desired,
-            "card_state": cardState ?? NSNull(),
             "card_version": cardVersion ?? NSNull(),
             "bridge_version": linkVersion,
             "waits": waits.map { ["id": $0.id, "session": $0.session] },
-            "sessions": sessions.table.mapValues { ["state": $0.shown, "pending": $0.pendingCount] },
+            "sessions": sessions.table.mapValues { session -> [String: Any] in
+                ["state": session.shown.name, "project": session.project ?? NSNull(), "row": session.row,
+                 "visible": session.visible, "waiting": session.waiting.count, "pid": session.pid ?? NSNull()]
+            },
+            "total": table.total,
+            "rows": table.lines.map { line -> [String: Any] in
+                ["row": line.row, "state": line.state.name, "minutes": line.minutes(at: now), "project": line.project]
+            },
+            "synced": link == "connected" && ackedKey == table.key,
+            "frame": Rows.hex(Rows.frame(table, fresh: [], nameLimit: nameLimit, now: now)),
+            "card_frame": cardFrame.map(Rows.hex) ?? NSNull(),
+            "max_write": maxWrite ?? NSNull(),
+            "name_limit": nameLimit,
             "events": counts["events", default: 0],
             "rejected": counts["rejected", default: 0],
             "writes": counts["writes", default: 0],
             "acks": counts["acks", default: 0],
+            "heartbeats": counts["heartbeats", default: 0],
             "connects": counts["connects", default: 0],
         ]
     }
 
     private func push() {
-        guard link == "connected", let peripheral, inFlight == nil, cardState != desired,
-              let characteristic = characteristics[stateUUID] else { return }
-        inFlight = desired
+        let table = Rows.table(sessions)
+        guard table.key != ackedKey else { return }
+        let fresh = Set(pendingFresh.keys)
+        let data = Rows.frame(table, fresh: fresh, nameLimit: nameLimit, now: Date().timeIntervalSince1970)
+        write(RowsWrite(what: "rows", data: data, key: table.key, fresh: pendingFresh))
+    }
+
+    private func heartbeat() {
+        guard inFlight == nil else { return }
+        write(RowsWrite(what: "heartbeat", data: Rows.heartbeat(total: Rows.table(sessions).total), key: nil,
+                        fresh: [:]))
+    }
+
+    private func write(_ request: RowsWrite) {
+        guard link == "connected", let peripheral, inFlight == nil,
+              let characteristic = characteristics[rowsUUID] else { return }
+        inFlight = request
         counts["writes", default: 0] += 1
-        log.write("write", ["what": "state", "value": desired])
-        peripheral.writeValue(Data(desired.utf8), for: characteristic, type: .withResponse)
+        log.write("write", ["what": request.what, "frame": Rows.hex(request.data)])
+        peripheral.writeValue(request.data, for: characteristic, type: .withResponse)
+    }
+
+    private func written(_ request: RowsWrite, error: Error?) {
+        inFlight = nil
+        if let error {
+            log.write("write_error", ["what": request.what, "frame": Rows.hex(request.data),
+                                      "error": String(describing: error)])
+            queue.asyncAfter(deadline: .now() + Bridge.writeRetrySeconds) { self.push() }
+            return
+        }
+        counts["acks", default: 0] += 1
+        log.write("ack", ["what": request.what, "frame": Rows.hex(request.data)])
+        if let key = request.key {
+            ackedKey = key
+            cardFrame = request.data
+            for (id, generation) in request.fresh where pendingFresh[id] == generation {
+                pendingFresh[id] = nil
+            }
+        } else {
+            counts["heartbeats", default: 0] += 1
+        }
+        push()
     }
 
     private func forgetCard() {
         characteristics = [:]
-        cardState = nil
+        ackedKey = nil
+        cardFrame = nil
         inFlight = nil
     }
 
@@ -266,6 +397,12 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private func lost(_ what: String, _ lostPeripheral: CBPeripheral, _ error: Error?) {
         guard isCurrent(lostPeripheral) else {
             log.write("ignored_" + what, ["error": error.map { String(describing: $0) } ?? NSNull()])
+            return
+        }
+        if let quitting {
+            forgetCard()
+            log.write(what, ["error": error.map { String(describing: $0) } ?? NSNull(), "reconnect": false])
+            quitting.signal()
             return
         }
         if gaveUp {
@@ -290,8 +427,16 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             forgetCard()
             return
         }
-        link = "scanning"
         pairingFailures = 0
+        if let connected = central.retrieveConnectedPeripherals(withServices: [serviceUUID]).first {
+            peripheral = connected
+            connected.delegate = self
+            link = "connecting"
+            log.write("retrieved", ["name": connected.name ?? NSNull()])
+            central.connect(connected)
+            return
+        }
+        link = "scanning"
         central.scanForPeripherals(withServices: [serviceUUID])
     }
 
@@ -338,14 +483,22 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             central?.cancelPeripheralConnection(peripheral)
             return
         }
-        peripheral.discoverCharacteristics([stateUUID, versionUUID], for: service)
+        peripheral.discoverCharacteristics([rowsUUID, versionUUID], for: service)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        guard isCurrent(peripheral), invalidatedServices.contains(where: { $0.uuid == serviceUUID }) else { return }
+        log.write("services_changed")
+        forgetCard()
+        link = "discovering"
+        peripheral.discoverServices([serviceUUID])
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard isCurrent(peripheral) else { return }
         var found: [CBUUID: CBCharacteristic] = [:]
         for characteristic in service.characteristics ?? []
-        where characteristic.uuid == stateUUID || characteristic.uuid == versionUUID {
+        where characteristic.uuid == rowsUUID || characteristic.uuid == versionUUID {
             found[characteristic.uuid] = characteristic
         }
         forgetCard()
@@ -398,14 +551,18 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         log.write("version", ["card": card, "bridge": linkVersion, "match": true])
-        guard characteristics[stateUUID] != nil else {
+        guard characteristics[rowsUUID] != nil else {
             log.write("characteristic_missing", ["found": characteristics.keys.map(\.uuidString).sorted()])
             central?.cancelPeripheralConnection(peripheral)
             return
         }
+        let limit = peripheral.maximumWriteValueLength(for: .withResponse)
+        maxWrite = limit
+        nameLimit = Rows.nameLimit(forMaxWrite: limit)
         link = "connected"
         pairingFailures = 0
-        log.write("ready")
+        pendingFresh.removeAll()
+        log.write("ready", ["max_write": limit, "name_limit": nameLimit])
         push()
     }
 
@@ -414,18 +571,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             versionWritten(of: peripheral, error: error)
             return
         }
-        guard isCurrent(peripheral), let value = inFlight, characteristic.uuid == stateUUID else { return }
-        inFlight = nil
-        if let error {
-            log.write("write_error", ["what": "state", "value": value, "error": String(describing: error)])
-            cardState = nil
-            queue.asyncAfter(deadline: .now() + Bridge.writeRetrySeconds) { self.push() }
-            return
-        }
-        cardState = value
-        counts["acks", default: 0] += 1
-        log.write("ack", ["what": "state", "value": value])
-        push()
+        guard isCurrent(peripheral), let request = inFlight, characteristic.uuid == rowsUUID else { return }
+        written(request, error: error)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {

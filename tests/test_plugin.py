@@ -163,12 +163,14 @@ def test_validate(case, way, run_dir):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("case", ["[OB-7] the plugin hooks the nine events and runs the installed bridge, not a file "
-                                  "in the repo"])
+@pytest.mark.parametrize("case", ["[OB-7] the plugin hooks the ten events, notifications only for permission "
+                                  "prompts, and runs the installed bridge, not a file in the repo"])
 def test_plugin_hooks(case, run_dir):
     found = {name: [hook for group in groups for hook in group["hooks"]] for name, groups in plugin_hooks().items()}
     write_summary(run_dir, {"hooks": found})
     assert sorted(found) == sorted(HOOK_EVENTS), found
+    matchers = {name: [group.get("matcher") for group in groups] for name, groups in plugin_hooks().items()}
+    assert matchers == {name: ["permission_prompt" if name == "Notification" else None] for name in HOOK_EVENTS}, matchers
     for name, hooks in found.items():
         timeout = PERMISSION_HOOK_TIMEOUT_S if name == "PermissionRequest" else HOOK_TIMEOUT_S
         assert hooks == [{"type": "command", "command": INSTALLED_COMMAND, "timeout": timeout}], (name, hooks)

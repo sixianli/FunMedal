@@ -3,7 +3,8 @@ import Darwin
 import Foundation
 
 enum Hook {
-    static let passedThrough = ["source", "reason"]
+    static let passedThrough = ["source", "reason", "tool_use_id", "notification_type"]
+    static let worktreeTail = [".git", "worktrees"]
     static let defaultWaitLimit = 590.0
     static let ackSeconds = 2.0
     static let startWaitSeconds = 3.0
@@ -24,6 +25,35 @@ enum Hook {
         return Int(getppid())
     }
 
+    static func mainRepository(of directory: URL) -> URL? {
+        let marker = directory.appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: marker.path, isDirectory: &isDirectory), !isDirectory.boolValue,
+              let text = try? String(contentsOf: marker, encoding: .utf8),
+              let line = text.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("gitdir:") }) else {
+            return nil
+        }
+        let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+        let gitdir = URL(fileURLWithPath: path, relativeTo: directory).standardizedFileURL
+        let parts = gitdir.pathComponents
+        guard parts.count > 3, Array(parts[(parts.count - 3)..<(parts.count - 1)]) == worktreeTail else { return nil }
+        return gitdir.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    static func projectName(of path: String) -> String? {
+        let directory = URL(fileURLWithPath: path).standardizedFileURL
+        let name = (mainRepository(of: directory) ?? directory).lastPathComponent
+        return name.isEmpty || name == "/" ? nil : name
+    }
+
+    static func project(event: String, hook: [String: Any]) -> String? {
+        if let root = ProcessInfo.processInfo.environment["CLAUDE_PROJECT_DIR"], !root.isEmpty {
+            return projectName(of: root)
+        }
+        guard event == "SessionStart", let cwd = hook["cwd"] as? String, !cwd.isEmpty else { return nil }
+        return projectName(of: cwd)
+    }
+
     static func message(from input: Data) -> [String: Any]? {
         guard let hook = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
               let name = hook["hook_event_name"] as? String, !name.isEmpty,
@@ -39,6 +69,7 @@ enum Hook {
             if let value = hook[field] as? String { message[field] = value }
         }
         if name == "StopFailure", let error = hook["error"] as? String { message["error"] = error }
+        if let project = project(event: name, hook: hook) { message["project"] = project }
         return message
     }
 

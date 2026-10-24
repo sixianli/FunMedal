@@ -34,11 +34,16 @@ DEFAULT_SOCKET = Path(os.environ.get("FUNMEDAL_SOCKET")
 PLUGIN = ROOT / "plugin"
 APP_CLAUDES = Path.home() / "Library" / "Application Support" / "Claude" / "claude-code"
 CLAUDE_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+) ")
-HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
+HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Notification", "PostToolUse",
                "PostToolUseFailure", "Stop", "StopFailure", "SessionEnd"]
 HOOK_TIMEOUT_S = 5
 PERMISSION_HOOK_TIMEOUT_S = 600
 SOCKET_PREFIX = "fm-bridge-"
+PROJECTS = Path(tempfile.gettempdir()) / "fm-projects"
+ROW_STATES = {1: "waiting", 2: "error", 3: "running", 4: "done"}
+FRESH_BIT = 0x80
+HEARTBEAT_FLAG = 0x01
+HIDDEN_MINUTES = 65535
 
 
 def wait_until(check, timeout, what):
@@ -52,9 +57,19 @@ def wait_until(check, timeout, what):
     raise TimeoutError(f"{what} not reached within {timeout} s")
 
 
+def hook_env(project=None, pid=None):
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_PID")}
+    if project is not None:
+        env["CLAUDE_PROJECT_DIR"] = str(project if isinstance(project, Path) else PROJECTS / project)
+    if pid is not None:
+        env["CLAUDE_PID"] = str(pid)
+    return env
+
+
 def bridge_cli(*args, payload=None, timeout=10.0, env=None):
     started = time.monotonic()
-    result = subprocess.run([str(BRIDGE), *args], input=payload, capture_output=True, timeout=timeout, env=env)
+    result = subprocess.run([str(BRIDGE), *args], input=payload, capture_output=True, timeout=timeout,
+                            env=env if env is not None else hook_env())
     return result, time.monotonic() - started
 
 
@@ -78,10 +93,10 @@ def wait_limit_args(wait_limit):
 
 
 class HookRun:
-    def __init__(self, args, payload):
+    def __init__(self, args, payload, env=None):
         self.started = time.monotonic()
         self.proc = subprocess.Popen([str(BRIDGE), *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE)
+                                     stderr=subprocess.PIPE, env=env if env is not None else hook_env())
         self.proc.stdin.write(encode(payload))
         self.proc.stdin.close()
         self.ended = None
@@ -103,9 +118,10 @@ class HookRun:
 
 
 class Bridge:
-    def __init__(self, workdir: Path, app: Path = APP):
+    def __init__(self, workdir: Path, app: Path = APP, socket_path=None):
         self.app = app
-        self.socket = os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}{uuid.uuid4().hex[:8]}.sock")
+        self.socket = socket_path or os.path.join(tempfile.gettempdir(), f"{SOCKET_PREFIX}{uuid.uuid4().hex[:8]}.sock")
+        self.saved = Path(f"{self.socket}.sessions.json")
         self.log = workdir / "bridge.jsonl"
         self.started = False
         self.runs: list[HookRun] = []
@@ -118,8 +134,8 @@ class Bridge:
     def start(self, timeout=60.0):
         self.launch()
         try:
-            return wait_until(lambda: (s := self.status()) and s["card"] == "connected"
-                              and s["card_state"] == s["desired"] and s, timeout, "bridge connected to the card")
+            return wait_until(lambda: (s := self.status()) and s["card"] == "connected" and s["synced"] and s,
+                              timeout, "bridge connected to the card")
         except TimeoutError as error:
             raise TimeoutError(f"{error}; last status: {self.status()}") from error
 
@@ -129,20 +145,31 @@ class Bridge:
             return None
         return json.loads(result.stdout)
 
-    def hook(self, payload, wait_limit=None):
-        return bridge_cli("hook", "--socket", self.socket, *wait_limit_args(wait_limit), payload=encode(payload))
+    def hook(self, payload, wait_limit=None, project=None, pid=None):
+        return bridge_cli("hook", "--socket", self.socket, *wait_limit_args(wait_limit), payload=encode(payload),
+                          env=hook_env(project, pid))
 
-    def hook_async(self, payload, wait_limit=None):
-        run = HookRun(["hook", "--socket", self.socket, *wait_limit_args(wait_limit)], payload)
+    def hook_async(self, payload, wait_limit=None, project=None, pid=None):
+        run = HookRun(["hook", "--socket", self.socket, *wait_limit_args(wait_limit)], payload, hook_env(project, pid))
         self.runs.append(run)
         return run
 
     def settle(self, expected, timeout=5.0):
         try:
-            return wait_until(lambda: (s := self.status()) and s["desired"] == expected
-                              and s["card_state"] == expected and s, timeout, f"card showing {expected}")
+            return wait_until(lambda: (s := self.status()) and shown_states(s) == expected and s["synced"] and s,
+                              timeout, f"card holding rows {expected}")
         except TimeoutError as error:
             raise TimeoutError(f"{error}; last status: {self.status()}") from error
+
+    def settle_rows(self, expected, total=None, timeout=5.0):
+        try:
+            return wait_until(lambda: (s := self.status()) and shown_rows(s) == expected and s["synced"]
+                              and (total is None or s["total"] == total) and s, timeout, f"card holding rows {expected}")
+        except TimeoutError as error:
+            raise TimeoutError(f"{error}; last status: {self.status()}") from error
+
+    def frames(self, what="rows"):
+        return [decode_frame(e["frame"]) for e in self.log_entries() if e.get("kind") == "write" and e.get("what") == what]
 
     def waits(self):
         status = self.status()
@@ -156,6 +183,9 @@ class Bridge:
         bridge_cli("quit", "--socket", self.socket)
         wait_until(lambda: self.status() is None, 10.0, "bridge exit")
         self.started = False
+
+    def forget(self):
+        self.saved.unlink(missing_ok=True)
 
     def log_entries(self):
         if not self.log.exists():
@@ -199,10 +229,45 @@ def bash(command, description="test command"):
     return {"tool_name": "Bash", "tool_input": {"command": command, "description": description}}
 
 
+def shown_states(status):
+    return [row["state"] for row in status["rows"]]
+
+
+def shown_rows(status):
+    return [(row["state"], row["project"]) for row in status["rows"]]
+
+
+def decode_frame(text):
+    data = bytes.fromhex(text)
+    frame = {"bytes": len(data), "format": data[0], "total": data[1], "shown": data[2], "flags": data[3], "rows": []}
+    at = 4
+    for _ in range(data[2]):
+        size = data[at + 4]
+        state = data[at + 1]
+        frame["rows"].append({"row": data[at], "state": ROW_STATES[state & 0x0f], "fresh": bool(state & FRESH_BIT),
+                              "minutes": int.from_bytes(data[at + 2:at + 4], "little"),
+                              "name": data[at + 5:at + 5 + size].decode("utf-8")})
+        at += 5 + size
+    assert at == len(data), (text, at)
+    return frame
+
+
+def card_rows(card):
+    start = card.mark()
+    reply = card.request("rows")
+    rows = []
+    for _, line in card.since(start):
+        if line.startswith("ROW "):
+            _, row, state, minutes, name = line.split(" ", 4)
+            rows.append({"row": int(row), "state": state, "minutes": None if minutes == "-" else int(minutes),
+                         "name": name})
+    return {"reply": info_fields(reply), "rows": rows}
+
+
 def start_and_mark(bridge, card, timeout=5.0):
     before = card.mark()
-    status = bridge.start()
-    card.wait_for(lambda line: line == f"BLE state {status['desired']}", timeout, before)
+    bridge.start()
+    card.wait_for(lambda line: line.startswith("BLE rows "), timeout, before)
     return card.mark()
 
 
@@ -210,8 +275,8 @@ def card_states(card, start):
     return [line.split()[1] for _, line in card.since(start) if line.startswith("STATE ")]
 
 
-def ble_writes(card, start):
-    return [line.split()[2] for _, line in card.since(start) if line.startswith("BLE state ")]
+def rows_writes(card, start):
+    return [line for _, line in card.since(start) if line.startswith("BLE rows ")]
 
 
 W, H = 240, 320
@@ -312,6 +377,7 @@ def bridge(card, run_dir):
     instance = Bridge(run_dir)
     yield instance
     instance.quit()
+    instance.forget()
 
 
 def write_settings(path: Path, extra=None):

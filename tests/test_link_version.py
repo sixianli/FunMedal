@@ -2,13 +2,13 @@ import time
 
 import pytest
 
-from bridge_harness import (W, Bridge, artifacts, ble_writes, bridge, card, card_lines, info_fields, ink,  # noqa: F401
+from bridge_harness import (W, Bridge, artifacts, bridge, card, card_lines, info_fields, ink, rows_writes,  # noqa: F401
                             run_dir, snapshot, wait_until, write_summary)
 from cardlink import rgb888_to_565_rgb
 
 ARTIFACTS_PREFIX = "ob13"
 ARTIFACTS_SUBDIR = "link-version"
-LINK_VERSION = 2
+LINK_VERSION = 3
 MISMATCH_BACKGROUND = rgb888_to_565_rgb(0x9D0208)
 TITLE_ROWS = (60, 92)
 VERSION_ROWS = (120, 140)
@@ -32,18 +32,18 @@ def version_entries(bridge):
 
 
 @pytest.mark.parametrize("case", ["[OB-13] with the same link version the bridge reads the card's version, writes its "
-                                  "own and then shows the state as before"])
+                                  "own and then writes the session table"])
 def test_same_version_connects(case, card, bridge, run_dir):
     assert card.request("state error") == "OK state error"
     start = card.mark()
     status = bridge.start()
     card.wait_for(lambda line: line == "STATE idle", 10.0, start)
-    summary = {"status": status, "link": link_lines(card, start), "writes": ble_writes(card, start),
+    summary = {"status": status, "link": link_lines(card, start), "writes": rows_writes(card, start),
                "info": info_fields(card.request("info")), "versions": version_entries(bridge)}
     write_summary(run_dir, summary)
     assert status["card_version"] == LINK_VERSION and status["bridge_version"] == LINK_VERSION, summary
     assert summary["link"] == [f"LINK peer={LINK_VERSION} own={LINK_VERSION} match=1"], summary
-    assert summary["writes"] == ["idle"], summary
+    assert summary["writes"] == ["BLE rows total=0 shown=0 fresh=0"], summary
     assert summary["info"]["link"] == "match", summary
     assert [(e["card"], e["bridge"], e["match"]) for e in summary["versions"]] == [(LINK_VERSION, LINK_VERSION, True)]
 
@@ -66,7 +66,7 @@ def test_version_mismatch(case, way, card, run_dir):
         time.sleep(QUIET_S)
         shot = snapshot(card, run_dir, f"mismatch-{way}")
         summary = {"first": first, "after_quiet": odd.status(), "link": link_lines(card, start),
-                   "writes": ble_writes(card, start), "info": info_fields(card.request("info")),
+                   "writes": rows_writes(card, start), "info": info_fields(card.request("info")),
                    "versions": version_entries(odd), "png": shot["png"],
                    "background": shot["pixels"][5 * W + 5] == MISMATCH_BACKGROUND,
                    "ink": {name: ink(shot["pixels"], rows, MISMATCH_BACKGROUND)
@@ -78,7 +78,7 @@ def test_version_mismatch(case, way, card, run_dir):
     try:
         back = card.mark()
         summary["recovered"] = recovered.start()
-        card.wait_for(lambda line: line.startswith("BLE state "), 10.0, back)
+        card.wait_for(lambda line: line.startswith("BLE rows "), 10.0, back)
         summary["recovered_link"] = link_lines(card, back)
         summary["recovered_info"] = info_fields(card.request("info"))
     finally:
