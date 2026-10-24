@@ -17,6 +17,7 @@ ARTIFACTS_PREFIX = "fm16"
 ARTIFACTS_SUBDIR = "release"
 EMAIL = re.compile(rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 ALLOWED_EMAIL = re.compile(rb"^(noreply@anthropic\.com|[A-Za-z0-9._%+-]+@users\.noreply\.github\.com)$")
+UPSTREAM_LICENSE = re.compile(r"^third_party/[^/]+/(LICENSE[^/]*|LICENSES/.+)$")
 USER_NAME = re.escape(Path.home().name.encode())
 FINDINGS = {
     "user_name": re.compile(rb"(?<![A-Za-z0-9])" + USER_NAME + rb"(?![A-Za-z0-9])", re.IGNORECASE),
@@ -125,17 +126,17 @@ def private_findings(root, backup_dir):
     digests = backup_blocks(backup_dir)
     found = defaultdict(set)
 
-    def look(place, value):
+    def look(place, value, emails=True):
         for kind, pattern in patterns.items():
             if pattern.search(value):
                 found[kind].add(place)
-        if any(not ALLOWED_EMAIL.match(m.group(0)) for m in EMAIL.finditer(value)):
+        if emails and any(not ALLOWED_EMAIL.match(m.group(0)) for m in EMAIL.finditer(value)):
             found["email"].add(place)
 
     for path, where, content in chain(history_files(root), index_files(root), working_files(root)):
         place = f"{where}: {path}"
         look(place, path.encode())
-        look(place, content)
+        look(place, content, emails=not UPSTREAM_LICENSE.match(path))
         if path.startswith(BACKUP_DIR):
             found["firmware_backup"].add(place)
         if path.endswith(".bin") and len(content) >= FLASH_IMAGE_BYTES:
@@ -171,6 +172,12 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
     (repo / log_name).write_text("ok\n")
     with_identity = commit("add a log")
     (repo / "dash.txt").write_text("-".join(["AA", "BB", "CC", "DD", "EE", "03"]) + "\n")
+    author_address = "@".join(["font.author", "example.org"]) + "\n"
+    (repo / "third_party" / "font" / "LICENSES" / "part").mkdir(parents=True)
+    (repo / "third_party" / "font" / "LICENSE").write_text(author_address)
+    (repo / "third_party" / "font" / "LICENSES" / "part" / "OFL.txt").write_text(author_address)
+    (repo / "third_party" / "font" / "README.md").write_text(author_address)
+    (repo / "contact.txt").write_text(author_address)
     (repo / "case.txt").write_text(f"/Users/{Path.home().name.upper()}/work\n")
     with_variants = commit("more notes")
     git("-c", f"user.name={Path.home().name}", "-c", "user.email=1+someone@users.noreply.github.com",
@@ -188,6 +195,8 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
         ("hardware_address", f"commit {with_address}: message"),
         ("card_identity", f"commit {with_identity}: {log_name}"),
         ("hardware_address", f"commit {with_variants}: dash.txt"),
+        ("email", f"commit {with_variants}: contact.txt"),
+        ("email", f"commit {with_variants}: third_party/font/README.md"),
         ("user_name", f"commit {with_variants}: case.txt"),
         ("user_name", "tag v0: tagger"),
         ("user_name", "working tree: link"),
@@ -196,7 +205,7 @@ def test_privacy_check_finds_planted_data(case, run_dir, tmp_path):
         ("backup_content", "working tree: part.bin"),
     }
     assert expected <= got, sorted(expected - got)
-    assert not any("clean.txt" in where for _, where in got), sorted(got)
+    assert not any("clean.txt" in where or "LICENSE" in where for _, where in got), sorted(got)
 
 
 @pytest.mark.parametrize("case", ["[FM-16] nothing private is in the files or the history that would be published"])
