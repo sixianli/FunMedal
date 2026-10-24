@@ -6,7 +6,8 @@
     "G2": "once",
     "G3": "once",
     "G4": "once",
-    "G5": "once"
+    "G5": "once",
+    "G6": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
