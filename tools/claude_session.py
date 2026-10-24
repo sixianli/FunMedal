@@ -153,14 +153,12 @@ class ClaudeSession:
         return self.exit_status is None
 
     def exit(self, timeout: float = 15.0) -> None:
-        for _ in range(2):
-            if not self.alive():
-                break
-            self.send("\x03", "ctrl-c")
-            time.sleep(0.7)
         deadline = time.time() + timeout
         while self.alive() and time.time() < deadline:
-            time.sleep(0.1)
+            self.send("\x03", "ctrl-c")
+            pressed = time.time()
+            while self.alive() and time.time() < min(pressed + 0.7, deadline):
+                time.sleep(0.1)
 
     def close(self) -> None:
         if self.proc is None:
