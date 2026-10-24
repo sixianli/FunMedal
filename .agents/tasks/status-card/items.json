@@ -1,0 +1,444 @@
+{
+  "task": "status-card",
+  "prefix": "SC",
+  "decisions": {
+    "G1": "durable",
+    "G2": "once"
+  },
+  "decision_docs": [
+    "docs/prd-v0.1.md",
+    "docs/adr/"
+  ],
+  "fingerprint": {
+    "exclude": [
+      "notes/"
+    ],
+    "test_exclude": [
+      "docs/"
+    ]
+  },
+  "items": [
+    {
+      "id": "SC-1",
+      "title": "PRD 是这个任务的需求来源，负责人的目标原话保持在 Goals 一节里，文档校验通过",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Goals",
+          "quotes": "G1"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "G1 是长期目标，正式记录在 PRD"
+      }
+    },
+    {
+      "id": "SC-2",
+      "title": "实现方案：先让三个免费模型各自盲想、再看方案挑错，写成正式计划文档，负责人认可",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "实现方案看过了，认可吗？"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "动手前先定方案；负责人 2026-10-17 定的规则是方案要经三个免费模型头脑风暴"
+      }
+    },
+    {
+      "id": "SC-3",
+      "title": "验收 1：三个项目各开一个会话，卡片 3 秒内显示三行，项目名和状态都对",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-3"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 1 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 1 条"
+      }
+    },
+    {
+      "id": "SC-4",
+      "title": "验收 2：同一项目第二个会话多出同名一行；关掉一个会话那行 3 秒内消失",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-4"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 2 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 2 条"
+      }
+    },
+    {
+      "id": "SC-5",
+      "title": "验收 3：会话进入“等你”3 秒内跳到最上、角色冒头说话、喇叭响；“出错”同样提醒，排在等你之后、在跑之前",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-5"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 3 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 3 条"
+      }
+    },
+    {
+      "id": "SC-6",
+      "title": "验收 4：7 个会话只显示 6 行，被挤掉的是在跑或答完了的（只靠自动测试，不演示）",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-6"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 4 条，负责人定为不演示"
+      }
+    },
+    {
+      "id": "SC-7",
+      "title": "验收 5：答完了的行显示答完多久，过一小时后数字跟着变",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-7"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 5 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 5 条"
+      }
+    },
+    {
+      "id": "SC-8",
+      "title": "验收 6：按卡片上的键在四套主题间轮换；断电重启还是上次那套；第一次开机是游戏任务板",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-8"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 6 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 6 条"
+      }
+    },
+    {
+      "id": "SC-9",
+      "title": "验收 7：只用电池 5 分钟熄屏；来“等你”时亮屏、角色冒头、有声音（演示时允许把 5 分钟改短）",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-9"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 7 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 7 条"
+      }
+    },
+    {
+      "id": "SC-10",
+      "title": "验收 8：关掉桥接程序显示“未连接”；桥接程序开着但没有会话显示“没有会话”",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-10"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 8 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 8 条"
+      }
+    },
+    {
+      "id": "SC-11",
+      "title": "验收 9：卡片上没有任何键能批准或拒绝 Claude 的请求",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-11"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 9 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 9 条"
+      }
+    },
+    {
+      "id": "SC-12",
+      "title": "验收 10：角色平时在屏幕上有动作，不是静止的图",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-12"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了 PRD 验收第 10 条，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 10 条"
+      }
+    },
+    {
+      "id": "SC-13",
+      "title": "验收 11：负责人日常用满一周，至少一次靠卡片提醒发现 Claude 在等人（那周没有多项目同时跑就顺延）",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "用满一周了吗？有没有一次是靠卡片发现 Claude 在等人？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 11 条"
+      }
+    },
+    {
+      "id": "SC-14",
+      "title": "验收 12：一周后两个问题都答“是”：一眼能看出哪个项目在等人；排序、6 行、主题、提醒的规则没有觉得不对的",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "一眼能看出哪个项目在等人吗？规则里有没有觉得不对的？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD 验收第 12 条"
+      }
+    },
+    {
+      "id": "SC-15",
+      "title": "角色图和两段声音做成可以换的素材包：负责人的素材在 private-assets/，仓库里只有默认素材",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "SC-15"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD Business Rules：素材包，女儿的素材不进公开仓库"
+      }
+    },
+    {
+      "id": "SC-16",
+      "title": "配套功能全部保留：安装卸载、doctor 自检、版本互报、配对加密和重试、预编译固件刷写、原厂固件备份恢复、只用桌面 App 也能装",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "OB-7"
+        },
+        {
+          "type": "test",
+          "tag": "OB-9"
+        },
+        {
+          "type": "test",
+          "tag": "OB-11"
+        },
+        {
+          "type": "test",
+          "tag": "OB-12"
+        },
+        {
+          "type": "test",
+          "tag": "OB-13"
+        },
+        {
+          "type": "test",
+          "tag": "OB-14"
+        },
+        {
+          "type": "test",
+          "tag": "OB-15"
+        },
+        {
+          "type": "test",
+          "tag": "OB-17"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "PRD Business Rules 最后一条；沿用 onboarding 任务的测试标签"
+      }
+    }
+  ]
+}
