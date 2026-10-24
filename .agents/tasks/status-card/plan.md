@@ -7,8 +7,8 @@
 
 ## 当前批次
 
-- SC-6 做法：实施计划 Task 2，桥接程序换成会话表加 ROWS 协议（链路版本 3），固件收 ROWS、删 STATE 和旧特征值。证据：`[SC-6]` 测试通过，再加 Claude 审查。
-- 同一批测试顺带给 SC-3、SC-4、SC-5、SC-7、SC-10 的 Mac 侧和卡片收表部分留证据；这几项还要新画面（Task 3）和当面演示才算完。SC-16 的 OB 标签测试照旧要全部通过。
+- SC-16 做法：实施计划 Task 3a，加 `firmware/partitions.csv`（`nvs` 24 KB 在 0x9000、`phy_init` 4 KB、`factory` 4 MB 在 0x10000），`sdkconfig.defaults` 指向它，重新生成预编译固件；存配对的区域地址不变，所以 `flash.sh` 写的三个地址不变。证据：`[OB-15]` 测试（含新加的分区表检查）全部通过，真机刷预编译后读到链路版本 3，再加 Claude 审查。
+- 同一次全套测试顺带重新验证 SC-6（Task 2 之后只改了 notes/）。
 
 ## 之后
 
@@ -34,6 +34,8 @@
 - 2026-10-24 21:01 Task 1 和实施计划不同的两处：`pet_art.c/h`、`tools/gen_pet.py` 不在 Task 1 删，留到新画面换掉旧画面（Task 3c、3d）后，因为现有画面和 `test_card_display.py` 还要用小人；`--wait-limit` 保留只给测试用，设计规格第 3 节同步改了。
 
 - 2026-10-24 22:03 当前批次换成 Task 2（SC-6，顺带 SC-3、SC-4、SC-5、SC-7、SC-10 的 Mac 侧）。和实施计划不同的几处：桥接程序每 5 秒核对一次进程号，不是 15 秒，测试要求 15 秒内消失；卡片 90 秒没收到 ROWS 时主动断开，计时从版本核对一样那一刻起算；hook 多传 `notification_type`，桥接程序只认 `permission_prompt`；空表在旧画面上显示空闲，“没有会话”画面留给 Task 3；新测试放进 `tests/test_rows.py`，不放 `tests/test_bridge.py`。
+
+- 2026-10-25 00:15 Task 2 收尾（合盖复测通过，见 notes/bridge.md 实测结果第 12 条），当前批次换成 Task 3a（SC-16）。和实施计划不同的一处：分区表只把程序区从 1500 KB 放大到 4 MB，NVS 和程序的起始地址都不变，`flash.sh` 和 `tools/update-prebuilt.sh` 不用改。
 
 ## 意外和发现
 
