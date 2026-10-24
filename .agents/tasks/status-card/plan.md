@@ -7,8 +7,8 @@
 
 ## 当前批次
 
-- SC-2 做法：按负责人 2026-10-17 定的规则，先让 OpenCode 里三个免费模型（DeepSeek V4.1 Flash、GLM-5.3-Flash、MiMo-V2.6-Flash，服务不通时用对应的 OpenCode Go 版本）在看不到现有代码方案的工作区里各自想一版“从 hooks 到卡片屏幕”的实现方案，第二轮再给它们看 Claude 的方案挑错；Claude 自己从现有桥接程序、固件和 PRD 出发写方案，按 Document Governance 存成 docs/execution/plans/ 下的计划文档，写明四套主题的画法、角色和声音素材包、6 行排序、熄屏唤醒、去掉批准和按住说话这两条路各动哪些文件。证据：负责人看过方案后在 goal.md 里的决定，Claude 审核方案文档。
-- 顺带：SC-1 的两项检查在每次改 docs/ 后重跑文档校验并记录。
+- SC-5 做法：先做实施计划 Task 0 的开工实测，它决定“等你”状态机和提醒声音怎么写：用只记日志的最小插件 `experiments/hook-probe/` 在终端和桌面 App 各跑一遍，回答设计规格 Verification 第 6 条列的七个问题；真机放 1 kHz 测试音；测整屏一帧耗时；Mac 合盖 2 分钟看蓝牙断不断。结果写进 notes/claude-code.md、notes/hardware.md、notes/firmware.md、notes/ble-link.md，再修订设计规格。证据：notes 里的实测记录；SC-5 的完成仍只看它自己的 done_when。
+- SC-16 做法：Task 0 之后做 Task 1，拆掉批准和按住说话但不动蓝牙功能表，跑 OB 标签测试证明配套功能都在。
 
 ## 之后
 
@@ -28,6 +28,8 @@
 ## 计划改动记录
 
 - 2026-10-24 16:52 建立任务。G1 是 PRD Goals 里负责人 2026-10-24 的目标原话，记为长期决定，由 SC-1 的 doc 检查守着；G2 是关掉 onboarding、另起本任务的一次性决定。条目 SC-3 到 SC-14 一一对应 PRD 验收边界的 12 条，SC-15、SC-16 对应 Business Rules 里的素材包和配套功能保留；SC-16 沿用 onboarding 的测试标签 OB-7、OB-9、OB-11 到 OB-15、OB-17。指纹排除 notes/，docs/ 只对测试检查排除。长任务 status-card，共 16 项：当前版本已验证 1 · 未完成 3 · 等你决定 12
+
+- 2026-10-24 18:59 SC-2 的用户检查关联到 G5（负责人认可实现方案）；G3、G4 是 SC-2 过程中的一次性决定。当前批次换成 Task 0 的实测（挂在 SC-5 下）和之后的 Task 1（SC-16）。
 
 ## 意外和发现
 

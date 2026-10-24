@@ -5,7 +5,8 @@
     "G1": "durable",
     "G2": "once",
     "G3": "once",
-    "G4": "once"
+    "G4": "once",
+    "G5": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -53,7 +54,7 @@
       "done_when": [
         {
           "type": "user",
-          "ref": null,
+          "ref": "G5",
           "question": "实现方案看过了，认可吗？"
         },
         {
