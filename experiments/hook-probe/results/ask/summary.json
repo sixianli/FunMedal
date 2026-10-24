@@ -1,0 +1,507 @@
+{
+  "scenario": "ask",
+  "claude_version": "2.1.308 (Claude Code)",
+  "completed": true,
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": "startup",
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "model",
+        "scratchpad_dir",
+        "session_id",
+        "source",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836194.514034,
+      "t_rel": 5.1
+    },
+    {
+      "event": "UserPromptSubmit",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "permission_mode",
+        "prompt",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836197.460501,
+      "t_rel": 8.04
+    },
+    {
+      "event": "PreToolUse",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "toolu_01Jr5KwFRo4yQ7HkwqSMqNW5",
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_use_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836199.9485672,
+      "t_rel": 10.53
+    },
+    {
+      "event": "PermissionRequest",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836200.017184,
+      "t_rel": 10.6
+    },
+    {
+      "event": "PermissionRequest",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "transcript_path"
+      ],
+      "phase": "end",
+      "t": 1792836200.033241,
+      "alive_s": 0.02,
+      "t_rel": 10.61
+    },
+    {
+      "event": "Notification",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": "permission_prompt",
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "message",
+        "notification_type",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836206.0416791,
+      "t_rel": 16.62
+    },
+    {
+      "event": "PostToolUse",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "toolu_01Jr5KwFRo4yQ7HkwqSMqNW5",
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "duration_ms",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_response",
+        "tool_use_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836210.261206,
+      "t_rel": 20.84
+    },
+    {
+      "event": "Stop",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "background_tasks",
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "last_assistant_message",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_crons",
+        "session_id",
+        "stop_hook_active",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836211.696059,
+      "t_rel": 22.28
+    },
+    {
+      "event": "SessionEnd",
+      "session_id": "a0631999-5dad-441f-b01a-e6f2103fbeb0",
+      "source": null,
+      "reason": "prompt_input_exit",
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-ask",
+      "parents": [
+        {
+          "pid": 52029,
+          "ppid": 52018,
+          "comm": "claude"
+        },
+        {
+          "pid": 52018,
+          "ppid": 52016,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52016,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "reason",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836212.570286,
+      "t_rel": 23.15
+    }
+  ],
+  "timeline": [
+    {
+      "t": 1792836189.4295611,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/ask/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.01
+    },
+    {
+      "t": 1792836191.8212092,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 2.4
+    },
+    {
+      "t": 1792836191.926155,
+      "event": "screen",
+      "needle": "❯Yes,Itrustthisfolder",
+      "t_rel": 2.51
+    },
+    {
+      "t": 1792836192.231006,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 2.81
+    },
+    {
+      "t": 1792836197.3151731,
+      "event": "sent",
+      "keys": "enter (prompt)",
+      "t_rel": 7.9
+    },
+    {
+      "t": 1792836200.16817,
+      "event": "ask tool started",
+      "t_rel": 10.75
+    },
+    {
+      "t": 1792836210.173492,
+      "event": "sent",
+      "keys": "enter (pick first option)",
+      "t_rel": 20.75
+    },
+    {
+      "t": 1792836211.177969,
+      "event": "sent",
+      "keys": "enter (submit answers)",
+      "t_rel": 21.76
+    },
+    {
+      "t": 1792836211.793325,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 22.37
+    },
+    {
+      "t": 1792836212.496589,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 23.08
+    }
+  ]
+}

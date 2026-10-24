@@ -1,0 +1,62 @@
+{
+  "argv": [
+    "claude",
+    "--setting-sources",
+    "project",
+    "--settings",
+    "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/kill-hup/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "exit_status": 129,
+  "timeline": [
+    {
+      "t": 1792836230.7995431,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/kill-hup/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.003
+    },
+    {
+      "t": 1792836232.261475,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 1.465
+    },
+    {
+      "t": 1792836232.366596,
+      "event": "screen",
+      "needle": "\u276fYes,Itrustthisfolder",
+      "t_rel": 1.57
+    },
+    {
+      "t": 1792836232.6668532,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 1.87
+    },
+    {
+      "t": 1792836236.2572942,
+      "event": "sent",
+      "keys": "enter (prompt)",
+      "t_rel": 5.461
+    },
+    {
+      "t": 1792836240.5855029,
+      "event": "signal sent",
+      "signal": 1,
+      "t_rel": 9.789
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "sandbox": {
+    "enabled": false
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/probe.py"
+          }
+        ]
+      }
+    ]
+  }
+}

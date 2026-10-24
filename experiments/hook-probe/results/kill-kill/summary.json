@@ -1,0 +1,196 @@
+{
+  "scenario": "kill-kill",
+  "claude_version": "2.1.308 (Claude Code)",
+  "completed": true,
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "session_id": "12a272a5-f9b3-47aa-9fa8-4c763ffa27c3",
+      "source": "startup",
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "parents": [
+        {
+          "pid": 52517,
+          "ppid": 52514,
+          "comm": "claude"
+        },
+        {
+          "pid": 52514,
+          "ppid": 52513,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52513,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "model",
+        "scratchpad_dir",
+        "session_id",
+        "source",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836251.557846,
+      "t_rel": 2.8
+    },
+    {
+      "event": "UserPromptSubmit",
+      "session_id": "12a272a5-f9b3-47aa-9fa8-4c763ffa27c3",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "parents": [
+        {
+          "pid": 52517,
+          "ppid": 52514,
+          "comm": "claude"
+        },
+        {
+          "pid": 52514,
+          "ppid": 52513,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52513,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "permission_mode",
+        "prompt",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836254.156014,
+      "t_rel": 5.4
+    },
+    {
+      "event": "Stop",
+      "session_id": "12a272a5-f9b3-47aa-9fa8-4c763ffa27c3",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-kill",
+      "parents": [
+        {
+          "pid": 52517,
+          "ppid": 52514,
+          "comm": "claude"
+        },
+        {
+          "pid": 52514,
+          "ppid": 52513,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52513,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "background_tasks",
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "last_assistant_message",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_crons",
+        "session_id",
+        "stop_hook_active",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836255.82382,
+      "t_rel": 7.07
+    }
+  ],
+  "timeline": [
+    {
+      "t": 1792836248.757866,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/kill-kill/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.0
+    },
+    {
+      "t": 1792836250.3618171,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 1.61
+    },
+    {
+      "t": 1792836250.465461,
+      "event": "screen",
+      "needle": "❯Yes,Itrustthisfolder",
+      "t_rel": 1.71
+    },
+    {
+      "t": 1792836250.7692108,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 2.01
+    },
+    {
+      "t": 1792836254.063537,
+      "event": "sent",
+      "keys": "enter (prompt)",
+      "t_rel": 5.31
+    },
+    {
+      "t": 1792836257.885539,
+      "event": "signal sent",
+      "signal": 9,
+      "t_rel": 9.13
+    }
+  ]
+}

@@ -132,6 +132,35 @@ python3 experiments/claude-channels/run_channel.py <场景> --workdir "$TMPDIR/c
 
 每个场景的结果目录里有 `summary.json`（时间线和服务器收发的全部消息）、`channel.jsonl`（服务器的原始记录）、`terminal.raw` 和 `terminal.txt`（终端录屏）、`settings.json` 和 `mcp.json`（这次用的设置）。终端录屏的启动画面上有模型名和账户的订阅类型，记录里的路径带本机用户名；没有邮箱、密钥或登录凭据。
 
+## 状态卡片开工实测（2026-10-24，终端版 2.1.308）
+
+这是状态卡片实施计划 Task 0 的终端部分。`experiments/hook-probe/probe.py` 是一个只记日志的 hook 脚本：10 种事件（`SessionStart`、`SessionEnd`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`Notification`、`Stop`、`StopFailure`）都指向它，它把事件名、`session_id`、`source`、`reason`、工具名、`notification_type`、`cwd`、环境变量 `CLAUDE_PROJECT_DIR` 和父进程链写成一行 JSON。`experiments/hook-probe/drive.py` 用伪终端（程序模拟出来的终端窗口）启动真的 `claude`，按场景打字或发信号，最后把这次收到的全部事件写进 `experiments/hook-probe/results/<场景>/summary.json`。
+
+| 要回答的问题 | 结果 | 场景 |
+| --- | --- | --- |
+| `AskUserQuestion`（Claude 给用户出选择题的工具）会不会触发 `PermissionRequest` | 会。`PreToolUse` 之后 0.07 秒触发 `PermissionRequest`，约 6 秒后再来一条 `Notification`（`permission_prompt`）；用户选完后有 `PostToolUse`，然后是 `Stop` | `ask` |
+| `/clear` 之后 `session_id` 变不变 | 变。旧 id 先收到 `SessionEnd`（`reason: clear`），0.1 秒内新 id 收到 `SessionStart`（`source: clear`） | `clear` |
+| Claude Code 被杀掉时有没有 `SessionEnd` | 发 SIGTERM 或 SIGHUP（普通的“请退出”信号，关终端窗口时就是 SIGHUP）：有，`reason: other`，约 2 秒内到。发 SIGKILL（系统直接结束进程，程序来不及做任何事）：没有，最后一条事件是之前的 `Stop` | `kill-term`、`kill-hup`、`kill-kill` |
+| 正常退出 | `SessionEnd`，`reason: prompt_input_exit` | 全部 |
+| hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值 | 有，等于启动 `claude` 的目录 | 全部 |
+| hook 的父进程是谁 | 就是 `claude` 进程本身，所以现有的 `claude_pid`（hook 父进程号）在终端里指的是对的进程 | 全部 |
+| 权限弹窗等满 600 秒会怎样 | hook 设的超时是 600 秒、脚本故意等 900 秒。第 600 秒 Claude Code 发信号结束了 hook 进程，但终端里的权限弹窗没有消失；又过 15 秒在终端选“是”，命令照常执行，随后收到这个工具的 `PostToolUse`。所以 hook 超时不等于用户答了，“等你”要一直留到 `PostToolUse`、`Stop` 或下一句话 | `timeout` |
+
+对状态卡片设计的影响：
+
+- 选择题和权限请求走同一条 `PermissionRequest`，“等你”不需要另开一条路。
+- `/clear` 自己就发 `SessionEnd`，按 `SessionEnd` 删旧行即可，设计规格里“同一 pid 换了 `session_id` 就删旧行”的规则不需要。
+- 只有 SIGKILL 不发 `SessionEnd`，这种情况靠桥接程序每 15 秒检查一次 pid 兜底。
+- `PermissionRequest` 的 hook 进程被超时结束时，不能把“等你”去掉，设计规格里“超时标记保留记录”的做法和实测一致。
+
+重跑（每个场景约 30 秒，`timeout` 约 11 分钟）：
+
+```bash
+python3 experiments/hook-probe/drive.py <ask|clear|kill-term|kill-hup|kill-kill|timeout> --workdir "$TMPDIR/fm-probe" --out experiments/hook-probe/results/<场景>
+```
+
+`results/<场景>/` 里还有 `hooks.jsonl`（原始日志）、`terminal.raw`（终端录屏）和 `settings.json`（这次用的 hooks 设置）。日志里的路径带本机用户名；终端录屏的启动画面上有模型名和账户的订阅类型；没有邮箱、密钥或登录凭据。
+
 ## 还要实测的
 
 1. 桌面 App 里批准弹窗和 `PermissionRequest` hook 同时出现时的表现。桌面 App 不是终端界面，要用户在 App 里操作才能测。

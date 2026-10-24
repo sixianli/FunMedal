@@ -1,0 +1,80 @@
+{
+  "argv": [
+    "claude",
+    "--setting-sources",
+    "project",
+    "--settings",
+    "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/clear/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "exit_status": 0,
+  "timeline": [
+    {
+      "t": 1792836155.180491,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/clear/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.034
+    },
+    {
+      "t": 1792836158.644147,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 3.497
+    },
+    {
+      "t": 1792836158.7475681,
+      "event": "screen",
+      "needle": "\u276fYes,Itrustthisfolder",
+      "t_rel": 3.601
+    },
+    {
+      "t": 1792836159.052576,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 3.906
+    },
+    {
+      "t": 1792836162.8424819,
+      "event": "sent",
+      "keys": "enter (first prompt)",
+      "t_rel": 7.696
+    },
+    {
+      "t": 1792836167.644781,
+      "event": "sent",
+      "keys": "enter (/clear)",
+      "t_rel": 12.498
+    },
+    {
+      "t": 1792836173.1499,
+      "event": "sent",
+      "keys": "enter (second prompt)",
+      "t_rel": 18.003
+    },
+    {
+      "t": 1792836174.985895,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 19.839
+    },
+    {
+      "t": 1792836175.691175,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 20.544
+    }
+  ]
+}

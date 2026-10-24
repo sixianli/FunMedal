@@ -1,0 +1,241 @@
+{
+  "scenario": "kill-hup",
+  "claude_version": "2.1.308 (Claude Code)",
+  "completed": true,
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "session_id": "83d1f2cd-ccf4-4ce4-9e99-d2c0bc5a633e",
+      "source": "startup",
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "parents": [
+        {
+          "pid": 52371,
+          "ppid": 52368,
+          "comm": "claude"
+        },
+        {
+          "pid": 52368,
+          "ppid": 52367,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52367,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "model",
+        "scratchpad_dir",
+        "session_id",
+        "source",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836233.721858,
+      "t_rel": 2.93
+    },
+    {
+      "event": "UserPromptSubmit",
+      "session_id": "83d1f2cd-ccf4-4ce4-9e99-d2c0bc5a633e",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "parents": [
+        {
+          "pid": 52371,
+          "ppid": 52368,
+          "comm": "claude"
+        },
+        {
+          "pid": 52368,
+          "ppid": 52367,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52367,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "permission_mode",
+        "prompt",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836236.567519,
+      "t_rel": 5.77
+    },
+    {
+      "event": "Stop",
+      "session_id": "83d1f2cd-ccf4-4ce4-9e99-d2c0bc5a633e",
+      "source": null,
+      "reason": null,
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "parents": [
+        {
+          "pid": 52371,
+          "ppid": 52368,
+          "comm": "claude"
+        },
+        {
+          "pid": 52368,
+          "ppid": 52367,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52367,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "background_tasks",
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "last_assistant_message",
+        "permission_mode",
+        "prompt_id",
+        "scratchpad_dir",
+        "session_crons",
+        "session_id",
+        "stop_hook_active",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836238.4719172,
+      "t_rel": 7.68
+    },
+    {
+      "event": "SessionEnd",
+      "session_id": "83d1f2cd-ccf4-4ce4-9e99-d2c0bc5a633e",
+      "source": null,
+      "reason": "other",
+      "tool_name": null,
+      "tool_use_id": null,
+      "notification_type": null,
+      "cwd": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "project_dir": "/private/tmp/claude-501/-Users-user-DoNotDeleteThis-documents-sxl-code-work-space-FunMedal/8add22e5-c5e0-42db-a9a7-9feecaa84a92/scratchpad/probe/fm-probe-kill-hup",
+      "parents": [
+        {
+          "pid": 52371,
+          "ppid": 52368,
+          "comm": "claude"
+        },
+        {
+          "pid": 52368,
+          "ppid": 52367,
+          "comm": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+        },
+        {
+          "pid": 52367,
+          "ppid": 52014,
+          "comm": "timeout"
+        },
+        {
+          "pid": 52014,
+          "ppid": 7348,
+          "comm": "/bin/zsh"
+        }
+      ],
+      "keys": [
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "reason",
+        "scratchpad_dir",
+        "session_id",
+        "transcript_path"
+      ],
+      "phase": "start",
+      "t": 1792836240.651895,
+      "t_rel": 9.86
+    }
+  ],
+  "timeline": [
+    {
+      "t": 1792836230.7995431,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/kill-hup/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.0
+    },
+    {
+      "t": 1792836232.261475,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 1.46
+    },
+    {
+      "t": 1792836232.366596,
+      "event": "screen",
+      "needle": "❯Yes,Itrustthisfolder",
+      "t_rel": 1.57
+    },
+    {
+      "t": 1792836232.6668532,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 1.87
+    },
+    {
+      "t": 1792836236.2572942,
+      "event": "sent",
+      "keys": "enter (prompt)",
+      "t_rel": 5.46
+    },
+    {
+      "t": 1792836240.5855029,
+      "event": "signal sent",
+      "signal": 1,
+      "t_rel": 9.79
+    }
+  ]
+}

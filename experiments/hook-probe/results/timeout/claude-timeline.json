@@ -1,0 +1,108 @@
+{
+  "argv": [
+    "claude",
+    "--setting-sources",
+    "project",
+    "--settings",
+    "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/timeout/settings.json",
+    "--model",
+    "haiku",
+    "--permission-mode",
+    "default"
+  ],
+  "exit_status": 143,
+  "timeline": [
+    {
+      "t": 1792836189.493827,
+      "event": "started",
+      "argv": [
+        "claude",
+        "--setting-sources",
+        "project",
+        "--settings",
+        "/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/results/timeout/settings.json",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "default"
+      ],
+      "t_rel": 0.017
+    },
+    {
+      "t": 1792836191.823043,
+      "event": "sent",
+      "keys": "down (trust folder)",
+      "t_rel": 2.346
+    },
+    {
+      "t": 1792836191.9260428,
+      "event": "screen",
+      "needle": "\u276fYes,Itrustthisfolder",
+      "t_rel": 2.449
+    },
+    {
+      "t": 1792836192.230145,
+      "event": "sent",
+      "keys": "enter (trust folder)",
+      "t_rel": 2.753
+    },
+    {
+      "t": 1792836197.0376902,
+      "event": "sent",
+      "keys": "enter (prompt)",
+      "t_rel": 7.561
+    },
+    {
+      "t": 1792836199.7208161,
+      "event": "permission hook started",
+      "t_rel": 10.244
+    },
+    {
+      "t": 1792836799.73697,
+      "event": "permission hook ended",
+      "t_rel": 610.26
+    },
+    {
+      "t": 1792836814.742531,
+      "event": "marker before answering",
+      "exists": false,
+      "t_rel": 625.266
+    },
+    {
+      "t": 1792836814.742812,
+      "event": "sent",
+      "keys": "1 (yes in terminal)",
+      "t_rel": 625.266
+    },
+    {
+      "t": 1792836815.046774,
+      "event": "sent",
+      "keys": "enter (confirm)",
+      "t_rel": 625.57
+    },
+    {
+      "t": 1792836815.455505,
+      "event": "marker after answering",
+      "exists": true,
+      "t_rel": 625.979
+    },
+    {
+      "t": 1792836815.4601998,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 625.983
+    },
+    {
+      "t": 1792836816.16173,
+      "event": "sent",
+      "keys": "ctrl-c",
+      "t_rel": 626.685
+    },
+    {
+      "t": 1792836834.933669,
+      "event": "signal",
+      "signal": 15,
+      "t_rel": 645.457
+    }
+  ]
+}

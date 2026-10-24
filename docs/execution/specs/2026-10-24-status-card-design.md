@@ -66,7 +66,7 @@ Claude Code 会话 ──hooks(stdin JSON)──▶ funmedal-bridge hook ──U
 
 | 收到的 hook 事件 | 会话状态变成 | 说明 |
 | --- | --- | --- |
-| `SessionStart` | 不建可见行，只记 `session_id`、`project`、`pid` | `source: compact`、`clear`、`resume` 都会触发，不能当新会话。同一 `pid` 已经有另一个 `session_id` 的行（`/clear` 换了 id）就删掉旧行 |
+| `SessionStart` | 不建可见行，只记 `session_id`、`project`、`pid` | `source: compact`、`clear`、`resume` 都会触发，不能当新会话。`/clear` 会换 `session_id`，但它先给旧 id 发 `SessionEnd`（`reason: clear`），旧行由 `SessionEnd` 删掉（T0 终端实测，`notes/claude-code.md`“状态卡片开工实测”） |
 | `UserPromptSubmit` | 在跑；第一次收到时才建可见行 | 清掉该会话所有“等你”记录 |
 | `PreToolUse`（任何工具） | 在跑 | 若工具是 `AskUserQuestion` 或 `ExitPlanMode`，同时记一条“等你”，键是 `tool_use_id` |
 | `PermissionRequest` | 等你 | 记一条“等你”，键是 `tool_name` 加 `tool_input` 的哈希（现有 `toolKey`） |
@@ -81,19 +81,19 @@ Claude Code 会话 ──hooks(stdin JSON)──▶ funmedal-bridge hook ──U
 **“等你”怎么结束。** 权限请求在终端里被允许或拒绝时没有任何 hook 事件（`notes/bridge.md:81`，2026-10-16 实测）。现有做法是让 `PermissionRequest` 的 hook 进程一直等着，桥接程序看着这条连接（`mac/bridge/Sources/Bridge.swift:241-251` 的 `ended`）。实测过的行为（`notes/approval.md:45,51,53`）：终端里**拒绝**，Claude Code 约 0.1 秒内结束 hook 进程，连接断开；终端里**允许**，hook 进程不会被结束、也没有事件，直到工具跑完发 `PostToolUse`；hook 进程自己在 590 秒时退出，`hooks.json` 这一项的超时是 600 秒。所以“等你”的结束信号分三路：
 
 1. 连接断开且 hook 存活不到 590 秒 → 终端拒绝了 → 删这条记录。
-2. hook 存活到 590 秒 → hook 退出前先发一个“超时”标记 → 桥接程序**保留**这条记录，因为权限弹窗还在等；之后只能靠第 3 路或 `UserPromptSubmit`、`Stop`、`StopFailure`、`SessionEnd` 清掉。
+2. hook 存活到 590 秒 → hook 退出前先发一个“超时”标记 → 桥接程序**保留**这条记录，因为权限弹窗还在等（T0 终端实测：hook 进程在第 600 秒被结束后，弹窗仍在，15 秒后在终端允许，命令照常执行并发来 `PostToolUse`）；之后只能靠第 3 路或 `UserPromptSubmit`、`Stop`、`StopFailure`、`SessionEnd` 清掉。
 3. 同一个 `tool_use_id`（`PreToolUse` 记的）或同一个 `toolKey`（`PermissionRequest` 记的）来了 `PostToolUse` / `PostToolUseFailure` → 终端允许了、工具跑完了 → 删记录，桥接程序随即主动关掉那条 hook 连接。`PermissionRequest` 的输入里没有 `tool_use_id`，所以 hook 进程要对 `PostToolUse`、`PostToolUseFailure` 也算一遍 `tool_key`（它们带同样的 `tool_name` 和 `tool_input`，hooks 参考页 PostToolUse input 一节），现在 `Hook.swift` 只对 `PermissionRequest` 算。
 
 hook 进程连上、报一声“等你”、然后只等不答，**永远不回答决定**：去掉 `Hook.swift:85-98` 的两个 `answer` 和卡片按键那一路。选择题和计划确认走 `PreToolUse` → `PostToolUse`。
 
 - **沙箱命令的网络请求**：官方 hooks 参考页写明，沙箱里的命令要访问网络时弹出的权限请求不运行 `PermissionRequest` hook。这类弹窗只能靠 `Notification` 事件的 `permission_prompt` 类型捕获，它在弹窗出现约 6 秒后才发。所以 `Notification` 作为兜底：收到就记 `notification` 这条“等你”，被 `PostToolUse`、`UserPromptSubmit`、`Stop` 清掉。不把 `Notification` 当主信号的原因就是那 6 秒。`idle_prompt` 类型要等 60 秒且后台有代理时不发，不用。
 - **已知限制**：终端允许了一条要跑很久的命令，卡片会一直显示“等你”直到命令跑完（没有事件能区分“允许了在跑”和“还在等”）；用户按 Esc 打断生成时 `Stop` 不触发（hooks 参考页 Stop 一节原文），会话停在“在跑”直到下一句话。两条 PRD 都没要求处理，记为已知限制。
-- 最可能怎么坏：`AskUserQuestion` 弹出时会不会也触发 `PermissionRequest`，官方文档没写；`ExitPlanMode` 有官方示例说会（hooks 指南“Auto-approve specific permission prompts”）。两条路都记“等你”、键不同，所以重复触发只会多一条记录，各自的结束信号去掉各自的，不会漏报。桌面 App 里 `PermissionRequest` 是否触发、hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、600 秒后权限弹窗还在不在，都在开工前用一个只记日志的最小插件实测（计划里的 T0）。
+- 最可能怎么坏：`AskUserQuestion` 弹出时也会触发 `PermissionRequest`（T0 终端实测：`PreToolUse` 后 0.07 秒触发，约 6 秒后还有一条 `Notification`）；`ExitPlanMode` 有官方示例说会（hooks 指南“Auto-approve specific permission prompts”）。两条路都记“等你”、键不同，所以重复触发只会多一条记录，各自的结束信号去掉各自的，不会漏报。桌面 App 里是否也这样还没测，`PreToolUse` 这条路先留着。桌面 App 里 `PermissionRequest` 是否触发、hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、600 秒后权限弹窗还在不在，都在开工前用一个只记日志的最小插件实测（计划里的 T0）。
 - 依据：事件和字段来自 hooks 参考页 `https://code.claude.com/docs/en/hooks` 的 Hook lifecycle、PermissionRequest、PreToolUse、Notification、Stop、StopFailure、SessionEnd 各节和“沙箱网络请求不运行 PermissionRequest hook”一句；`PermissionRequest` 的输入里没有 `tool_use_id`，所以它只能用 `toolKey` 配对。
 
 **项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），取最后一级目录名作为 `project` 字段发给桥接程序；没有这个变量时用 `SessionStart` 事件里的 `cwd` 的最后一级。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。为什么不用每个事件的 `cwd`：它跟着 Claude 的 `cd` 走，同一会话会在卡片上换名字。**工作副本**（git worktree，桌面 App 给每个会话单开的一份代码副本）：hooks 参考页说会话中途进工作副本时 `CLAUDE_PROJECT_DIR` 不变；但桌面 App 一开始就在工作副本里启动的会话，这个变量指向哪里文档另有一页，T0 实测。规则定为“项目名 = 主仓库的目录名”：目录里的 `.git` 是文件而不是目录时，读它的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名；不用跑 `git` 子进程。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
 
-**幽灵会话。** Claude Code 被强杀时有没有 `SessionEnd`，文档没写（T0 实测）。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）；桌面 App 里它是哪个进程、关掉会话后它会不会退出，T0 一起实测，否则 pid 检查会盯错对象。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
+**幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）；桌面 App 里它是哪个进程、关掉会话后它会不会退出，T0 一起实测，否则 pid 检查会盯错对象。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
 
 **hooks.json 的改动**：删掉 `modules: ["./voice.js"]` 和 `voice.js`；事件为 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`Notification`（matcher `permission_prompt`）、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 十个，`PreToolUse` 不加 matcher（所有工具都要当“在跑”的心跳）。`plugin/plugin.json` 的 description 改成状态卡片的说明，`tests/test_plugin.py` 对应断言跟着改。
 
@@ -219,7 +219,7 @@ Mac 和插件：见第 2、3 节。
 | 桥接程序没在跑、Mac 睡眠、蓝牙关了 | 整屏“未连接” | 固件在 BLE 断开事件或 90 秒没写入时切换；Mac 回来后重连，收到 ROWS 即恢复 |
 | Mac 和卡片固件版本不配 | 整屏“版本不配”（现有画面） | 升级两边之一 |
 | Claude Code 被强杀，没有 `SessionEnd` | 该行最多 15 秒后消失 | 桥接程序的 pid 检查 |
-| `/clear` 换了 `session_id` | 旧行立刻消失、新行在下一句话出现 | 同 pid 不同 id 删旧行 |
+| `/clear` 换了 `session_id` | 旧行立刻消失、新行在下一句话出现 | 旧 id 收到的 `SessionEnd`（`reason: clear`） |
 | 权限弹窗等了超过 590 秒 | 该行一直“等你” | hook 超时标记让记录保留；终端答掉后由 `PostToolUse` 或下一句话清掉 |
 | 终端允许了一条很长的命令 | 该行“等你”直到命令结束 | 已知限制 |
 | 用户按 Esc 打断生成 | 该行停在“在跑” | 已知限制，下一句话或会话关掉时恢复 |
@@ -233,7 +233,7 @@ Mac 和插件：见第 2、3 节。
 未来的实施计划必须包含这些检查：
 
 1. **Mac 上渲染 PNG 的宿主渲染器**：`tests/host/` 现在已经能用 `cc` 在 Mac 上编译固件的 C 代码（`tests/test_firmware_host.py:9-15`）。加一个 `render_png.c`，输入一份会话表、主题号和虚拟时刻，用固件同一套 `scene_render_rows` 输出 PNG。它同时服务三件事：给负责人看版面（代替 HTML 效果图）、自动测试第 4 条（7 个会话只画 6 格，被挤掉的是在跑或答完了的，SC-6）和第 10 条（连续两帧角色区像素不同，SC-12）、四套主题各渲染一张作为回归基线。
-2. **桥接程序的 pytest**（`tests/bridge_harness.py` 用假 hooks 喂真桥接程序）：会话表状态机（含 590 秒超时保留、`PostToolUse` 清除、`Notification` 兜底、同 pid 换 id）、排序、6 行截断和总数、ROWS 编码的字节级断言、“新进入”位只置一次（含两个同名会话先后进入等你）、只在表变化时重发、30 秒心跳、pid 检查删会话、重启后读回会话表、20 条权限请求连发不丢（SC-3、SC-4、SC-5、SC-6、SC-7、SC-10 的 Mac 侧）。
+2. **桥接程序的 pytest**（`tests/bridge_harness.py` 用假 hooks 喂真桥接程序）：会话表状态机（含 590 秒超时保留、`PostToolUse` 清除、`Notification` 兜底、`/clear` 的 `SessionEnd` 删旧行）、排序、6 行截断和总数、ROWS 编码的字节级断言、“新进入”位只置一次（含两个同名会话先后进入等你）、只在表变化时重发、30 秒心跳、pid 检查删会话、重启后读回会话表、20 条权限请求连发不丢（SC-3、SC-4、SC-5、SC-6、SC-7、SC-10 的 Mac 侧）。
 3. **固件宿主测试**（`tests/host/`）：ROWS 解析、分钟数本地累加和 59→60 分钟的档位边界、心跳 90 秒超时、角色时间线各段起止（虚拟时钟）、ADPCM 解码对拍、两套全字库覆盖 GB2312 一级表、按键到蓝牙 allow/deny 路径不存在。
 4. **真机串口测试**（现有 `tools/cardwatch.py` 读串口）：`rows`、`theme`、`idle`、`alert`、`power`、`snap` 命令；测空表“没有会话”、7 行只画 6 行、断开重连不闪旧表、主题切换和断电保持（SC-8）、熄屏唤醒（SC-9）、提醒触发和声音（SC-5）。
 5. **真实 Claude Code 会话测试**（`tools/claude_session.py`）：开三个项目各一个会话看三行（SC-3）；同项目第二个会话、关掉一个（SC-4）；进入权限请求 3 秒内变“等你”并在终端答掉后恢复（SC-5）；按卡片所有键，终端里的权限弹窗仍然等着（SC-11）。
@@ -248,7 +248,7 @@ Mac 和插件：见第 2、3 节。
 
 ### DeepSeek V4.1 Flash
 
-- 采纳：`SessionStart` 不建可见行、第一句话才建（它第一轮和第二轮都提）；等你记录的三路结束信号（它指出 600 秒超时会擦掉等你，是本轮最严重的问题）；每行带 Mac 分配的行号；Mac 发已过分钟、卡片本地累加、不再定时重发；心跳和 90 秒超时（它指出 Mac 睡眠时蓝牙未必断）；同 pid 换 `session_id` 删旧行；字库和素材改成二进制嵌入（它算出 C 数组源码约 6 MB）；`display_backlight` 行号、格子 258 > 252、底条 44 px 放不下角色、拍桌子 3 下、`voice_codec` 删除和保留矛盾、`prompt.c` 引用、`test_no_channel` 的 usage 断言、Noto 字体文件不在 git、站酷快乐体要记来源、每套主题画法要照 PRD 写表、虚拟时钟测时间线、熄屏时收到答完了不亮屏、只接充电器算什么要问负责人、Task 1 删旧特征值会让 OB 测试变红、Task 3 拆四步、Task 2 真机标准加空表和 7 行、T0 补四项实测。
+- 采纳：`SessionStart` 不建可见行、第一句话才建（它第一轮和第二轮都提）；等你记录的三路结束信号（它指出 600 秒超时会擦掉等你，是本轮最严重的问题）；每行带 Mac 分配的行号；Mac 发已过分钟、卡片本地累加、不再定时重发；心跳和 90 秒超时（它指出 Mac 睡眠时蓝牙未必断）；同 pid 换 `session_id` 删旧行（T0 实测 `/clear` 自己发 `SessionEnd`，这条随后取消）；字库和素材改成二进制嵌入（它算出 C 数组源码约 6 MB）；`display_backlight` 行号、格子 258 > 252、底条 44 px 放不下角色、拍桌子 3 下、`voice_codec` 删除和保留矛盾、`prompt.c` 引用、`test_no_channel` 的 usage 断言、Noto 字体文件不在 git、站酷快乐体要记来源、每套主题画法要照 PRD 写表、虚拟时钟测时间线、熄屏时收到答完了不亮屏、只接充电器算什么要问负责人、Task 1 删旧特征值会让 OB 测试变红、Task 3 拆四步、Task 2 真机标准加空表和 7 行、T0 补四项实测。
 - 否定：“十张图可能没抠白底”（本机 `sips` 核对两张都有透明通道，但它建议的“脚本检查透明通道”留下了）；素材独立分区（第一版一次刷完更简单，代价记在第 8 节和 Backlog）。
 - 它第一轮方案里和本文不同、本文没采纳的：`PermissionRequest` hook 立即退出靠 `Notification` 判定（6 秒延迟，且允许路径没信号）。
 
