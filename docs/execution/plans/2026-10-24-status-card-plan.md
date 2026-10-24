@@ -31,11 +31,12 @@ date: "2026-10-24"
 
 ### Task 0: 开工前的实测（T0、T1、性能）
 
-- [ ] 写最小插件 `experiments/hook-probe/`，只把 hooks 事件和环境变量记到文件；在终端和桌面 App（含一个工作副本会话）各跑一遍，回答：`AskUserQuestion` 是否触发 `PermissionRequest`；桌面 App 里 `PermissionRequest` 是否触发；强杀 Claude Code 有没有 `SessionEnd`；`/clear` 后 `session_id` 变不变；hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、工作副本会话里指向哪；`claude_pid` 在桌面 App 里是哪个进程、关会话后退不退出；权限弹窗等满 600 秒后还在不在。结果写进 `notes/claude-code.md`。
+- [x] 写最小插件 `experiments/hook-probe/`，只把 hooks 事件和环境变量记到文件；在终端和桌面 App（含一个工作副本会话）各跑一遍，回答：`AskUserQuestion` 是否触发 `PermissionRequest`；桌面 App 里 `PermissionRequest` 是否触发；强杀 Claude Code 有没有 `SessionEnd`；`/clear` 后 `session_id` 变不变；hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、工作副本会话里指向哪；`claude_pid` 在桌面 App 里是哪个进程、关会话后退不退出；权限弹窗等满 600 秒后还在不在。结果写进 `notes/claude-code.md`。
 - [x] Mac 合盖 2 分钟，看卡片串口有没有蓝牙断开事件，写进 `notes/ble-link.md`。
 - [x] 真机放一声 1 kHz 测试音（I2S TX 走 GPIO2，ES8311 DAC），结果写进 `notes/hardware.md`。放不出来就先查原厂固件对 ES8311 和功放的写法，再决定声音这一块的做法。
 - [x] 真机测整屏一帧多少毫秒，写进 `notes/firmware.md`。
-- [ ] 按结果修订设计规格里的状态机、项目名和声音各节。
+- [x] 按结果修订设计规格里的状态机、项目名和声音各节。
+- [ ] 桌面 App 里归档一个会话、再退出一次 App，看有没有 `SessionEnd`、claude 进程退不退出，结果写进 `notes/claude-code.md`，再定桌面会话什么时候从卡片上消失（设计规格“幽灵会话”一段和测试表“桌面 App 里关掉一个会话”一行）。
 
 ### Task 1: 拆掉批准和按住说话，不动蓝牙功能表（SC-16 的回归）
 

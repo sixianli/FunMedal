@@ -161,8 +161,26 @@ python3 experiments/hook-probe/drive.py <ask|clear|kill-term|kill-hup|kill-kill|
 
 `results/<场景>/` 里还有 `hooks.jsonl`（原始日志）、`terminal.raw`（终端录屏）和 `settings.json`（这次用的 hooks 设置）。日志里的路径带本机用户名；终端录屏的启动画面上有模型名和账户的订阅类型；没有邮箱、密钥或登录凭据。
 
+## 状态卡片开工实测：桌面 App（2026-10-24，2.1.308）
+
+这是 Task 0 的桌面 App 部分。`experiments/hook-probe/make_app_project.py` 建了一个独立的小项目 `experiments/hook-probe/app-project/`（不进 git），它的 `.claude/settings.json` 把 10 种事件都指向同一个 `probe.py`。负责人在桌面 App 里打开这个项目，权限模式选“每次都问”，先开一个普通会话、再开一个工作副本会话（git worktree，App 给会话单独复制出来的一份代码目录），每个会话都让 Claude 写一个文件、再出一道选择题，答完后关掉会话。原始日志和整理后的时间线在 `experiments/hook-probe/results/app/`（`hooks.jsonl`、`report.txt`、这次用的 `settings.json`）。
+
+| 要回答的问题 | 结果 |
+| --- | --- |
+| 桌面 App 里 `PermissionRequest` 触发不触发 | 触发。写文件（`Write`）弹批准框时，`PreToolUse` 之后 0.1 秒触发；选择题（`AskUserQuestion`）同样触发。沙箱里自动放行的 `Bash` 命令不弹框，也没有 `PermissionRequest` |
+| hook 的父进程是谁 | 是会话自己的 claude 命令行进程（`~/Library/Application Support/Claude/claude-code/2.1.308/…/claude`，带 `--output-format stream-json`），它的上一级是 `disclaimer`，再上一级是 Claude.app。每个会话一个独立的 claude 进程，所以 `claude_pid` 在桌面 App 里也指向对的进程 |
+| 工作副本会话里 `cwd` 和 `CLAUDE_PROJECT_DIR` 是什么 | `cwd` 是工作副本目录 `app-project/.claude/worktrees/write-text-to-file-cd0950`；`CLAUDE_PROJECT_DIR` 是主项目 `app-project`。普通会话里两者都是 `app-project` |
+| 关掉会话后有没有 `SessionEnd`、claude 进程退不退出 | 都没有。两个会话关掉后日志里最后一条是 `Stop`；最后一条事件之后 3 到 4 分钟，两个 claude 进程（23520、24312）还活着。App 的会话列表里这两个会话仍在，只是“没在跑” |
+| `Notification` 有没有 | 这次没有。每个批准框都在 6 秒内答掉了，终端实测里 `Notification` 要等约 6 秒才发 |
+
+对状态卡片设计的影响：
+
+- 桌面 App 和终端一样，批准框和选择题都走 `PermissionRequest`，`AskUserQuestion` 不需要再靠 `PreToolUse` 记“等你”。
+- 桌面 App 里“关掉会话”既不发 `SessionEnd`、也不结束进程，所以桥接程序的 pid 检查删不掉这一行，答完了的会话会一直留在卡片上。什么操作才会让桌面会话真正结束（归档会话、退出 App），这次没测。
+- 工作副本会话的项目名直接取 `CLAUDE_PROJECT_DIR` 的最后一级就是主项目名，不用读 `.git` 文件。
+
 ## 还要实测的
 
-1. 桌面 App 里批准弹窗和 `PermissionRequest` hook 同时出现时的表现。桌面 App 不是终端界面，要用户在 App 里操作才能测。
+1. 桌面 App 里归档会话、退出 App 时，有没有 `SessionEnd`，claude 进程退不退出。
 2. 同一个会话里接连有几条命令等批准时，hook 和弹窗的顺序。
 3. 桌面 App 里能不能加载开发频道。

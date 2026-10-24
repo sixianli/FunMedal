@@ -68,7 +68,7 @@ Claude Code 会话 ──hooks(stdin JSON)──▶ funmedal-bridge hook ──U
 | --- | --- | --- |
 | `SessionStart` | 不建可见行，只记 `session_id`、`project`、`pid` | `source: compact`、`clear`、`resume` 都会触发，不能当新会话。`/clear` 会换 `session_id`，但它先给旧 id 发 `SessionEnd`（`reason: clear`），旧行由 `SessionEnd` 删掉（T0 终端实测，`notes/claude-code.md`“状态卡片开工实测”） |
 | `UserPromptSubmit` | 在跑；第一次收到时才建可见行 | 清掉该会话所有“等你”记录 |
-| `PreToolUse`（任何工具） | 在跑 | 若工具是 `AskUserQuestion` 或 `ExitPlanMode`，同时记一条“等你”，键是 `tool_use_id` |
+| `PreToolUse`（任何工具） | 在跑 | 若工具是 `ExitPlanMode`，同时记一条“等你”，键是 `tool_use_id`。`AskUserQuestion` 不用这一路：T0 在终端和桌面 App 里都测到它触发 `PermissionRequest` |
 | `PermissionRequest` | 等你 | 记一条“等你”，键是 `tool_name` 加 `tool_input` 的哈希（现有 `toolKey`） |
 | `Notification`（matcher `permission_prompt`） | 等你 | 记一条“等你”，键固定为 `notification`，是沙箱命令网络请求的兜底（见下） |
 | `PostToolUse` / `PostToolUseFailure` | 在跑 | 去掉同一 `tool_use_id` 和同一 `toolKey` 的“等你”记录，以及 `notification` 记录 |
@@ -84,16 +84,16 @@ Claude Code 会话 ──hooks(stdin JSON)──▶ funmedal-bridge hook ──U
 2. hook 存活到 590 秒 → hook 退出前先发一个“超时”标记 → 桥接程序**保留**这条记录，因为权限弹窗还在等（T0 终端实测：hook 进程在第 600 秒被结束后，弹窗仍在，15 秒后在终端允许，命令照常执行并发来 `PostToolUse`）；之后只能靠第 3 路或 `UserPromptSubmit`、`Stop`、`StopFailure`、`SessionEnd` 清掉。
 3. 同一个 `tool_use_id`（`PreToolUse` 记的）或同一个 `toolKey`（`PermissionRequest` 记的）来了 `PostToolUse` / `PostToolUseFailure` → 终端允许了、工具跑完了 → 删记录，桥接程序随即主动关掉那条 hook 连接。`PermissionRequest` 的输入里没有 `tool_use_id`，所以 hook 进程要对 `PostToolUse`、`PostToolUseFailure` 也算一遍 `tool_key`（它们带同样的 `tool_name` 和 `tool_input`，hooks 参考页 PostToolUse input 一节），现在 `Hook.swift` 只对 `PermissionRequest` 算。
 
-hook 进程连上、报一声“等你”、然后只等不答，**永远不回答决定**：去掉 `Hook.swift:85-98` 的两个 `answer` 和卡片按键那一路。选择题和计划确认走 `PreToolUse` → `PostToolUse`。
+hook 进程连上、报一声“等你”、然后只等不答，**永远不回答决定**：去掉 `Hook.swift:85-98` 的两个 `answer` 和卡片按键那一路。选择题和批准框一样走 `PermissionRequest` → `PostToolUse`；计划确认（`ExitPlanMode`）还没实测，走 `PreToolUse` → `PostToolUse`。
 
 - **沙箱命令的网络请求**：官方 hooks 参考页写明，沙箱里的命令要访问网络时弹出的权限请求不运行 `PermissionRequest` hook。这类弹窗只能靠 `Notification` 事件的 `permission_prompt` 类型捕获，它在弹窗出现约 6 秒后才发。所以 `Notification` 作为兜底：收到就记 `notification` 这条“等你”，被 `PostToolUse`、`UserPromptSubmit`、`Stop` 清掉。不把 `Notification` 当主信号的原因就是那 6 秒。`idle_prompt` 类型要等 60 秒且后台有代理时不发，不用。
 - **已知限制**：终端允许了一条要跑很久的命令，卡片会一直显示“等你”直到命令跑完（没有事件能区分“允许了在跑”和“还在等”）；用户按 Esc 打断生成时 `Stop` 不触发（hooks 参考页 Stop 一节原文），会话停在“在跑”直到下一句话。两条 PRD 都没要求处理，记为已知限制。
-- 最可能怎么坏：`AskUserQuestion` 弹出时也会触发 `PermissionRequest`（T0 终端实测：`PreToolUse` 后 0.07 秒触发，约 6 秒后还有一条 `Notification`）；`ExitPlanMode` 有官方示例说会（hooks 指南“Auto-approve specific permission prompts”）。两条路都记“等你”、键不同，所以重复触发只会多一条记录，各自的结束信号去掉各自的，不会漏报。桌面 App 里是否也这样还没测，`PreToolUse` 这条路先留着。桌面 App 里 `PermissionRequest` 是否触发、hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、600 秒后权限弹窗还在不在，都在开工前用一个只记日志的最小插件实测（计划里的 T0）。
+- 最可能怎么坏：`AskUserQuestion` 弹出时也会触发 `PermissionRequest`（T0 终端实测：`PreToolUse` 后 0.07 秒触发，约 6 秒后还有一条 `Notification`）；`ExitPlanMode` 有官方示例说会（hooks 指南“Auto-approve specific permission prompts”）。两条路都记“等你”、键不同，所以重复触发只会多一条记录，各自的结束信号去掉各自的，不会漏报。T0 桌面 App 实测：写文件的批准框和选择题都触发 `PermissionRequest`，和终端一样，所以 `AskUserQuestion` 从 `PreToolUse` 那一路去掉；`ExitPlanMode` 两边都没测，`PreToolUse` 这一路只为它留着（结果见 `notes/claude-code.md`“状态卡片开工实测：桌面 App”）。
 - 依据：事件和字段来自 hooks 参考页 `https://code.claude.com/docs/en/hooks` 的 Hook lifecycle、PermissionRequest、PreToolUse、Notification、Stop、StopFailure、SessionEnd 各节和“沙箱网络请求不运行 PermissionRequest hook”一句；`PermissionRequest` 的输入里没有 `tool_use_id`，所以它只能用 `toolKey` 配对。
 
-**项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），取最后一级目录名作为 `project` 字段发给桥接程序；没有这个变量时用 `SessionStart` 事件里的 `cwd` 的最后一级。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。为什么不用每个事件的 `cwd`：它跟着 Claude 的 `cd` 走，同一会话会在卡片上换名字。**工作副本**（git worktree，桌面 App 给每个会话单开的一份代码副本）：hooks 参考页说会话中途进工作副本时 `CLAUDE_PROJECT_DIR` 不变；但桌面 App 一开始就在工作副本里启动的会话，这个变量指向哪里文档另有一页，T0 实测。规则定为“项目名 = 主仓库的目录名”：目录里的 `.git` 是文件而不是目录时，读它的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名；不用跑 `git` 子进程。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
+**项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），取最后一级目录名作为 `project` 字段发给桥接程序；没有这个变量时用 `SessionStart` 事件里的 `cwd` 的最后一级。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。为什么不用每个事件的 `cwd`：它跟着 Claude 的 `cd` 走，同一会话会在卡片上换名字。**工作副本**（git worktree，桌面 App 给每个会话单开的一份代码副本）：hooks 参考页说会话中途进工作副本时 `CLAUDE_PROJECT_DIR` 不变；T0 桌面 App 实测：一开始就在工作副本里启动的会话，`cwd` 是 `<项目>/.claude/worktrees/<名字>`，`CLAUDE_PROJECT_DIR` 是主项目目录，所以桌面 App 里直接取它的最后一级就对。用户自己 `cd` 进一个工作副本目录再启动 `claude` 时，`CLAUDE_PROJECT_DIR` 就是那个工作副本目录，所以规则仍定为“项目名 = 主仓库的目录名”：目录里的 `.git` 是文件而不是目录时，读它的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名；不用跑 `git` 子进程。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
 
-**幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）；桌面 App 里它是哪个进程、关掉会话后它会不会退出，T0 一起实测，否则 pid 检查会盯错对象。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
+**幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）。T0 桌面 App 实测：hook 的父进程是这个会话自己的 claude 命令行进程（上一级是 Claude.app），每个会话一个，所以 pid 检查盯的对象是对的；但负责人在 App 里关掉会话后，既没有 `SessionEnd`，claude 进程也没有退出（最后一条事件之后 3 到 4 分钟还活着），这一行会一直显示“答完了”。归档会话、退出 App 时进程退不退出、有没有 `SessionEnd`，还要再测一次，测完再决定桌面会话什么时候从卡片上消失。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
 
 **hooks.json 的改动**：删掉 `modules: ["./voice.js"]` 和 `voice.js`；事件为 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`Notification`（matcher `permission_prompt`）、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 十个，`PreToolUse` 不加 matcher（所有工具都要当“在跑”的心跳）。`plugin/plugin.json` 的 description 改成状态卡片的说明，`tests/test_plugin.py` 对应断言跟着改。
 
@@ -220,6 +220,7 @@ Mac 和插件：见第 2、3 节。
 | Mac 和卡片固件版本不配 | 整屏“版本不配”（现有画面） | 升级两边之一 |
 | Claude Code 被强杀，没有 `SessionEnd` | 该行最多 15 秒后消失 | 桥接程序的 pid 检查 |
 | `/clear` 换了 `session_id` | 旧行立刻消失、新行在下一句话出现 | 旧 id 收到的 `SessionEnd`（`reason: clear`） |
+| 桌面 App 里关掉一个会话 | 待定：关掉不发 `SessionEnd`、进程也不退出，该行会一直“答完了” | 归档和退出 App 的实测结果出来后再定 |
 | 权限弹窗等了超过 590 秒 | 该行一直“等你” | hook 超时标记让记录保留；终端答掉后由 `PostToolUse` 或下一句话清掉 |
 | 终端允许了一条很长的命令 | 该行“等你”直到命令结束 | 已知限制 |
 | 用户按 Esc 打断生成 | 该行停在“在跑” | 已知限制，下一句话或会话关掉时恢复 |

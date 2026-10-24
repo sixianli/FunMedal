@@ -1,0 +1,64 @@
+    0.00 start  SessionStart       sid=cb68b882 src=startup reason=None tool=None nt=None alive=None
+         cwd=/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/app-project
+         project_dir=/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/app-project
+         parents=claude(23520) < disclaimer(23519) < Claude(6463)
+    1.30 start  UserPromptSubmit   sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+    5.88 start  PreToolUse         sid=cb68b882 src=None reason=None tool=Bash nt=None alive=None
+    6.40 start  PostToolUse        sid=cb68b882 src=None reason=None tool=Bash nt=None alive=None
+   10.59 start  PreToolUse         sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   10.68 start  PostToolUse        sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   17.24 start  Stop               sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+   23.61 start  UserPromptSubmit   sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+   26.31 start  PreToolUse         sid=cb68b882 src=None reason=None tool=Bash nt=None alive=None
+   26.52 start  PostToolUse        sid=cb68b882 src=None reason=None tool=Bash nt=None alive=None
+   28.93 start  PreToolUse         sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   29.00 start  PostToolUse        sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   36.05 start  Stop               sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+   69.39 start  UserPromptSubmit   sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+   73.00 start  PreToolUse         sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+   73.07 start  PostToolUse        sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+   73.55 start  PreToolUse         sid=cb68b882 src=None reason=None tool=Read nt=None alive=None
+   73.63 start  PostToolUse        sid=cb68b882 src=None reason=None tool=Read nt=None alive=None
+   75.88 start  PreToolUse         sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+   75.93 start  PostToolUse        sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+   77.47 start  PreToolUse         sid=cb68b882 src=None reason=None tool=Write nt=None alive=None
+   77.57 start  PermissionRequest  sid=cb68b882 src=None reason=None tool=Write nt=None alive=None
+   77.59 end    PermissionRequest  sid=cb68b882 src=None reason=None tool=Write nt=None alive=0.02
+   80.32 start  PostToolUse        sid=cb68b882 src=None reason=None tool=Write nt=None alive=None
+   83.19 start  PreToolUse         sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   83.31 start  PostToolUse        sid=cb68b882 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+   91.17 start  Stop               sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+  104.28 start  UserPromptSubmit   sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+  108.70 start  PreToolUse         sid=cb68b882 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  108.80 start  PermissionRequest  sid=cb68b882 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  108.82 end    PermissionRequest  sid=cb68b882 src=None reason=None tool=AskUserQuestion nt=None alive=0.02
+  113.21 start  PostToolUse        sid=cb68b882 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  121.08 start  Stop               sid=cb68b882 src=None reason=None tool=None nt=None alive=None
+  170.29 start  SessionStart       sid=53f1bcd7 src=startup reason=None tool=None nt=None alive=None
+         cwd=/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/app-project/.claude/worktrees/write-text-to-file-cd0950
+         project_dir=/Users/user/DoNotDeleteThis/documents/sxl_code_work_space/FunMedal/experiments/hook-probe/app-project
+         parents=claude(24312) < disclaimer(24311) < Claude(6463)
+  171.13 start  UserPromptSubmit   sid=53f1bcd7 src=None reason=None tool=None nt=None alive=None
+  176.76 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  176.83 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  176.90 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=Bash nt=None alive=None
+  177.41 start  PostToolUseFailure sid=53f1bcd7 src=None reason=None tool=Bash nt=None alive=None
+  180.42 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  180.48 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  181.61 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=Write nt=None alive=None
+  181.71 start  PermissionRequest  sid=53f1bcd7 src=None reason=None tool=Write nt=None alive=None
+  181.72 end    PermissionRequest  sid=53f1bcd7 src=None reason=None tool=Write nt=None alive=0.02
+  183.22 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=Write nt=None alive=None
+  185.34 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  185.40 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__update_plan nt=None alive=None
+  186.76 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=Bash nt=None alive=None
+  187.14 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=Bash nt=None alive=None
+  189.53 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+  189.60 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=mcp__ccd_turn__wrap_up nt=None alive=None
+  197.47 start  Stop               sid=53f1bcd7 src=None reason=None tool=None nt=None alive=None
+  203.34 start  UserPromptSubmit   sid=53f1bcd7 src=None reason=None tool=None nt=None alive=None
+  208.25 start  PreToolUse         sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  208.34 start  PermissionRequest  sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  208.36 end    PermissionRequest  sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=0.01
+  210.11 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=None
+  216.94 start  Stop               sid=53f1bcd7 src=None reason=None tool=None nt=None alive=None
