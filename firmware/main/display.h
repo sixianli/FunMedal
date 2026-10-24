@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "scene.h"
@@ -19,3 +20,4 @@ esp_err_t display_apply(const display_config_t *config);
 void display_get_config(display_config_t *config);
 esp_err_t display_draw(const scene_t *scene);
 void display_backlight(int percent);
+void display_last_timing(int64_t *render_us, int64_t *total_us);

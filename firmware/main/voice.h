@@ -20,6 +20,7 @@ typedef struct {
 
 esp_err_t voice_start(void);
 bool voice_ready(void);
+esp_err_t voice_tone(int hz, int ms, int volume);
 void voice_press(void);
 void voice_release(void);
 void voice_on_result(uint8_t clip, voice_result_t result, const uint8_t *pixels);

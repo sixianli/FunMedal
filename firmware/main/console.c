@@ -430,6 +430,24 @@ static void ble_command(char *args)
     console_printf("OK ble unpair\n");
 }
 
+static void tone_command(char *args)
+{
+    int hz = 0;
+    int ms = 0;
+    int volume = 0xbf;
+    int got = sscanf(args, "%d %d %i", &hz, &ms, &volume);
+    if (got < 2 || hz < 50 || hz > 7000 || ms < 10 || ms > 5000 || volume < 0 || volume > 0xff) {
+        console_printf("ERR tone usage: tone <50-7000 hz> <10-5000 ms> [dac volume 0-255]\n");
+        return;
+    }
+    esp_err_t err = voice_tone(hz, ms, volume);
+    if (err != ESP_OK) {
+        console_printf("ERR tone %s\n", esp_err_to_name(err));
+        return;
+    }
+    console_printf("OK tone %d %d %d\n", hz, ms, volume);
+}
+
 static void handle(char *line)
 {
     char *space = strchr(line, ' ');
@@ -493,6 +511,13 @@ static void handle(char *line)
         console_printf("OK reboot\n");
         vTaskDelay(pdMS_TO_TICKS(REBOOT_DELAY_MS));
         esp_restart();
+    } else if (strcmp(line, "timing") == 0) {
+        int64_t render_us;
+        int64_t total_us;
+        display_last_timing(&render_us, &total_us);
+        console_printf("OK timing render_us=%lld total_us=%lld\n", (long long)render_us, (long long)total_us);
+    } else if (strcmp(line, "tone") == 0) {
+        tone_command(args);
     } else if (strcmp(line, "backlight") == 0) {
         display_backlight(atoi(args));
         console_printf("OK backlight %d\n", atoi(args));

@@ -8,6 +8,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -18,6 +19,8 @@ static const char *TAG = "display";
 static esp_lcd_panel_io_handle_t io;
 static esp_lcd_panel_handle_t panel;
 static uint16_t *strips[STRIP_COUNT];
+static int64_t last_render_us;
+static int64_t last_total_us;
 static SemaphoreHandle_t free_strips;
 static SemaphoreHandle_t lock;
 static display_config_t current;
@@ -144,20 +147,34 @@ void display_get_config(display_config_t *config)
     xSemaphoreGive(lock);
 }
 
+void display_last_timing(int64_t *render_us, int64_t *total_us)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    *render_us = last_render_us;
+    *total_us = last_total_us;
+    xSemaphoreGive(lock);
+}
+
 esp_err_t display_draw(const scene_t *scene)
 {
     esp_err_t err = ESP_OK;
     xSemaphoreTake(lock, portMAX_DELAY);
+    int64_t started = esp_timer_get_time();
+    int64_t rendering = 0;
     for (int y = 0, i = 0; y < SCENE_H && err == ESP_OK; y += STRIP_ROWS, i = (i + 1) % STRIP_COUNT) {
         int rows = SCENE_H - y < STRIP_ROWS ? SCENE_H - y : STRIP_ROWS;
         xSemaphoreTake(free_strips, portMAX_DELAY);
+        int64_t before = esp_timer_get_time();
         scene_render_rows(scene, y, rows, strips[i]);
+        rendering += esp_timer_get_time() - before;
         err = esp_lcd_panel_draw_bitmap(panel, 0, y, SCENE_W, y + rows, strips[i]);
         if (err != ESP_OK) {
             xSemaphoreGive(free_strips);
         }
     }
     wait_idle();
+    last_render_us = rendering;
+    last_total_us = esp_timer_get_time() - started;
     xSemaphoreGive(lock);
     return err;
 }

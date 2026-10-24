@@ -1,5 +1,6 @@
 #include "voice.h"
 
+#include <math.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,10 +33,17 @@
 #define NOTIFY_FOLLOW (1u << 2)
 #define NO_CLIP (-1)
 #define NO_FOLLOW (-1)
+#define TONE_BLOCK_FRAMES 256
+#define TONE_WRITE_TIMEOUT_MS 200
+#define TONE_AMPLITUDE 12000
+#define TONE_TABLE_BITS 8
+#define TONE_TABLE_SIZE (1 << TONE_TABLE_BITS)
+#define DAC_VOLUME_REG 0x32
 
 static const char *TAG = "voice";
 static i2c_master_dev_handle_t codec;
 static i2s_chan_handle_t rx;
+static i2s_chan_handle_t tx;
 static SemaphoreHandle_t mic_lock;
 static TaskHandle_t voice_task_handle;
 static atomic_bool held;
@@ -99,7 +107,8 @@ static esp_err_t i2s_init(void)
     i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan.dma_desc_num = DMA_DESCRIPTORS;
     chan.dma_frame_num = VOICE_SAMPLES_PER_PACKET;
-    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan, NULL, &rx), TAG, "i2s channel");
+    chan.auto_clear_after_cb = true;
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan, &tx, &rx), TAG, "i2s channel");
     i2s_std_config_t std = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(VOICE_SAMPLE_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
@@ -107,14 +116,59 @@ static esp_err_t i2s_init(void)
             .mclk = BOARD_I2S_MCLK_GPIO,
             .bclk = BOARD_I2S_BCLK_GPIO,
             .ws = BOARD_I2S_WS_GPIO,
-            .dout = I2S_GPIO_UNUSED,
+            .dout = BOARD_I2S_DOUT_GPIO,
             .din = BOARD_I2S_DIN_GPIO,
         },
     };
     std.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(tx, &std), TAG, "i2s tx std mode");
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(rx, &std), TAG, "i2s std mode");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(rx), TAG, "i2s enable");
     return ESP_OK;
+}
+
+static int16_t tone_table[TONE_TABLE_SIZE];
+static bool tone_table_ready;
+
+static void fill_tone_table(void)
+{
+    if (tone_table_ready) {
+        return;
+    }
+    for (int i = 0; i < TONE_TABLE_SIZE; i++) {
+        tone_table[i] = (int16_t)(TONE_AMPLITUDE * sinf(2.0f * (float)M_PI * (float)i / (float)TONE_TABLE_SIZE));
+    }
+    tone_table_ready = true;
+}
+
+esp_err_t voice_tone(int hz, int ms, int volume)
+{
+    ESP_RETURN_ON_FALSE(atomic_load(&ready), ESP_ERR_INVALID_STATE, TAG, "codec not ready");
+    static int16_t block[TONE_BLOCK_FRAMES * 2];
+    int total = VOICE_SAMPLE_RATE * ms / 1000;
+    uint32_t step = (uint32_t)(((uint64_t)hz << 32) / VOICE_SAMPLE_RATE);
+    uint32_t phase = 0;
+    xSemaphoreTake(mic_lock, portMAX_DELAY);
+    fill_tone_table();
+    esp_err_t err = codec_write(DAC_VOLUME_REG, (uint8_t)volume);
+    if (err == ESP_OK) {
+        err = i2s_channel_enable(tx);
+    }
+    for (int done = 0; err == ESP_OK && done < total; done += TONE_BLOCK_FRAMES) {
+        for (int i = 0; i < TONE_BLOCK_FRAMES; i++) {
+            int16_t value = done + i < total ? tone_table[phase >> (32 - TONE_TABLE_BITS)] : 0;
+            phase += step;
+            block[2 * i] = value;
+            block[2 * i + 1] = value;
+        }
+        size_t written = 0;
+        err = i2s_channel_write(tx, block, sizeof(block), &written, TONE_WRITE_TIMEOUT_MS);
+    }
+    vTaskDelay(pdMS_TO_TICKS(TONE_WRITE_TIMEOUT_MS));
+    i2s_channel_disable(tx);
+    codec_write(DAC_VOLUME_REG, 0x00);
+    xSemaphoreGive(mic_lock);
+    return err;
 }
 
 static bool read_packet(int16_t *used, voice_capture_stats_t *stats)

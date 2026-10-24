@@ -44,7 +44,7 @@
 没有找到的：
 
 - **屏幕复位线**：没有引脚被设成输出，屏幕可能靠上电复位或软件复位命令。
-- **喇叭功放开关**：没有单独的引脚，功放可能一直通电，或者由 ES8311 控制。
+- **喇叭功放开关**：没有单独的引脚，功放可能一直通电，或者由 ES8311 控制。2026-10-24 用自制固件实测：不碰任何别的引脚，只用 GPIO2 送 I2S 放音数据、把 ES8311 的 0x32 号寄存器（DAC 音量）设成 0xBF，喇叭就放出了 3 秒连续稳定的 1 kHz 测试音，负责人听过，音量正常。所以自制固件放音不需要另外开功放。GPIO2 是 ESP32-C3 开机时读一下的启动配置引脚，开机后当 I2S 输出用没有影响开机。放音的串口命令是 `tone`，见 [firmware.md](firmware.md) 的“USB 串口命令”。
 - **左侧电源键**：所有 GPIO 都有了用途，它不接 GPIO，应该是直接控制供电的硬件开关。
 
 重跑方法：卡片醒着时运行下面的命令，再用 `python3 tools/decode_gpio_dump.py device-scan/esp32c3_gpio_sig_map_idf-v5.5.h device-scan/gpio-dump.txt` 解码。原始读数在 [device-scan/gpio-dump.txt](../device-scan/gpio-dump.txt)，解码结果在 [device-scan/gpio-decoded.txt](../device-scan/gpio-decoded.txt)。
