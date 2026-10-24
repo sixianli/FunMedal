@@ -62,3 +62,5 @@
   208.36 end    PermissionRequest  sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=0.01
   210.11 start  PostToolUse        sid=53f1bcd7 src=None reason=None tool=AskUserQuestion nt=None alive=None
   216.94 start  Stop               sid=53f1bcd7 src=None reason=None tool=None nt=None alive=None
+  578.21 start  SessionEnd         sid=cb68b882 src=None reason=other tool=None nt=None alive=None
+  598.28 start  SessionEnd         sid=53f1bcd7 src=None reason=other tool=None nt=None alive=None

@@ -46,6 +46,7 @@ date: "2026-10-24"
 
 1. 已定（负责人 2026-10-24）：只接充电器、不接电脑时按电池处理，5 分钟没变化会熄屏。PRD:64 原来只说“插着 USB 时常亮”，现在写明是接着电脑时常亮。固件只认“USB 接着电脑”这一个信号，不再查电量计的充电状态。
 2. 待定：7 个会话都在“等你”时第 7 个不显示，顶栏写“+1”。PRD:49 定了只显示 6 行，本文加的只是“+N”这个提示；负责人 2026-10-24 定在 Task 3d 第一次出 PNG 效果图时看图再定。
+3. 待定：桌面 App 里什么算“关掉会话”。PRD:47 和 PRD:83 说会话关掉后那行要消失，但 T0 实测桌面 App 里关掉会话既不发 `SessionEnd` 也不结束进程，只有归档会话才发 `SessionEnd`、结束进程。建议：桌面会话的行留到归档为止，归档后 3 秒内消失；只关掉没归档的会话还在 App 列表里、随时能接着聊，卡片上照样显示“答完了”。
 
 ## Design
 
@@ -93,7 +94,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 **项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），取最后一级目录名作为 `project` 字段发给桥接程序；没有这个变量时用 `SessionStart` 事件里的 `cwd` 的最后一级。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。为什么不用每个事件的 `cwd`：它跟着 Claude 的 `cd` 走，同一会话会在卡片上换名字。**工作副本**（git worktree，桌面 App 给每个会话单开的一份代码副本）：hooks 参考页说会话中途进工作副本时 `CLAUDE_PROJECT_DIR` 不变；T0 桌面 App 实测：一开始就在工作副本里启动的会话，`cwd` 是 `<项目>/.claude/worktrees/<名字>`，`CLAUDE_PROJECT_DIR` 是主项目目录，所以桌面 App 里直接取它的最后一级就对。用户自己 `cd` 进一个工作副本目录再启动 `claude` 时，`CLAUDE_PROJECT_DIR` 就是那个工作副本目录，所以规则仍定为“项目名 = 主仓库的目录名”：目录里的 `.git` 是文件而不是目录时，读它的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名；不用跑 `git` 子进程。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
 
-**幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）。T0 桌面 App 实测：hook 的父进程是这个会话自己的 claude 命令行进程（上一级是 Claude.app），每个会话一个，所以 pid 检查盯的对象是对的；但负责人在 App 里关掉会话后，既没有 `SessionEnd`，claude 进程也没有退出（最后一条事件之后 3 到 4 分钟还活着），这一行会一直显示“答完了”。归档会话、退出 App 时进程退不退出、有没有 `SessionEnd`，还要再测一次，测完再决定桌面会话什么时候从卡片上消失。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
+**幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）。T0 桌面 App 实测：hook 的父进程是这个会话自己的 claude 命令行进程（上一级是 Claude.app），每个会话一个，所以 pid 检查盯的对象是对的；但负责人在 App 里关掉会话后，既没有 `SessionEnd`，claude 进程也没有退出（最后一条事件之后 3 到 4 分钟还活着），这一行会一直显示“答完了”；归档会话时才收到 `SessionEnd`（`reason: other`），进程随即退出。桌面会话按哪个操作算关掉，见“待负责人决定的事”第 3 条。退出整个 App 没测，但不管 App 发普通退出信号（有 `SessionEnd`）还是直接结束进程（pid 检查兜底），这一行都会消失。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
 
 **hooks.json 的改动**：删掉 `modules: ["./voice.js"]` 和 `voice.js`；事件为 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`Notification`（matcher `permission_prompt`）、`PostToolUse`、`PostToolUseFailure`、`Stop`、`StopFailure`、`SessionEnd` 十个，`PreToolUse` 不加 matcher（所有工具都要当“在跑”的心跳）。`plugin/plugin.json` 的 description 改成状态卡片的说明，`tests/test_plugin.py` 对应断言跟着改。
 
@@ -220,7 +221,8 @@ Mac 和插件：见第 2、3 节。
 | Mac 和卡片固件版本不配 | 整屏“版本不配”（现有画面） | 升级两边之一 |
 | Claude Code 被强杀，没有 `SessionEnd` | 该行最多 15 秒后消失 | 桥接程序的 pid 检查 |
 | `/clear` 换了 `session_id` | 旧行立刻消失、新行在下一句话出现 | 旧 id 收到的 `SessionEnd`（`reason: clear`） |
-| 桌面 App 里关掉一个会话 | 待定：关掉不发 `SessionEnd`、进程也不退出，该行会一直“答完了” | 归档和退出 App 的实测结果出来后再定 |
+| 桌面 App 里关掉一个会话但没归档 | 该行一直“答完了”（待负责人确认，“待负责人决定的事”第 3 条） | 关掉不发 `SessionEnd`、进程也不退出 |
+| 桌面 App 里归档一个会话 | 该行 3 秒内消失 | 归档时收到的 `SessionEnd`（`reason: other`） |
 | 权限弹窗等了超过 590 秒 | 该行一直“等你” | hook 超时标记让记录保留；终端答掉后由 `PostToolUse` 或下一句话清掉 |
 | 终端允许了一条很长的命令 | 该行“等你”直到命令结束 | 已知限制 |
 | 用户按 Esc 打断生成 | 该行停在“在跑” | 已知限制，下一句话或会话关掉时恢复 |

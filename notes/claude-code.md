@@ -171,16 +171,18 @@ python3 experiments/hook-probe/drive.py <ask|clear|kill-term|kill-hup|kill-kill|
 | hook 的父进程是谁 | 是会话自己的 claude 命令行进程（`~/Library/Application Support/Claude/claude-code/2.1.308/…/claude`，带 `--output-format stream-json`），它的上一级是 `disclaimer`，再上一级是 Claude.app。每个会话一个独立的 claude 进程，所以 `claude_pid` 在桌面 App 里也指向对的进程 |
 | 工作副本会话里 `cwd` 和 `CLAUDE_PROJECT_DIR` 是什么 | `cwd` 是工作副本目录 `app-project/.claude/worktrees/write-text-to-file-cd0950`；`CLAUDE_PROJECT_DIR` 是主项目 `app-project`。普通会话里两者都是 `app-project` |
 | 关掉会话后有没有 `SessionEnd`、claude 进程退不退出 | 都没有。两个会话关掉后日志里最后一条是 `Stop`；最后一条事件之后 3 到 4 分钟，两个 claude 进程（23520、24312）还活着。App 的会话列表里这两个会话仍在，只是“没在跑” |
+| 归档会话时有没有 `SessionEnd`、claude 进程退不退出 | 有，也退出。负责人同意后，Claude 用 App 的会话管理工具先后归档了这两个会话：每个都收到 `SessionEnd`（`reason: other`，和终端里收到 SIGTERM 时一样），归档操作完成时这条事件已经到了；两个 claude 进程和它们上一级的 `disclaimer` 进程都已退出。工作副本目录归档后还在 |
 | `Notification` 有没有 | 这次没有。每个批准框都在 6 秒内答掉了，终端实测里 `Notification` 要等约 6 秒才发 |
 
 对状态卡片设计的影响：
 
 - 桌面 App 和终端一样，批准框和选择题都走 `PermissionRequest`，`AskUserQuestion` 不需要再靠 `PreToolUse` 记“等你”。
-- 桌面 App 里“关掉会话”既不发 `SessionEnd`、也不结束进程，所以桥接程序的 pid 检查删不掉这一行，答完了的会话会一直留在卡片上。什么操作才会让桌面会话真正结束（归档会话、退出 App），这次没测。
+- 桌面 App 里“关掉会话”既不发 `SessionEnd`、也不结束进程，会话还在 App 的会话列表里，随时能接着聊；归档才真正结束会话，并发 `SessionEnd`。所以桌面会话在卡片上留到归档为止，归档后按 `SessionEnd` 删行。
+- 退出整个 App 没测：测它会连带关掉正在做实测的这个会话。退出时 App 要么给 claude 进程发普通退出信号（会有 `SessionEnd`，和终端 SIGTERM 一样），要么直接结束进程（没有 `SessionEnd`，桥接程序的 pid 检查 15 秒内删行），两种情况设计里都已经能处理。
 - 工作副本会话的项目名直接取 `CLAUDE_PROJECT_DIR` 的最后一级就是主项目名，不用读 `.git` 文件。
 
 ## 还要实测的
 
-1. 桌面 App 里归档会话、退出 App 时，有没有 `SessionEnd`，claude 进程退不退出。
+1. 退出整个桌面 App 时，claude 进程收到的是哪种信号（上面说了为什么这次没测）。
 2. 同一个会话里接连有几条命令等批准时，hook 和弹窗的顺序。
 3. 桌面 App 里能不能加载开发频道。
