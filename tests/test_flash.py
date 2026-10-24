@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -21,6 +22,12 @@ FLASH_BYTES = 8 * 1024 * 1024
 NEW_BACKUP = "firmware-backup/factory-full8MB.bin"
 WRITE_OPTIONS = ["--flash_mode", "dio", "--flash_freq", "80m", "--flash_size", "8MB"]
 WRITE_FILES = {"0x0": "bootloader.bin", "0x8000": "partition-table.bin", "0x10000": "funmedal.bin"}
+PROGRAM_BYTES = 4 * 1024 * 1024
+PARTITIONS = [
+    {"label": "nvs", "type": 1, "subtype": 2, "offset": "0x9000", "size": "0x6000"},
+    {"label": "phy_init", "type": 1, "subtype": 1, "offset": "0xf000", "size": "0x1000"},
+    {"label": "factory", "type": 0, "subtype": 0, "offset": "0x10000", "size": hex(PROGRAM_BYTES)},
+]
 FAKE_ESPTOOL = f"""#!{sys.executable}
 import json, os, sys
 args = sys.argv[1:]
@@ -176,6 +183,25 @@ def test_prebuilt_is_current(case, run_dir):
     assert sorted(sums) == sorted(PREBUILT_FILES) and all(summary["matching"].values()), summary
     assert split_write(args) == (WRITE_OPTIONS, WRITE_FILES, 0), summary
     assert summary["diff_exit"] == 0 and summary["changed"] == [] and summary["untracked"] == [], summary
+
+
+@pytest.mark.parametrize("case", ["[OB-15] the prebuilt partition table keeps the pairing store where it was and gives "
+                                  "the program 4 MB"])
+def test_partition_table(case, run_dir):
+    table = (PREBUILT / "partition-table.bin").read_bytes()
+    entries = []
+    for start in range(0, len(table), 32):
+        entry = table[start:start + 32]
+        if entry[:2] != b"\xaa\x50":
+            break
+        kind, subtype, offset, size = struct.unpack_from("<BBII", entry, 2)
+        entries.append({"label": entry[12:28].rstrip(b"\0").decode(), "type": kind, "subtype": subtype,
+                        "offset": hex(offset), "size": hex(size)})
+    program = (PREBUILT / "funmedal.bin").stat().st_size
+    summary = {"entries": entries, "program_bytes": program}
+    write_summary(run_dir, summary)
+    assert entries == PARTITIONS, summary
+    assert program <= PROGRAM_BYTES and 0x10000 + PROGRAM_BYTES <= FLASH_BYTES, summary
 
 
 @pytest.mark.parametrize("case", ["[OB-15] flash.sh with esptool alone writes the prebuilt firmware to the card, which "
