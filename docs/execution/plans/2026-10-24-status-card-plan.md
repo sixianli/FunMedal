@@ -29,14 +29,13 @@ date: "2026-10-24"
 
 每个任务里的测试先写、先跑出预期的失败，再实现，再跑通；任务内的检查项在实施时按 `~/.claude/skills/verification-discipline/SKILL.md` 补全。改了固件的任务收尾时跑 `tools/update-prebuilt.sh` 重新生成预编译固件并提交（`[OB-15]`）。
 
-### Task 0: 开工前的实测（T0、T1、性能、电量计）
+### Task 0: 开工前的实测（T0、T1、性能）
 
 - [ ] 写最小插件 `experiments/hook-probe/`，只把 hooks 事件和环境变量记到文件；在终端和桌面 App（含一个工作副本会话）各跑一遍，回答：`AskUserQuestion` 是否触发 `PermissionRequest`；桌面 App 里 `PermissionRequest` 是否触发；强杀 Claude Code 有没有 `SessionEnd`；`/clear` 后 `session_id` 变不变；hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、工作副本会话里指向哪；`claude_pid` 在桌面 App 里是哪个进程、关会话后退不退出；权限弹窗等满 600 秒后还在不在。结果写进 `notes/claude-code.md`。
 - [ ] Mac 合盖 2 分钟，看卡片串口有没有蓝牙断开事件，写进 `notes/ble-link.md`。
 - [ ] 真机放一声 1 kHz 测试音（I2S TX 走 GPIO2，ES8311 DAC），结果写进 `notes/hardware.md`。放不出来就先查原厂固件对 ES8311 和功放的写法，再决定声音这一块的做法。
 - [ ] 真机测整屏一帧多少毫秒，写进 `notes/firmware.md`。
-- [ ] 查 CW2017 的 I2C 地址和充电状态寄存器，写进 `notes/hardware.md`；查不到就记“未确认”，供电判断只用 USB 串口连接状态。
-- [ ] 按结果修订设计规格里的状态机、项目名、声音和电源各节；“待负责人决定的事”第 1 条随 CW2017 的结果一起问。
+- [ ] 按结果修订设计规格里的状态机、项目名和声音各节。
 
 ### Task 1: 拆掉批准和按住说话，不动蓝牙功能表（SC-16 的回归）
 
@@ -105,7 +104,7 @@ date: "2026-10-24"
 
 ### Task 7: 电源（SC-9）
 
-- [ ] `power.c`：USB 连接判断（CW2017 查到时加充电状态）、5 分钟计时、“变化”的定义（心跳和本地分钟增加不算，放声音算）、熄屏（背光 0 + 停画屏）、唤醒（先重画再开背光）、熄屏时收到答完了不亮屏；串口 `idle <秒>`、`power` 命令。
+- [ ] `power.c`：USB 接着电脑的判断（只接充电器算电池）、5 分钟计时、“变化”的定义（心跳和本地分钟增加不算，放声音算）、熄屏（背光 0 + 停画屏）、唤醒（先重画再开背光）、熄屏时收到答完了不亮屏；串口 `idle <秒>`、`power` 命令。
 - [ ] 真机：只用电池、`idle 30` 后熄屏；喂一个带新进入位的“等你”行，屏幕亮、角色冒头、有声音（`[SC-9]`）。
 - [ ] light sleep 和“素材独立分区”记进 `docs/backlog/`。
 - [ ] 重新生成预编译固件（`[OB-15]`）。
