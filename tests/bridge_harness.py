@@ -163,19 +163,26 @@ class Bridge:
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-@contextmanager
-def resident_locked_out():
-    DEFAULT_SOCKET.parent.mkdir(parents=True, exist_ok=True)
-    lock = os.open(f"{DEFAULT_SOCKET}.lock", os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(lock)
+resident_lock = None
+
+
+def lock_out_resident():
+    global resident_lock
+    if resident_lock is None:
+        DEFAULT_SOCKET.parent.mkdir(parents=True, exist_ok=True)
+        lock = os.open(f"{DEFAULT_SOCKET}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(lock)
+            return False
+        resident_lock = lock
+    return True
+
+
+def require_resident_locked_out():
+    if not lock_out_resident():
         pytest.fail(f"a bridge holds {DEFAULT_SOCKET}.lock and with it the card; stop it with `{BRIDGE} quit` first")
-    try:
-        yield
-    finally:
-        os.close(lock)
 
 
 def stop_leftover_bridges():
@@ -273,20 +280,20 @@ def card(artifacts):
     if resident.returncode == 0:
         pytest.fail("a bridge is running on the default socket and holds the card's only bluetooth connection; "
                     f"stop it with `{BRIDGE} quit` first")
-    with resident_locked_out():
-        stop_leftover_bridges()
-        watcher = CardWatcher()
-        watcher.start()
-        try:
-            info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
-            (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
-            assert " ble=" in info, info
-            watcher.request("frame auto")
-            yield watcher
-        finally:
-            lines = [f"{t:.3f} {line}" for t, line in watcher.lines]
-            (artifacts / "serial.log").write_text("\n".join(compact_log(lines)) + "\n", encoding="utf-8")
-            watcher.close()
+    require_resident_locked_out()
+    stop_leftover_bridges()
+    watcher = CardWatcher()
+    watcher.start()
+    try:
+        info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
+        (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
+        assert " ble=" in info, info
+        watcher.request("frame auto")
+        yield watcher
+    finally:
+        lines = [f"{t:.3f} {line}" for t, line in watcher.lines]
+        (artifacts / "serial.log").write_text("\n".join(compact_log(lines)) + "\n", encoding="utf-8")
+        watcher.close()
 
 
 @pytest.fixture

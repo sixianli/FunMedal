@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from bridge_harness import (ROOT, Bridge, CardWatcher, _try_info, artifacts, bridge_cli, info_fields,  # noqa: F401
-                            require_bridge_app, resident_locked_out, run_dir, stop_leftover_bridges, wait_until,
+                            require_bridge_app, require_resident_locked_out, run_dir, stop_leftover_bridges, wait_until,
                             write_summary)
 
 ARTIFACTS_PREFIX = "ob15"
@@ -192,25 +192,25 @@ def test_real_card(case, run_dir):
     if resident.returncode == 0:
         pytest.fail("a bridge is running on the default socket and holds the card; quit it first")
     summary = {}
-    with resident_locked_out():
-        stop_leftover_bridges()
-        env = {"HOME": os.environ["HOME"], "PATH": f"{esptool_dirs[0]}:/usr/bin:/bin", "LC_CTYPE": "C.UTF-8"}
-        done = subprocess.run(["sh", str(FLASH), ports[0]], env=env, capture_output=True, text=True, timeout=300)
-        (run_dir / "flash-output.txt").write_text(done.stdout + done.stderr, encoding="utf-8")
-        summary["exit"] = done.returncode
-        summary["verified"] = done.stdout.count("Hash of data verified")
-        watcher = CardWatcher()
-        watcher.start()
+    require_resident_locked_out()
+    stop_leftover_bridges()
+    env = {"HOME": os.environ["HOME"], "PATH": f"{esptool_dirs[0]}:/usr/bin:/bin", "LC_CTYPE": "C.UTF-8"}
+    done = subprocess.run(["sh", str(FLASH), ports[0]], env=env, capture_output=True, text=True, timeout=300)
+    (run_dir / "flash-output.txt").write_text(done.stdout + done.stderr, encoding="utf-8")
+    summary["exit"] = done.returncode
+    summary["verified"] = done.stdout.count("Hash of data verified")
+    watcher = CardWatcher()
+    watcher.start()
+    try:
+        booted = info_fields(wait_until(lambda: _try_info(watcher), 20.0, "card answering after the flash"))
+        bridge = Bridge(run_dir)
         try:
-            booted = info_fields(wait_until(lambda: _try_info(watcher), 20.0, "card answering after the flash"))
-            bridge = Bridge(run_dir)
-            try:
-                summary["status"] = bridge.start()
-                after = info_fields(watcher.request("info"))
-            finally:
-                bridge.quit()
+            summary["status"] = bridge.start()
+            after = info_fields(watcher.request("info"))
         finally:
-            watcher.close()
+            bridge.quit()
+    finally:
+        watcher.close()
     summary.update({"fw": booted["fw"], "sec": after["sec"], "link": after["link"]})
     write_summary(run_dir, summary)
     assert summary["exit"] == 0 and summary["verified"] == len(PREBUILT_FILES), summary

@@ -196,7 +196,7 @@ FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tes
 - `FM_KEY_PRESS_SECONDS=60`：依次长按右侧上、中、下三个键，检查卡片读到的按下、长按和松开。
 - `FM_BLUETOOTH_TOGGLE_SECONDS=300`：等 `FM_ARTIFACTS` 目录下的 `bridge/test_mac_bluetooth_off_and_on/ready-off.txt` 出现（单独跑这个测试时，启动后约 5 秒；跑全部测试时要等前面的测试跑完），在控制中心把 Mac 的蓝牙关掉约 10 秒再打开，检查桥接程序自己重连、补上关着时变的状态。
 
-接着卡片的测试运行期间，会一直占着默认套接字的锁（`~/Library/Application Support/FunMedal/bridge.sock.lock`）。这时别的会话开始或压缩上下文，插件也启动不了常驻桥接程序，不会把卡片连走。所以跑测试前要先退出常驻桥接程序，测试结束后它要等下一个会话开始才会自动启动。
+pytest 从开始到结束，一直占着默认套接字的锁（`~/Library/Application Support/FunMedal/bridge.sock.lock`）。这时别的会话开始或压缩上下文，插件也启动不了常驻桥接程序，不会把卡片连走。所以跑测试前要先退出常驻桥接程序，测试结束后它要等下一个会话开始才会自动启动。
 
 每次运行的串口记录、截图和桥接程序记录存在 `FM_ARTIFACTS` 指定的目录里。默认目录 `artifacts/` 不进 git：串口记录里有卡片的蓝牙地址，结果里有本机路径。
 
