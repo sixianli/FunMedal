@@ -7,8 +7,8 @@
 
 ## 当前批次
 
-- SC-16 做法：实施计划 Task 3a，加 `firmware/partitions.csv`（`nvs` 24 KB 在 0x9000、`phy_init` 4 KB、`factory` 4 MB 在 0x10000），`sdkconfig.defaults` 指向它，重新生成预编译固件；存配对的区域地址不变，所以 `flash.sh` 写的三个地址不变。证据：`[OB-15]` 测试（含新加的分区表检查）全部通过，真机刷预编译后读到链路版本 3，再加 Claude 审查。
-- 同一次全套测试顺带重新验证 SC-6（Task 2 之后只改了 notes/）。
+- SC-3 做法：实施计划 Task 3b，三套字库（Noto Sans SC 16 px 4 位、Fusion Pixel 12 px 1 位、站酷快乐体 30 px 4 位）编译时生成二进制文件，用 `target_add_binary_data` 嵌进固件；字符来源是 ASCII、GB2312 一级表、固件源码里的字面量；一级表以外的字画“□”；`font.c`、`font_text.c`、`font_large.c` 换成读嵌入数据。加 `tools/fetch-fonts.sh` 下载三个字体并核对 SHA-256。证据：宿主测试两套全字库画得出一级表每个字、表外字画“□”（`[SC-3]`），真机现有画面显示正常，全套测试通过，再加 Claude 审查。SC-3 还要新画面和当面演示才算完。
+- SC-16 的 OB 标签测试照旧要全部通过；自己编译固件多了下载字体这一步，`[FM-16]` 的新克隆编译测试跟着改。
 
 ## 之后
 
@@ -36,6 +36,8 @@
 - 2026-10-24 22:03 当前批次换成 Task 2（SC-6，顺带 SC-3、SC-4、SC-5、SC-7、SC-10 的 Mac 侧）。和实施计划不同的几处：桥接程序每 5 秒核对一次进程号，不是 15 秒，测试要求 15 秒内消失；卡片 90 秒没收到 ROWS 时主动断开，计时从版本核对一样那一刻起算；hook 多传 `notification_type`，桥接程序只认 `permission_prompt`；空表在旧画面上显示空闲，“没有会话”画面留给 Task 3；新测试放进 `tests/test_rows.py`，不放 `tests/test_bridge.py`。
 
 - 2026-10-25 00:15 Task 2 收尾（合盖复测通过，见 notes/bridge.md 实测结果第 12 条），当前批次换成 Task 3a（SC-16）。和实施计划不同的一处：分区表只把程序区从 1500 KB 放大到 4 MB，NVS 和程序的起始地址都不变，`flash.sh` 和 `tools/update-prebuilt.sh` 不用改。
+
+- 2026-10-25 01:07 当前批次换成 Task 3b（挂在 SC-3 下，因为项目名里的汉字要显示得出来）。和实施计划不同的一处：像素字库直接读 Fusion Pixel 的 BDF 点阵文件，不经过 CoreText，免得 12 px 被抗锯齿糊掉；三套字库的打包都在 `tools/gen_fonts.py` 里，`tools/gen_font.swift` 只负责画出灰度字形。
 
 ## 意外和发现
 
