@@ -14,3 +14,4 @@ third_party/noto-sans-sc/*.otf
 experiments/*/plugin/.claude-plugin/types/
 experiments/*/plugin/tsconfig.json
 experiments/plugin-check/marketplace/funmedal-check/check.json
+private-assets/
