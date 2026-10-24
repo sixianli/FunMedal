@@ -5,6 +5,7 @@
 #include "display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "font.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -240,9 +241,14 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
     lock = xSemaphoreCreateMutex();
+    bool fonts_ok = font_init();
     ESP_ERROR_CHECK(display_init(&DEFAULT_DISPLAY));
     xTaskCreate(display_task, "display", 4096, NULL, 5, &display_task_handle);
     ESP_ERROR_CHECK(console_start());
+    if (!fonts_ok) {
+        ESP_LOGE(TAG, "embedded fonts are damaged");
+        console_event("FONT damaged\n");
+    }
     ESP_ERROR_CHECK(key_input_start(on_key));
     ESP_ERROR_CHECK(ble_link_start());
     err = audio_start();

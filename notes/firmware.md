@@ -74,13 +74,21 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
   .venv/bin/python tools/gen_pet.py firmware/main/pet_art.c
   ```
 
-- **字体**：卡片上的字用 Noto Sans SC（Google 和 Adobe 做的开源中文字体，SIL Open Font License 授权，允许把字形嵌进程序再分发，G22）生成两套点阵：大字 `font_large.c`（30 像素，用于标签、标题和配对数字）和正文 `font_text.c`（16 像素，用于批准内容和按键提示）。每个像素有 16 级透明度。[tools/gen_fonts.py](../tools/gen_fonts.py) 从 [scene.c](../firmware/main/scene.c) 的字符串里找出所有汉字，再调用 [tools/gen_font.swift](../tools/gen_font.swift) 画成点阵；正文字体另外包括全部英文字母、数字、符号和省略号 `…`。改了屏幕上的文字后要重新生成。字体文件本身不进 git：先把 `https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf` 下载到 `third_party/noto-sans-sc/`，脚本会核对它的 SHA-256，对不上就停下：
+- **字体**：卡片上的字来自三套字库，都在编译固件时生成，生成的文件只在编译目录 `firmware/build/fonts/` 里，不进 git：
 
-  ```bash
-  .venv/bin/python tools/gen_fonts.py
-  ```
+  | 字库 | 来源字体 | 大小 | 每个像素 | 字符 | 用途 |
+  |---|---|---|---|---|---|
+  | `font_text` | Noto Sans SC | 16 像素 | 16 级透明度 | 完整 | 批准内容、项目名、按键提示 |
+  | `font_pixel` | Fusion Pixel（BDF 点阵） | 12 像素 | 亮或不亮 | 完整 | 留给以后的像素风格画面，现在的画面还没用到 |
+  | `font_large` | 站酷快乐体 | 30 像素 | 16 级透明度 | 只有源代码里的字和 `0123456789/` | 标签、标题、配对数字 |
 
-  Mac 上的测试 `[FM-14] both fonts hold every character the screens draw` 会检查两套字体里有没有屏幕要画的每一个字。
+  “完整”指 ASCII 可见字符、GB2312 一级汉字（最常用的 3755 个汉字）、省略号 `…`、方框 `□`，再加 [firmware/main/](../firmware/main/) 下 `.c` 文件字符串里出现的所有非 ASCII 字符。项目名里有字库没有的字（比如繁体字、日文、表情符号）时画成 `□`；站酷快乐体本身没有 `□`，大字只画源代码里写死的字，用不到它。
+
+  生成过程：[firmware/main/CMakeLists.txt](../firmware/main/CMakeLists.txt) 在编译时运行 [tools/gen_fonts.py](../tools/gen_fonts.py)。它先核对三个字体文件的 SHA-256，对不上就停下；Noto Sans SC 和站酷快乐体用 [tools/gen_font.swift](../tools/gen_font.swift)（调用 Mac 的 CoreText 画字，所以要有 `swiftc`）画成灰度点阵，Fusion Pixel 直接读 BDF 文件里的点阵。三套字库各写成一个二进制文件，用 ESP-IDF 的 `target_add_binary_data` 原样嵌进程序。只要字体文件、生成脚本或 `main/` 下的 `.c` 文件变了，下次编译就重新生成。字体文件本身不进 git，先用 [tools/fetch-fonts.sh](../tools/fetch-fonts.sh) 下载，来源和授权见 [third_party/](../third_party/) 下各目录的 README。
+
+  二进制格式（小端，即低位字节在前）：开头 12 字节是 `FMF1`、行高（1 字节）、每像素位数（1 字节，1 或 4）、2 字节 0、字数（4 字节）；接着每个字 12 字节的索引（Unicode 码位 4 字节、点阵在后面的位置 4 字节、宽度 2 字节、2 字节 0），按码位从小到大排；最后是点阵。4 位点阵每行 `(宽+1)/2` 字节，高 4 位在前；1 位点阵每行 `(宽+7)/8` 字节，最高位在前。开机时 [font.c](../firmware/main/font.c) 逐项检查这三个文件，任何一处不对，串口会输出一行 `FONT damaged`。
+
+  Mac 上以 `[SC-3]` 开头的两条测试（`the body font …`、`the pixel font draws every GB2312 level-one character and a box for any other`）检查两套完整字库能画出每一个一级汉字，字库外的字画成 `□`；以 `[FM-14]` 开头的三条测试检查三套字库里有源代码要画的每一个字。测试还会故意把字库文件截短、改坏开头，确认 `font.c` 不接受坏文件。
 - **蓝牙设置**写在 [sdkconfig.defaults](../firmware/sdkconfig.defaults)（ESP-IDF 的编译选项）：只允许 LE Secure Connections 配对（`CONFIG_BT_NIMBLE_SM_LEGACY=n`、`CONFIG_BT_NIMBLE_SM_SC_ONLY=1`），绑定信息存进 NVS（`CONFIG_BT_NIMBLE_NVS_PERSIST=y`），每次传输的上限 512 字节（`CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512`），蓝牙任务的栈 6144 字节（`CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144`）。为什么要配对加密见 [approval.md](approval.md)。
 - **按键电压表**单独放在 [key_levels.c](../firmware/main/key_levels.c)，这样 Mac 上的测试能直接用同一份表。
 

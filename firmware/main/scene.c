@@ -153,21 +153,18 @@ static void draw_run_row(const text_run_t *run, int y, uint32_t bg, uint32_t fg,
     int count = font_decode_utf8(run->text, run->len, codepoints, MAX_RUN_GLYPHS);
     int x = run->x;
     for (int i = 0; i < count && x < SCENE_W; i++) {
-        const font_glyph_t *glyph = font_find(run->font, codepoints[i]);
-        if (glyph == NULL) {
-            continue;
-        }
-        for (int gx = 0; gx < glyph->width; gx++) {
+        font_glyph_t glyph = font_glyph(run->font, codepoints[i]);
+        for (int gx = 0; gx < glyph.width; gx++) {
             int px = x + gx;
             if (px < 0 || px >= SCENE_W) {
                 continue;
             }
-            uint8_t alpha = font_alpha(run->font, glyph, gx, ly);
+            uint8_t alpha = font_alpha(run->font, &glyph, gx, ly);
             if (alpha) {
                 row[px] = scene_rgb565_wire(blend(bg, fg, alpha));
             }
         }
-        x += glyph->width;
+        x += glyph.width;
     }
 }
 

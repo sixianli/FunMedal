@@ -30,6 +30,9 @@ BACKUP_DIR = "firmware-backup/"
 CARD_ID_IN_NAME = re.compile(r"trae_card_([0-9A-Fa-f]{12})", re.IGNORECASE)
 FLASH_IMAGE_BYTES = 4 * 1024 * 1024
 BLOCK_BYTES = 4096
+FONT_FILES = ["third_party/noto-sans-sc/NotoSansSC-Regular.otf",
+              "third_party/fusion-pixel/fusion-pixel-12px-proportional-zh_hans.bdf",
+              "third_party/zcool-kuaile/ZCOOLKuaiLe-Regular.ttf"]
 MARKDOWN_LINK = re.compile(r"\]\(([^)\s]+)\)")
 BRIDGE_MODES = "serve|hook|status|quit|doctor"
 
@@ -235,7 +238,10 @@ def test_fresh_clone_builds(case, run_dir):
     record = {"commit": git("rev-parse", "HEAD").decode().strip()}
     try:
         subprocess.run(["git", "clone", "--quiet", str(ROOT), str(clone)], check=True)
+        for font in FONT_FILES:
+            shutil.copy(ROOT / font, clone / font)
         steps = {
+            "fonts": ["sh", "tools/fetch-fonts.sh"],
             "bridge": ["sh", "mac/bridge/build.sh"],
             "firmware": ["bash", "-c", f"export IDF_TOOLS_PATH=$HOME/esp/.espressif && . {idf} >/dev/null && "
                                        "cd firmware && idf.py build"],
@@ -256,5 +262,6 @@ def test_fresh_clone_builds(case, run_dir):
         shutil.rmtree(workdir, ignore_errors=True)
         write_summary(run_dir, record)
     assert record["bridge"] == 0 and record["bridge_built"], record
+    assert record["fonts"] == 0, record
     assert record["firmware"] == 0 and record["firmware_bytes"] > 0, record
     assert BRIDGE_MODES in record["bridge_usage"] and not record["backup_in_clone"], record

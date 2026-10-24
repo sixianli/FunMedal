@@ -87,7 +87,8 @@ def test_states_render_distinct_scenes(case, card, artifacts):
             ink = [x for y in range(*LABEL_ROWS) for x in range(W) if at(pixels, x, y) == text]
             assert ink, (state, frame)
             expected_width = len(style["label"]) * GLYPH_WIDTH
-            assert expected_width - 12 <= max(ink) - min(ink) + 1 <= expected_width, (state, frame, min(ink), max(ink))
+            span = max(ink) - min(ink) + 1
+            assert expected_width * 3 // 4 <= span <= expected_width, (state, frame, min(ink), max(ink))
             assert abs((min(ink) + max(ink)) / 2 - W / 2) <= 6, (state, frame, min(ink), max(ink))
             images[(state, frame)] = pixels
     for state in STYLES:

@@ -63,6 +63,14 @@ sh flash.sh <端口>
 export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.sh
 ```
 
+卡片上的字是编译时从三套开源字体生成的，字体文件不在仓库里。第一次编译前先下载它们（要能上网；脚本会核对每个文件的 SHA-256，已经下好的不再下载）：
+
+```bash
+sh tools/fetch-fonts.sh
+```
+
+生成字体要用 Mac 上的 `swiftc`（Swift 编译器），它随 Xcode 命令行工具一起装；没有的话先运行 `xcode-select --install`。然后编译并刷写：
+
 ```bash
 cd firmware && idf.py -p <端口> build flash
 ```
@@ -218,4 +226,4 @@ pytest 从开始到结束，一直占着默认套接字的锁（`~/Library/Appli
 
 本项目的代码用 MIT 许可，见 [LICENSE](LICENSE)。
 
-卡片固件里的中英文点阵字体（`firmware/main/font_large.c`、`firmware/main/font_text.c`）由 Noto Sans SC 生成，Noto Sans SC 用 SIL Open Font License 1.1 许可，全文和来源见 [third_party/noto-sans-sc/](third_party/noto-sans-sc/)。
+卡片固件里的点阵字体在编译时从三套字体生成，三套都用 SIL Open Font License 1.1（一种允许把字形嵌进程序再分发的开源字体许可）：正文用 Noto Sans SC，见 [third_party/noto-sans-sc/](third_party/noto-sans-sc/)；像素字用 Fusion Pixel，它还收了 Ark Pixel、Cubic 11、Galmuri 的字形，见 [third_party/fusion-pixel/](third_party/fusion-pixel/)；大字用站酷快乐体，见 [third_party/zcool-kuaile/](third_party/zcool-kuaile/)。各目录里有来源、SHA-256 和许可全文。

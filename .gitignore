@@ -10,7 +10,9 @@ firmware/sdkconfig.old
 artifacts/
 mac/bridge/build/
 __pycache__/
-third_party/noto-sans-sc/*.otf
+third_party/*/*.otf
+third_party/*/*.ttf
+third_party/*/*.bdf
 experiments/*/plugin/.claude-plugin/types/
 experiments/*/plugin/tsconfig.json
 experiments/plugin-check/marketplace/funmedal-check/check.json

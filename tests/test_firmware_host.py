@@ -1,5 +1,6 @@
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,11 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
 KEY_SOURCES = [FIRMWARE_MAIN / "keys.c", FIRMWARE_MAIN / "key_levels.c"]
 KEY_CAPTURE = ROOT / "notes" / "data" / "key-adc-2026-10-16.txt"
-FONT_SOURCES = [FIRMWARE_MAIN / "font.c", FIRMWARE_MAIN / "font_large.c", FIRMWARE_MAIN / "font_text.c"]
+FONT_SOURCES = [FIRMWARE_MAIN / "font.c"]
+GEN_FONTS = ROOT / "tools" / "gen_fonts.py"
+OUTSIDE_LEVEL_ONE = ["\u5011", "\u8aaa", "\u30a2", "\U0001f600"]
 LINK_SOURCES = [FIRMWARE_MAIN / "link_version.c"]
 ROWS_SOURCES = [FIRMWARE_MAIN / "rows.c"]
 C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
-GLYPH_ENTRY = re.compile(r"\{0x([0-9a-f]+), \d+, \d+\}")
 
 
 def build(source, binary, sources=KEY_SOURCES):
@@ -58,23 +60,64 @@ def test_rows_on_host(case, tmp_path):
     assert "ALL PASSED" in result.stdout
 
 
-def glyphs_in(path):
-    return {chr(int(code, 16)) for code in GLYPH_ENTRY.findall(path.read_text(encoding="utf-8"))}
+def level_one():
+    found = []
+    for high in range(0xB0, 0xD8):
+        for low in range(0xA1, 0xFF):
+            try:
+                found.append(bytes([high, low]).decode("gb2312"))
+            except UnicodeDecodeError:
+                pass
+    return found
 
 
-@pytest.mark.parametrize("case", ["[FM-14] both fonts hold every character the screens draw"])
-def test_fonts_cover_screen_text(case):
-    texts = C_STRING.findall((FIRMWARE_MAIN / "scene.c").read_text(encoding="utf-8"))
-    wide = {c for text in texts for c in text if ord(c) > 0x7e}
-    large = glyphs_in(FIRMWARE_MAIN / "font_large.c")
-    small = glyphs_in(FIRMWARE_MAIN / "font_text.c")
-    printable = {chr(c) for c in range(0x20, 0x7f)}
-    assert len(wide) >= 20, sorted(wide)
-    assert wide - large == set(), sorted(wide - large)
-    assert wide - small == set(), sorted(wide - small)
-    assert set("0123456789/") - large == set()
-    missing_text = (printable | {"\u2026"}) - small
-    assert missing_text == set(), sorted(missing_text)
+def source_characters():
+    texts = [text for path in sorted(FIRMWARE_MAIN.glob("*.c"))
+             for text in C_STRING.findall(path.read_text(encoding="utf-8"))]
+    return sorted({c for text in texts for c in text if ord(c) > 0x7e})
+
+
+@pytest.fixture(scope="module")
+def fonts(tmp_path_factory):
+    out = tmp_path_factory.mktemp("fonts")
+    done = subprocess.run([sys.executable, str(GEN_FONTS), "--out", str(out)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    binary = out / "test_fonts"
+    build(ROOT / "tests" / "host" / "test_fonts.c", binary, FONT_SOURCES)
+    return out
+
+
+def check_font(fonts, name, expectations):
+    listing = fonts / f"{name}.expect"
+    listing.write_text("".join(f"{kind} {ord(c):x}\n" for kind, c in expectations), encoding="utf-8")
+    result = subprocess.run([str(fonts / "test_fonts"), str(fonts / f"font_{name}.bin"), str(listing)],
+                            capture_output=True, text=True)
+    print(result.stdout)
+    return result
+
+
+@pytest.mark.parametrize("case, name", [
+    ("[SC-3] the body font draws every GB2312 level-one character and a box for any other", "text"),
+    ("[SC-3] the pixel font draws every GB2312 level-one character and a box for any other", "pixel"),
+])
+def test_full_font_covers_level_one(case, name, fonts):
+    characters = level_one()
+    assert len(characters) == 3755
+    result = check_font(fonts, name, [("ink", c) for c in characters] + [("box", c) for c in OUTSIDE_LEVEL_ONE])
+    assert result.returncode == 0 and "ALL PASSED" in result.stdout, result.stdout[-3000:]
+
+
+@pytest.mark.parametrize("case, name", [
+    ("[FM-14] the body font holds ASCII and every character the firmware source draws", "text"),
+    ("[FM-14] the pixel font holds ASCII and every character the firmware source draws", "pixel"),
+    ("[FM-14] the large font holds the digits and every character the firmware source draws", "large"),
+])
+def test_fonts_cover_source_text(case, name, fonts):
+    wide = source_characters()
+    assert len(wide) >= 20, wide
+    base = "0123456789/" if name == "large" else [chr(c) for c in range(0x21, 0x7f)] + ["\u2026"]
+    result = check_font(fonts, name, [("have", c) for c in [*base, *wide]])
+    assert result.returncode == 0 and "ALL PASSED" in result.stdout, result.stdout[-3000:]
 
 
 @pytest.mark.parametrize("case", ["[OB-13] the link version value must be a plain decimal number from 1 to 9999"])

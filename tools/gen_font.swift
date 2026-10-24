@@ -7,13 +7,12 @@ func fail(_ message: String, _ code: Int32) -> Never {
 }
 
 let args = CommandLine.arguments
-guard args.count == 6, let size = Double(args[4]) else {
-    fail("usage: gen_font <font file> <name> <characters> <pixel size> <output.c>", 64)
+guard args.count == 5, let size = Double(args[3]) else {
+    fail("usage: gen_font <font file> <characters> <pixel size> <output.raw>", 64)
 }
 let fontURL = URL(fileURLWithPath: args[1])
-let name = args[2]
-let characters = Array(Set(args[3].unicodeScalars)).sorted { $0.value < $1.value }
-let output = args[5]
+let characters = Array(Set(args[2].unicodeScalars)).sorted { $0.value < $1.value }
+let output = args[4]
 guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(fontURL as CFURL) as? [CTFontDescriptor],
       let descriptor = descriptors.first else {
     fail("cannot load \(fontURL.path)", 66)
@@ -23,8 +22,10 @@ let ascent = Int(ceil(CTFontGetAscent(font)))
 let descent = Int(ceil(CTFontGetDescent(font)))
 let lineHeight = ascent + descent
 
-var bitmapBytes: [UInt8] = []
-var entries: [String] = []
+guard lineHeight > 0, lineHeight < 256 else {
+    fail("line height \(lineHeight) does not fit in one byte", 65)
+}
+var raw: [UInt8] = [UInt8(lineHeight)]
 for scalar in characters {
     var utf16 = Array(String(scalar).utf16)
     var glyphs = [CGGlyph](repeating: 0, count: utf16.count)
@@ -34,6 +35,9 @@ for scalar in characters {
     var advance = CGSize.zero
     CTFontGetAdvancesForGlyphs(font, .horizontal, &glyphs, &advance, 1)
     let width = max(1, Int(ceil(advance.width)))
+    guard width < 65536 else {
+        fail("glyph U+\(String(scalar.value, radix: 16)) is \(width) px wide", 65)
+    }
     var pixels = [UInt8](repeating: 0, count: width * lineHeight)
     let space = CGColorSpaceCreateDeviceGray()
     pixels.withUnsafeMutableBytes { buffer in
@@ -44,33 +48,13 @@ for scalar in characters {
         var position = CGPoint(x: 0, y: CGFloat(descent))
         CTFontDrawGlyphs(font, &glyphs, &position, 1, context)
     }
-    let offset = bitmapBytes.count
-    for row in 0..<lineHeight {
-        for col in stride(from: 0, to: width, by: 2) {
-            let a = pixels[row * width + col] >> 4
-            let b = col + 1 < width ? pixels[row * width + col + 1] >> 4 : 0
-            bitmapBytes.append(a << 4 | b)
-        }
-    }
-    entries.append("    {0x\(String(scalar.value, radix: 16)), \(width), \(offset)},")
+    withUnsafeBytes(of: scalar.value.littleEndian) { raw.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt16(width).littleEndian) { raw.append(contentsOf: $0) }
+    raw.append(contentsOf: pixels)
 }
 
-var text = "#include \"font.h\"\n\n"
-text += "static const font_glyph_t glyphs[] = {\n" + entries.joined(separator: "\n") + "\n};\n\n"
-text += "static const uint8_t bitmaps[] = {\n"
-for chunkStart in stride(from: 0, to: bitmapBytes.count, by: 16) {
-    let chunk = bitmapBytes[chunkStart..<min(chunkStart + 16, bitmapBytes.count)]
-    text += "    " + chunk.map { String(format: "0x%02x,", $0) }.joined(separator: " ") + "\n"
-}
-text += "};\n\n"
-text += "const font_t font_\(name) = {\n"
-text += "    .line_height = \(lineHeight),\n"
-text += "    .glyph_count = \(entries.count),\n"
-text += "    .glyphs = glyphs,\n"
-text += "    .bitmaps = bitmaps,\n"
-text += "};\n"
 do {
-    try text.write(toFile: output, atomically: false, encoding: .utf8)
+    try Data(raw).write(to: URL(fileURLWithPath: output))
 } catch {
     fail("cannot write \(output): \(error)", 73)
 }
