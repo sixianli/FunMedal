@@ -3,7 +3,8 @@
   "prefix": "SC",
   "decisions": {
     "G1": "durable",
-    "G2": "once"
+    "G2": "once",
+    "G3": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",

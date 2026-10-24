@@ -13,3 +13,11 @@
 问题：旧的 onboarding 长任务按新 PRD 重新规划，还是关掉另起？
 
 > 把 onboarding 长任务关掉，按新 PRD 另起一个长任务
+
+## G3 2026-10-24 用户原话
+
+问题：现在开始 SC-2：三个免费模型盲想、再写实现方案给你看？
+
+> 现在开始 SC-2，如果opencode中的免费模型不能用的话，可以考虑使用codebuddy的里面的模型，codebuddy我的token credis足够，如果codebuddy里面的免费模型不可用的话就用付费模型,codebuddy中图中框出来的模型都可以用！
+>
+> （图里框出的 CodeBuddy 模型：deepseek-v4.1-flash（x0.00）、gpt-5.6-luna（x0.14）、glm-5.3-flash（x0.06）、minimax-m3.1-flash（x0.08））
