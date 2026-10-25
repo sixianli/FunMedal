@@ -90,9 +90,10 @@ def test_pattern_marks_corners(case, card, artifacts):
     card.command("board")
 
 
-@pytest.mark.parametrize("case", ["[FM-12] thirty back-to-back snapshots arrive complete"])
+@pytest.mark.parametrize("case", ["[FM-12] thirty back-to-back snapshots of the still test pattern arrive complete "
+                                  "and identical"])
 def test_back_to_back_snapshots_complete(case, card, artifacts):
-    card.command("board")
+    card.command("pattern")
     outcomes = []
     for i in range(30):
         try:
@@ -102,6 +103,7 @@ def test_back_to_back_snapshots_complete(case, card, artifacts):
             outcomes.append({"i": i, "error": str(error)})
             card.command("info", timeout=30.0)
     (artifacts / "back-to-back.jsonl").write_text("".join(json.dumps(o) + "\n" for o in outcomes), encoding="utf-8")
+    card.command("board")
     assert [o for o in outcomes if "error" in o] == []
     assert len({o["sha256"] for o in outcomes}) == 1
 
@@ -124,10 +126,10 @@ def read_until_quiet(card, quiet_s, limit_s, ignore=lambda line: False):
     return lines
 
 
-@pytest.mark.parametrize("case", ["[FM-12] the display task draws nothing while the screen stays the same and "
-                                  "redraws the whole screen once after the panel settings change"])
+@pytest.mark.parametrize("case", ["[FM-12] the display task draws nothing while the still test pattern stays the "
+                                  "same and redraws the whole screen once after the panel settings change"])
 def test_display_task_redraws_only_changes(case, card, artifacts):
-    card.command("board")
+    card.command("pattern")
     time.sleep(0.5)
     first = info_fields(card.command("info"))
     time.sleep(STILL_SECONDS)
@@ -139,7 +141,8 @@ def test_display_task_redraws_only_changes(case, card, artifacts):
     last = info_fields(card.command("info"))
     record = {"first": first, "still": still, "rebuilt": rebuilt, "last": last}
     (artifacts / "display-task.json").write_text(json.dumps(record), encoding="utf-8")
-    assert first["mode"] == "unlinked", first
+    card.command("board")
+    assert first["pattern"] == "1", first
     assert still["draws"] == first["draws"], record
     assert int(rebuilt["draws"]) == int(still["draws"]) + 1, record
     assert last["draws"] == rebuilt["draws"], record
