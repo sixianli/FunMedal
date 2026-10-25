@@ -315,3 +315,37 @@ def test_free_cells_merge_into_one_home(case, theme, blank_tools, screen_artifac
     for x, y in ((60, 150), (120, 150), (60, 193), (120, 193), (180, 150)):
         assert pixel(two, x, y) == home, (x, y)
     assert pixel(five, 120, 240) != home
+
+
+BADGE_ORANGE = bytes((255, 89, 0))
+
+
+def slot_of(theme, index):
+    if theme < 2:
+        return (0, 24 + 36 * index, W, 36)
+    return (3 + index % 2 * 120, 24 + index // 2 * 86, 114, 80)
+
+
+def count_colour(image, area, colour):
+    x0, y0, w, h = area
+    return sum(pixel(image, x, y) == colour for y in range(y0, y0 + h) for x in range(x0, x0 + w))
+
+
+@pytest.mark.parametrize("case, theme", [
+    (f"[SC-22] in the {name} theme a project thread gets the orange P sticker before its name inside its own slot, "
+     f"and a plain local thread has none", theme)
+    for theme, name in enumerate(("board", "arcade", "comic", "tower"))
+])
+def test_project_badge_on_host(case, theme, blank_tools, screen_artifacts):
+    plain_rows = SIX_ROWS[:3]
+    project_rows = [plain_rows[0], (*plain_rows[1], True), plain_rows[2]]
+    plain = render_screen(blank_tools, screen_artifacts, f"badge-{theme}-plain", rows=plain_rows, theme=theme)["rgb"]
+    marked = render_screen(blank_tools, screen_artifacts, f"badge-{theme}-project", rows=project_rows,
+                           theme=theme)["rgb"]
+    slot = slot_of(theme, 1)
+    changed = changed_pixels(plain, marked)
+    assert changed and inside(changed, slot), (slot, changed[:10])
+    gained = count_colour(marked, slot, BADGE_ORANGE) - count_colour(plain, slot, BADGE_ORANGE)
+    assert gained >= 100, gained
+    badge_x = min(x for x, y in changed if pixel(marked, x, y) == BADGE_ORANGE)
+    assert badge_x < slot[0] + 30, badge_x

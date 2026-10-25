@@ -466,9 +466,10 @@ def test_only_changes_and_heartbeat(case, card, bridge, run_dir):
     bridge.hook(event("PreToolUse", "h", tool_use_id="t1", **bash("ls")), project="beat")
     bridge.hook(event("PostToolUse", "h", tool_use_id="t1", tool_response={}, **bash("ls")), project="beat")
     _, _, line = card.wait_for(lambda line: line == "BLE heartbeat", HEARTBEAT_EVERY_S + 5.0, mark)
+    status = wait_until(lambda: (s := bridge.status()) and s["heartbeats"] >= 1 and s, 5.0, "heartbeat acknowledged")
     beats = bridge.frames("heartbeat")
     summary = {"tables_before": tables, "tables_after": len(bridge.frames()), "beats": beats,
-               "card": [l for _, l in card.since(mark)], "status": bridge.status()}
+               "card": [l for _, l in card.since(mark)], "status": status}
     write_summary(run_dir, summary)
     assert summary["tables_after"] == tables, summary
     assert beats and beats[0] == {"bytes": 4, "format": 1, "total": 1, "shown": 0, "flags": HEARTBEAT_FLAG,

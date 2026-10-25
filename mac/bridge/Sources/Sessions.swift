@@ -43,6 +43,9 @@ struct Session: Codable {
     var since: Double
     var pid: Int?
     var visible = false
+    var projectThread: Bool?
+
+    var isProjectThread: Bool { projectThread == true }
 
     var shown: RowState {
         guard waiting.isEmpty else { return .waiting }
@@ -68,6 +71,7 @@ struct HookEvent {
     var hook: Int?
     var now: Double
     var asks = false
+    var projectThread = false
 }
 
 struct Sessions: Codable {
@@ -97,6 +101,7 @@ struct Sessions: Codable {
         return change(event.session, now: event.now) { session in
             if let project = event.project { session.project = project }
             if let pid = event.pid { session.pid = pid }
+            if event.projectThread { session.projectThread = true }
             return Sessions.effect(of: event, on: &session, newRow: newRow)
         }
     }

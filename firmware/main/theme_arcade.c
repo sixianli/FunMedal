@@ -40,6 +40,7 @@
 #define MESSAGE_TITLE_TOP 64
 #define HINT_FONT font_pixel
 #define MESSAGE_HINT_TOP 116
+#define BADGE_SIZE 24
 
 static const char *const TITLE = "CLAUDE CODE";
 static const char *const COIN = "INSERT COIN";
@@ -156,7 +157,11 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     }
     char name[ROWS_NAME_MAX + 1];
     upper_name(row->name, name, sizeof name);
-    draw_text(band, &font_pixel, name, NAME_X + dx, top, right - width - MARGIN, rgb);
+    int name_x = NAME_X + dx;
+    if (row->project) {
+        name_x = draw_badge(band, NAME_X + dx - 2, top + font_pixel.line_height / 2, BADGE_SIZE);
+    }
+    draw_text(band, &font_pixel, name, name_x, top, right - width - MARGIN, rgb);
     scanlines(band, area);
 }
 

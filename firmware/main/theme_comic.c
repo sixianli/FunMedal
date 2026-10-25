@@ -33,6 +33,7 @@
 #define MESSAGE_TITLE_TOP 76
 #define HINT_FONT font_text
 #define MESSAGE_HINT_TOP 128
+#define BADGE_SIZE 22
 
 static const char *const TITLE = "Claude 日常";
 static const char *const FOOTER = "未完待续";
@@ -129,7 +130,14 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     draw_fill(band, area, COMIC_INK);
     draw_fill(band, inner, panel_fill(row->state));
     draw_dots(band, inner, DOT_PERIOD, COMIC_INK, DOT_ALPHA);
-    draw_name(band, row->name, inner);
+    rect_t room = inner;
+    if (row->project) {
+        int box_h = font_pixel.line_height + 2 * NAME_BORDER;
+        int name_x = draw_badge(band, inner.x + NAME_INSET, inner.y + NAME_INSET + box_h / 2, BADGE_SIZE);
+        room.x = name_x - NAME_INSET;
+        room.w -= room.x - inner.x;
+    }
+    draw_name(band, row->name, room);
     const char *sound = SOUNDS[row->state];
     int dx = 0;
     int top = area.y + SFX_TOP;

@@ -108,7 +108,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | 命令 | 作用 |
 | --- | --- |
 | `info` | 回报固件版本、`state`（最近一次报的 `STATE`，开机时是 `idle`）、`pattern`（是不是在显示测试图）、`mode`（任务板现在显示什么：`unlinked` 未连接，`empty` 没有会话，`rows` 会话列表）、`theme`（现在的主题号）、`assets`（卡片里角色图数据的 32 位指纹，十六进制，换了素材包就变）、`tick`（动画现在走到第几步，开机起每 100 ms 加一）、`shown_tick`（最近一次画到屏幕上的是第几步）、屏幕设置，以及几项运行情况：`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的 ROWS 写入，心跳也算）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一张会话表就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
-| `rows` | 打印卡片手上的会话表：每行一行 `ROW <行号> <waiting\|error\|running\|done> <分钟或 -> <名字>`，分钟是卡片收到后自己往上加的；最后回 `OK rows total=<总数> shown=<行数> linked=<0 或 1>`，`linked` 是 1 表示版本核对一样、正在等 Mac 的会话表 |
+| `rows` | 打印卡片手上的会话表：每行一行 `ROW <行号> <waiting\|error\|running\|done> <分钟或 -> <p 或 -> <名字>`，`p` 表示项目 thread（状态字节带 0x40，名字前画橙色 P 贴纸），分钟是卡片收到后自己往上加的；最后回 `OK rows total=<总数> shown=<行数> linked=<0 或 1>`，`linked` 是 1 表示版本核对一样、正在等 Mac 的会话表 |
 | `board` | 去掉测试图和整屏填色，回到任务板，回 `OK board`；后面带了参数时回 `ERR board takes no arguments`。2026-10-25 起没有 `state`、`frame` 两条命令了，屏幕只跟着 Mac 发来的会话表变 |
 | `theme [主题号]` | 不带参数时回 `OK theme <主题号>`；带 0–3 时换成这套主题，回 `OK theme <主题号>`，和按中间键一样报 `THEME` 行、1 秒后存进 NVS；其他参数回 `ERR theme usage: theme [0-3]` |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |

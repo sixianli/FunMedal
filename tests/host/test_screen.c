@@ -255,6 +255,21 @@ static void test_changes(void)
     snprintf(name.screen.rows[1].name, sizeof(name.screen.rows[1].name), "%s", "SiBlog2");
     check_only("a new name redraws that slot only", &rows, &name, theme_board.slots[1]);
 
+    for (uint8_t theme = 0; theme < SCREEN_THEME_COUNT; theme++) {
+        scene_t plain = rows;
+        plain.theme = theme;
+        scene_t project = plain;
+        project.screen.rows[2].project = true;
+        char what[64];
+        snprintf(what, sizeof(what), "theme %u project mark redraws that slot only", theme);
+        rect_t slot = screen_theme(theme)->slots[2];
+        span_t spans[DIRTY_MAX_REGIONS];
+        int count = check_pair(what, &plain, &project, spans);
+        check(count == 1 && spans[0].y <= slot.y && spans[0].y + spans[0].h >= slot.y + slot.h &&
+                  spans[0].h < 2 * slot.h,
+              what);
+    }
+
     scene_t more = rows;
     more.screen.total = 7;
     check_only("a seventh session changes the header only", &rows, &more, theme_board.header);
@@ -499,6 +514,7 @@ static void random_sequence(uint8_t theme)
             row_t *row = &after.screen.rows[next_random(&seed) % after.screen.shown];
             row->state = (row_state_t)(ROW_WAITING + next_random(&seed) % 4);
             row->minutes = row->state == ROW_DONE ? (uint16_t)(next_random(&seed) % 3000) : ROWS_HIDDEN_MINUTES;
+            row->project = next_random(&seed) % 2 == 0;
         } else {
             after.screen.total = (uint8_t)(after.screen.shown + next_random(&seed) % 4);
         }

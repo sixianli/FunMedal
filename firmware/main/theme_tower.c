@@ -36,6 +36,8 @@
 #define MESSAGE_TITLE_TOP 76
 #define HINT_FONT font_pixel
 #define MESSAGE_HINT_TOP 128
+#define BADGE_SIZE 22
+#define BADGE_CENTRE_Y 13
 
 static const char *const TITLE = "CLAUDE · CONTROL";
 static const char *const FOOTER = "CONTROL · ONLINE";
@@ -161,7 +163,11 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     }
     bool alarm = row->state == ROW_WAITING || row->state == ROW_ERROR;
     draw_panel(band, area, MODULE_RADIUS, 1, alarm ? lamp_colour(row->state) : TOWER_LINE, TOWER_MODULE);
-    draw_text(band, &font_pixel, row->name, area.x + MARGIN, area.y + NAME_TOP, area.x + area.w - MARGIN, TOWER_NAME);
+    int name_x = area.x + MARGIN;
+    if (row->project) {
+        name_x = draw_badge(band, area.x + MARGIN - 3, area.y + BADGE_CENTRE_Y, BADGE_SIZE);
+    }
+    draw_text(band, &font_pixel, row->name, name_x, area.y + NAME_TOP, area.x + area.w - MARGIN, TOWER_NAME);
     rect_t lamp = {area.x + (area.w - LAMP) / 2, area.y + LAMP_TOP, LAMP, LAMP};
     draw_lamp(band, row->state, lamp, phase);
     char age[SCREEN_AGE_MAX];

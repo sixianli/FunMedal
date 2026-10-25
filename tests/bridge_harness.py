@@ -42,6 +42,7 @@ SOCKET_PREFIX = "fm-bridge-"
 PROJECTS = Path(tempfile.gettempdir()) / "fm-projects"
 ROW_STATES = {1: "waiting", 2: "error", 3: "running", 4: "done"}
 FRESH_BIT = 0x80
+PROJECT_BIT = 0x40
 HEARTBEAT_FLAG = 0x01
 HIDDEN_MINUTES = 65535
 
@@ -245,6 +246,7 @@ def decode_frame(text):
         size = data[at + 4]
         state = data[at + 1]
         frame["rows"].append({"row": data[at], "state": ROW_STATES[state & 0x0f], "fresh": bool(state & FRESH_BIT),
+                              "project_thread": bool(state & PROJECT_BIT),
                               "minutes": int.from_bytes(data[at + 2:at + 4], "little"),
                               "name": data[at + 5:at + 5 + size].decode("utf-8")})
         at += 5 + size
@@ -258,9 +260,9 @@ def card_rows(card):
     rows = []
     for _, line in card.since(start):
         if line.startswith("ROW "):
-            _, row, state, minutes, name = line.split(" ", 4)
+            _, row, state, minutes, mark, name = line.split(" ", 5)
             rows.append({"row": int(row), "state": state, "minutes": None if minutes == "-" else int(minutes),
-                         "name": name})
+                         "project_thread": mark == "p", "name": name})
     return {"reply": info_fields(reply), "rows": rows}
 
 

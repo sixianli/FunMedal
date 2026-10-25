@@ -75,9 +75,11 @@ static size_t parse_row(const uint8_t *data, size_t left, row_t *row)
     uint8_t state = data[1];
     uint8_t kind = state & ROWS_STATE_MASK;
     bool fresh = (state & ROWS_FRESH_BIT) != 0;
+    bool project = (state & ROWS_PROJECT_BIT) != 0;
     uint16_t minutes = (uint16_t)(data[2] | data[3] << 8);
     size_t name_len = data[4];
-    if (data[0] == 0 || (state & ~(ROWS_STATE_MASK | ROWS_FRESH_BIT)) != 0 || kind < ROW_WAITING || kind > ROW_DONE) {
+    if (data[0] == 0 || (state & ~(ROWS_STATE_MASK | ROWS_FRESH_BIT | ROWS_PROJECT_BIT)) != 0 || kind < ROW_WAITING ||
+        kind > ROW_DONE) {
         return 0;
     }
     if ((fresh && kind != ROW_WAITING && kind != ROW_ERROR) || !valid_minutes((row_state_t)kind, minutes)) {
@@ -90,6 +92,7 @@ static size_t parse_row(const uint8_t *data, size_t left, row_t *row)
     row->id = data[0];
     row->state = (row_state_t)kind;
     row->fresh = fresh;
+    row->project = project;
     row->minutes = minutes;
     memcpy(row->name, data + ROWS_ROW_HEADER_SIZE, name_len);
     row->name[name_len] = '\0';

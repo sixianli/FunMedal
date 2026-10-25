@@ -5,6 +5,7 @@ import Foundation
 enum Hook {
     static let passedThrough = ["source", "reason", "tool_use_id", "notification_type"]
     static let nextStepTool = "mcp__ccd_turn__wrap_up"
+    static let relayPrefix = "<relay from=\"coordinator\""
     static let worktreeTail = [".git", "worktrees"]
     static let defaultWaitLimit = 590.0
     static let ackSeconds = 2.0
@@ -91,6 +92,9 @@ enum Hook {
         }
         if name == "StopFailure", let error = hook["error"] as? String { message["error"] = error }
         if asksQuestion(hook) { message["asks"] = true }
+        if name == "UserPromptSubmit", let prompt = hook["prompt"] as? String, prompt.hasPrefix(relayPrefix) {
+            message["project_thread"] = true
+        }
         if let project = project(event: name, hook: hook) { message["project"] = project }
         return message
     }

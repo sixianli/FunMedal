@@ -6,6 +6,7 @@ struct RowLine {
     let state: RowState
     let since: Double
     let project: String
+    let projectThread: Bool
 
     func minutes(at now: Double) -> Int {
         guard state == .done else { return Rows.hiddenMinutes }
@@ -18,7 +19,7 @@ struct RowTable {
     let lines: [RowLine]
 
     var key: [String] {
-        ["\(total)"] + lines.map { "\($0.row)|\($0.state.rawValue)|\($0.since)|\($0.project)" }
+        ["\(total)"] + lines.map { "\($0.row)|\($0.state.rawValue)|\($0.since)|\($0.project)|\($0.projectThread)" }
     }
 }
 
@@ -28,6 +29,7 @@ enum Rows {
     static let countLimit = 255
     static let heartbeatFlag: UInt8 = 0x01
     static let freshBit: UInt8 = 0x80
+    static let projectBit: UInt8 = 0x40
     static let hiddenMinutes = 65535
     static let minutesCap = 44640
     static let nameLimit = 32
@@ -49,7 +51,7 @@ enum Rows {
     static func table(_ sessions: Sessions) -> RowTable {
         let lines = sessions.visible.map { entry in
             RowLine(id: entry.id, row: entry.session.row, state: entry.session.shown, since: entry.session.since,
-                    project: entry.session.project ?? "")
+                    project: entry.session.project ?? "", projectThread: entry.session.isProjectThread)
         }.sorted(by: precedes)
         return RowTable(total: min(lines.count, countLimit), lines: Array(lines.prefix(shownLimit)))
     }
@@ -71,6 +73,7 @@ enum Rows {
             let minutes = line.minutes(at: now)
             let name = cut(line.project, to: nameLimit)
             let state = line.state.rawValue | (line.state.alerts && fresh.contains(line.id) ? freshBit : 0)
+                | (line.projectThread ? projectBit : 0)
             data += [UInt8(line.row), state, UInt8(minutes & 0xff), UInt8(minutes >> 8), UInt8(name.count)]
             data += name
         }

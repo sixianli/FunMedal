@@ -12,6 +12,7 @@
 #define ROWS_FRAME_MAX (ROWS_HEADER_SIZE + ROWS_MAX * (ROWS_ROW_HEADER_SIZE + ROWS_NAME_MAX))
 #define ROWS_HEARTBEAT_FLAG 0x01
 #define ROWS_FRESH_BIT 0x80
+#define ROWS_PROJECT_BIT 0x40
 #define ROWS_STATE_MASK 0x0f
 #define ROWS_HIDDEN_MINUTES 65535
 #define ROWS_MINUTES_CAP 44640
@@ -34,6 +35,7 @@ typedef struct {
     uint8_t id;
     row_state_t state;
     bool fresh;
+    bool project;
     uint16_t minutes;
     char name[ROWS_NAME_MAX + 1];
 } row_t;

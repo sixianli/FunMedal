@@ -8,7 +8,7 @@ from cardlink import rgb888_to_565_rgb
 
 ARTIFACTS_PREFIX = "ob13"
 ARTIFACTS_SUBDIR = "link-version"
-LINK_VERSION = 3
+LINK_VERSION = 4
 MISMATCH_BACKGROUND = rgb888_to_565_rgb(0x9D0208)
 TITLE_ROWS = (60, 92)
 VERSION_ROWS = (120, 140)

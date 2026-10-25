@@ -353,10 +353,11 @@ static void print_rows(void)
     for (int i = 0; i < table.frame.shown; i++) {
         const row_t *row = &table.frame.rows[i];
         uint16_t minutes = rows_minutes(&table, i, now_us);
+        char mark = row->project ? 'p' : '-';
         if (minutes == ROWS_HIDDEN_MINUTES) {
-            console_printf("ROW %u %s - %s\n", row->id, rows_state_name(row->state), row->name);
+            console_printf("ROW %u %s - %c %s\n", row->id, rows_state_name(row->state), mark, row->name);
         } else {
-            console_printf("ROW %u %s %u %s\n", row->id, rows_state_name(row->state), minutes, row->name);
+            console_printf("ROW %u %s %u %c %s\n", row->id, rows_state_name(row->state), minutes, mark, row->name);
         }
     }
     console_printf("OK rows total=%u shown=%u linked=%d\n", table.frame.total, table.frame.shown, table.linked);

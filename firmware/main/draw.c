@@ -388,3 +388,40 @@ int draw_text(const band_t *band, const font_t *font, const char *text, int x, i
     }
     return x;
 }
+
+#define BADGE_CORE 0xFF5A00
+#define BADGE_RING 0xFFFFFF
+#define BADGE_INK 0x000000
+#define BADGE_SHADOW 2
+#define BADGE_LETTER_SCALE 2
+#define BADGE_GAP 6
+
+static const char *const BADGE_LETTER[] = {"11110", "11011", "11011", "11110", "11000", "11000", "11000"};
+
+static void badge_letter(const band_t *band, int cx, int cy, uint32_t rgb)
+{
+    int rows = (int)(sizeof BADGE_LETTER / sizeof BADGE_LETTER[0]);
+    int cols = (int)strlen(BADGE_LETTER[0]);
+    int x0 = cx - cols * BADGE_LETTER_SCALE / 2;
+    int y0 = cy - rows * BADGE_LETTER_SCALE / 2;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            if (BADGE_LETTER[r][c] == '1') {
+                rect_t dot = {x0 + c * BADGE_LETTER_SCALE, y0 + r * BADGE_LETTER_SCALE, BADGE_LETTER_SCALE,
+                              BADGE_LETTER_SCALE};
+                draw_fill(band, dot, rgb);
+            }
+        }
+    }
+}
+
+int draw_badge(const band_t *band, int x, int cy, int size)
+{
+    rect_t box = {x, cy - size / 2, size, size};
+    draw_round(band, (rect_t){box.x + BADGE_SHADOW, box.y + BADGE_SHADOW, size, size}, 4, BADGE_INK);
+    draw_round(band, box, 4, BADGE_INK);
+    draw_round(band, (rect_t){box.x + 1, box.y + 1, size - 2, size - 2}, 3, BADGE_RING);
+    draw_round(band, (rect_t){box.x + 3, box.y + 3, size - 6, size - 6}, 1, BADGE_CORE);
+    badge_letter(band, box.x + size / 2, box.y + size / 2, BADGE_RING);
+    return x + size + BADGE_GAP;
+}

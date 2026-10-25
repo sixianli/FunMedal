@@ -205,6 +205,7 @@ static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *sc
         screen_age(row->minutes, age, sizeof age);
     }
     key = hash_int(key, row->state);
+    key = hash_int(key, row->project);
     key = dirty_hash_text(key, row->name);
     key = dirty_hash_text(key, age);
     return hash_int(key, theme->slot_phase(row->state, screen->tick));

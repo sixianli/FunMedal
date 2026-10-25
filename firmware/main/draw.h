@@ -44,3 +44,4 @@ void draw_sprite(const band_t *band, const uint8_t *indices, const uint32_t *pal
 void draw_image(const band_t *band, const image_t *image, int x, int y, rect_t limit);
 int draw_text(const band_t *band, const font_t *font, const char *text, int x, int top, int max_x, uint32_t rgb);
 int draw_text_width(const font_t *font, const char *text, int max_w);
+int draw_badge(const band_t *band, int x, int cy, int size);

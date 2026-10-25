@@ -31,6 +31,7 @@
 #define MESSAGE_TITLE_TOP 64
 #define HINT_FONT font_text
 #define MESSAGE_HINT_TOP 116
+#define BADGE_SIZE 24
 
 static const char *const TITLE = "今天的任务";
 static const char *const STATE_WORDS[] = {
@@ -119,7 +120,11 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     int pill_left;
     draw_pill(band, row, bar, &pill_left);
     int top = bar.y + (bar.h - font_text.line_height) / 2;
-    draw_text(band, &font_text, row->name, bar.x + MARGIN + 2, top, pill_left - PILL_PAD, BOARD_INK);
+    int name_x = bar.x + MARGIN + 2;
+    if (row->project) {
+        name_x = draw_badge(band, bar.x + MARGIN - 2, bar.y + bar.h / 2, BADGE_SIZE);
+    }
+    draw_text(band, &font_text, row->name, name_x, top, pill_left - PILL_PAD, BOARD_INK);
 }
 
 static void draw_centered(const band_t *band, const font_t *font, const char *text, rect_t area, int top)

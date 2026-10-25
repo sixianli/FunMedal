@@ -58,7 +58,8 @@ static void test_table(void)
     rows_frame_t out;
     check(parse(data, at, &out) == ROWS_TABLE, "three rows parse as a table");
     check(out.total == 3 && out.shown == 3, "three rows give total and shown 3");
-    check(out.rows[0].id == 7 && out.rows[0].state == ROW_WAITING && out.rows[0].fresh, "first row is a fresh wait");
+    check(out.rows[0].id == 7 && out.rows[0].state == ROW_WAITING && out.rows[0].fresh && !out.rows[0].project,
+          "first row is a fresh wait");
     check(strcmp(out.rows[1].name, "\xe9\xa1\xb9\xe7\x9b\xae") == 0 && !out.rows[1].fresh, "utf-8 name kept");
     check(out.rows[2].state == ROW_DONE && out.rows[2].minutes == 61, "done row keeps its minutes");
     check(strcmp(rows_state_name(ROW_WAITING), "waiting") == 0 && strcmp(rows_state_name(ROW_DONE), "done") == 0,
@@ -70,6 +71,15 @@ static void test_table(void)
     at = frame(data, 0, 0, 0);
     check(parse(data, at, &out) == ROWS_TABLE && out.total == 0 && out.shown == 0, "empty table");
     check(strcmp(rows_top_name(&out), "idle") == 0, "an empty table is idle");
+
+    at = frame(data, 3, 3, 0);
+    at = row(data, at, 1, ROW_RUNNING | ROWS_PROJECT_BIT, ROWS_HIDDEN_MINUTES, "a");
+    at = row(data, at, 2, ROW_WAITING | ROWS_PROJECT_BIT | ROWS_FRESH_BIT, ROWS_HIDDEN_MINUTES, "b");
+    at = row(data, at, 3, ROW_DONE, 4, "c");
+    check(parse(data, at, &out) == ROWS_TABLE, "project rows parse");
+    check(out.rows[0].project && out.rows[0].state == ROW_RUNNING && !out.rows[0].fresh, "running project row");
+    check(out.rows[1].project && out.rows[1].state == ROW_WAITING && out.rows[1].fresh, "fresh waiting project row");
+    check(!out.rows[2].project && out.rows[2].minutes == 4, "plain done row");
 
     at = frame(data, 9, 6, 0);
     for (int i = 0; i < 6; i++) {
@@ -128,6 +138,9 @@ static void test_invalid(void)
     at = frame(data, 1, 1, 0);
     at = row(data, at, 1, ROW_RUNNING | 0x10, ROWS_HIDDEN_MINUTES, "a");
     expect_invalid(data, at, "unknown state bit");
+    at = frame(data, 1, 1, 0);
+    at = row(data, at, 1, ROW_RUNNING | 0x20, ROWS_HIDDEN_MINUTES, "a");
+    expect_invalid(data, at, "state bit 0x20");
     at = frame(data, 1, 1, 0);
     at = row(data, at, 1, ROW_RUNNING | ROWS_FRESH_BIT, ROWS_HIDDEN_MINUTES, "a");
     expect_invalid(data, at, "fresh running row");

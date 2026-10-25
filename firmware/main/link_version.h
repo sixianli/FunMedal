@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LINK_VERSION 3
+#define LINK_VERSION 4
 #define LINK_VERSION_DIGITS_MAX 4
 #define LINK_VERSION_TEXT_MAX (LINK_VERSION_DIGITS_MAX + 1)
 

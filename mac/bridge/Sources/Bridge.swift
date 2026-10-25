@@ -67,7 +67,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let pidCheckSeconds = 5.0
     static let agentsCheckSeconds = 15.0
     static let quitDisconnectSeconds = 1.0
-    static let linkVersion = 3
+    static let linkVersion = 4
     static let pairingAttempts = 3
     static let linkVersions = 1...9999
     static let releasingEvents = ["UserPromptSubmit": "prompt", "Stop": "stop", "StopFailure": "stop_failure",
@@ -214,12 +214,15 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         let asks = message["asks"] as? Bool == true
         if asks { fields["asks"] = true }
+        let projectThread = message["project_thread"] as? Bool == true
+        if projectThread { fields["project_thread"] = true }
         log.write("event", fields)
         let event = HookEvent(name: name, session: session, toolName: message["tool_name"] as? String,
                               toolKey: message["tool_key"] as? String, toolUseID: message["tool_use_id"] as? String,
                               notificationType: message["notification_type"] as? String,
                               project: message["project"] as? String, pid: message["claude_pid"] as? Int,
-                              hook: hook, now: Date().timeIntervalSince1970, asks: asks)
+                              hook: hook, now: Date().timeIntervalSince1970, asks: asks,
+                              projectThread: projectThread)
         lastEvent[session] = event.now
         answers[session] = nil
         let why = Bridge.releasingEvents[name] ?? "post_tool_use"
@@ -384,12 +387,14 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "agents_check": agentsCheck,
             "waits": waits.map { ["id": $0.id, "session": $0.session] },
             "sessions": sessions.table.mapValues { session -> [String: Any] in
-                ["state": session.shown.name, "project": session.project ?? NSNull(), "row": session.row,
+                ["state": session.shown.name, "project": session.project ?? NSNull(),
+                 "project_thread": session.isProjectThread, "row": session.row,
                  "visible": session.visible, "waiting": session.waiting.count, "pid": session.pid ?? NSNull()]
             },
             "total": table.total,
             "rows": table.lines.map { line -> [String: Any] in
-                ["row": line.row, "state": line.state.name, "minutes": line.minutes(at: now), "project": line.project]
+                ["row": line.row, "state": line.state.name, "minutes": line.minutes(at: now), "project": line.project,
+                 "project_thread": line.projectThread]
             },
             "synced": link == "connected" && ackedKey == table.key,
             "frame": Rows.hex(Rows.frame(table, fresh: [], nameLimit: nameLimit, now: now)),

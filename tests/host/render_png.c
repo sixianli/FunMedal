@@ -135,6 +135,7 @@ static bool read_scene(const char *path, scene_t *scene)
         char word[16];
         unsigned value;
         char minutes[16];
+        char mark[2];
         int used = 0;
         if (line[0] == 0) {
             continue;
@@ -148,12 +149,13 @@ static bool read_scene(const char *path, scene_t *scene)
             scene->screen.mode = strcmp(word, "rows") == 0    ? SCREEN_ROWS
                                  : strcmp(word, "empty") == 0 ? SCREEN_EMPTY
                                                               : SCREEN_UNLINKED;
-        } else if (sscanf(line, "row %15s %15s %n", word, minutes, &used) == 2 && used > 0 &&
+        } else if (sscanf(line, "row %15s %15s %1s %n", word, minutes, mark, &used) == 3 && used > 0 &&
                    scene->screen.shown < ROWS_MAX) {
             row_t *row = &scene->screen.rows[scene->screen.shown];
-            ok = state_from(word, &row->state);
+            ok = state_from(word, &row->state) && (strcmp(mark, "p") == 0 || strcmp(mark, "-") == 0);
             row->id = (uint8_t)(scene->screen.shown + 1);
             row->minutes = strcmp(minutes, "-") == 0 ? ROWS_HIDDEN_MINUTES : (uint16_t)atoi(minutes);
+            row->project = strcmp(mark, "p") == 0;
             snprintf(row->name, sizeof row->name, "%s", line + used);
             scene->screen.shown++;
         } else {

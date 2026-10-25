@@ -59,7 +59,7 @@ offset  size  content
 4...    each  row id (1-255) + state + minutes (2, little endian) + name length (<= 32) + name (UTF-8)
 ```
 
-- **状态字节**：低 4 位是 1 等你、2 出错、3 在跑、4 答完了；最高位是“新进入”，表示这一行这一帧刚变成等你或出错，卡片只靠这一位决定要不要提醒。只有等你和出错能带这一位。
+- **状态字节**：低 4 位是 1 等你、2 出错、3 在跑、4 答完了；最高位（0x80）是“新进入”，表示这一行这一帧刚变成等你或出错，卡片只靠这一位决定要不要提醒。只有等你和出错能带这一位。0x40 位表示这一行是 Claude Code 项目里派出来的 thread（SC-22），卡片在名字前画橙色 P 贴纸，四种状态都能带。别的位必须是 0，否则卡片拒收整帧。
 - **分钟**：答完了的行写“答完到现在过了几分钟”，最多 44640（31 天）；别的行写 65535，表示不显示。卡片收到后用自己的时钟往上加，所以 Mac 不用因为时间流逝重发。
 - **最长 226 字节**：4 + 6 × (1 + 1 + 2 + 1 + 32)。本机实测 Mac 每次最多写 512 字节（`status` 里的 `max_write`）。某台 Mac 少于 226 字节时，名字上限降到 24 字节（`name_limit`）。名字按 UTF-8 字符边界截断，不会切开一个汉字。
 - **心跳**：只有 4 个字节 `01 <总数> 00 01`，不改画面。桥接程序每 30 秒发一次。卡片 90 秒没收到任何一帧（心跳或整表）就自己断开，让 Mac 重连；这 90 秒从版本核对一样的那一刻起算。
@@ -148,7 +148,7 @@ Mac 合盖睡眠时蓝牙连接不一定断，醒来后桥接程序只收到“�
 
 ### 先核对版本（OB-13）
 
-卡片固件和桥接程序各有一个连接协议版本号（两边约定怎么收发数据的版本，是一个十进制整数），2026-10-24 起都是 3（换成 ROWS 时从 2 升上来）。卡片服务里有一个特征值 VERSION，编号 `6d2f1008-…`，和 ROWS 一样要配对加密后才能读写，内容是不带空格、不以 0 开头的十进制数字，1 到 9999。
+卡片固件和桥接程序各有一个连接协议版本号（两边约定怎么收发数据的版本，是一个十进制整数），2026-10-26 起都是 4（2026-10-24 换成 ROWS 时从 2 升到 3；SC-22 给状态字节加了 0x40 位，又升到 4，因为版本 3 的固件收到带这一位的行会拒收整张表）。卡片服务里有一个特征值 VERSION，编号 `6d2f1008-…`，和 ROWS 一样要配对加密后才能读写，内容是不带空格、不以 0 开头的十进制数字，1 到 9999。
 
 每次连上卡片，桥接程序先读 VERSION，再把自己的版本号写回去，等卡片确认后再看两边是否一样：
 
@@ -182,6 +182,7 @@ Mac 合盖睡眠时蓝牙连接不一定断，醒来后桥接程序只收到“�
 - **要批准时一直连着**：`PermissionRequest` 的 hook 不马上退出，规则见下文“等你批准时 hook 怎么等”。它从不回答，所以批准只能在电脑上做。其他事件仍然马上退出。
 - **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同，`PermissionRequest`、`PostToolUse`、`PostToolUseFailure` 都算），`tool_use_id`（Claude Code 给每次用工具的编号），`Notification` 的 `notification_type`（通知类型，桥接程序只认 `permission_prompt`），`claude_pid`（这个 hook 属于哪个 `claude` 进程，用来清理进程已经不在的会话；有环境变量 `CLAUDE_PID` 时用它，否则用 hook 的父进程号），`project`（项目名），以及 `asks`（只在下一步框带问题时出现，值是 `true`）。不传工具参数本身、命令内容、文件内容、完整的工作目录或用户的指令。
 - **项目名只传目录名**：有环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 也不变）时，每个事件都从 hook 输入的 `cwd`（会话当前所在的目录）往上找最近的、含 `.git`（目录或文件都算）的目录，最远找到 `CLAUDE_PROJECT_DIR` 下一级为止，找到就取它的目录名；`cwd` 就在 `CLAUDE_PROJECT_DIR`、不在它下面或者一路都没有 `.git` 时，取 `CLAUDE_PROJECT_DIR` 的最后一级。两边的路径都先解开符号链接再比较。这样在上一级文件夹启动、在子仓库里干活的会话（claude.ai 项目派来的会话就是这样，SC-21）显示子仓库名，`cd` 到别的子仓库时跟着变；在仓库根目录启动的会话不受影响。没有这个变量时，只在 `SessionStart` 时取 `cwd` 的最后一级。[tests/test_project_repo.py](../tests/test_project_repo.py) 用真的 hook 程序查 15 种目录（子仓库、子仓库的子目录、子仓库里再套一个仓库、没有仓库的子目录、启动目录以外、名字以启动目录名开头的旁边的仓库、带 `..` 和结尾带 `/` 的路径、仓库根目录和它的子目录、仓库里的 worktree、经符号链接启动），启动目录的上一级也放了 `.git`，把“最远找到启动目录”这条判断故意去掉后测试失败，再用真的卡片看一个从上一级文件夹启动的会话先显示子仓库名、`cd` 到没有仓库的子目录后变回文件夹名，同时一个在仓库根目录启动的会话名字一直不变（`artifacts/sc21-*/project-repo/`）。取到的目录里的 `.git` 是文件而不是目录时（git worktree，也就是同一个仓库另开的一份工作副本），读它的 `gitdir:` 一行，指向 `<主仓库>/.git/worktrees/<名字>` 时取主仓库的目录名，所以工作副本里的会话和主仓库的会话显示同一个项目名。以前 `PermissionRequest` 多传一段要显示在卡片上的 `summary`，2026-10-24 起不传了。
+- **项目 thread 只传是或否**（SC-22）：`UserPromptSubmit` 的 hook 输入里 `prompt`（这次收到的消息）以 `<relay from="coordinator"` 开头时，只多传一个 `project_thread: true`，不传消息本身；别的事件、别的消息都不传这一项。桥接程序收到后把这个会话记成项目 thread，之后一直算，存进会话表文件，重启后照旧；`status` 的 `sessions` 和 `rows` 里每项多一个 `project_thread`。测试 [tests/test_project_thread.py](../tests/test_project_thread.py)：8 种 hook 输入（转来的消息、普通消息、消息中间才出现转发标记、别的发送方、开头多一个空格、别的事件带同样文字）只有前两种传 `project_thread`，传出去的内容里找不到消息原文；真实卡片上一个项目 thread、一个普通 thread，ROWS 帧里只有前者带 0x40，卡片四套主题的截图和宿主渲染逐字节一样，之后再发普通消息、答完、重启桥接程序都还带着；真实 Claude Code 会话里敲一句以转发标记开头的话，卡片上这一行带上标记。没验证的：协调会话真正转来的消息是不是一字不差地出现在 `prompt` 里。本机项目 thread 的对话记录里第一条用户消息以这个标记开头，桥接程序也确实为这些会话收到了 `UserPromptSubmit`，但没在真正的项目 thread 上抓到 hook 输入，要负责人在卡片上看真实的项目 thread 时确认。
 
 ## 等你批准时 hook 怎么等
 
@@ -263,7 +264,7 @@ OB-9 起，`hook` 模式收到 `SessionStart` 时，如果套接字连不上（�
 - `waits`：还连着的 `PermissionRequest` hook，每个有 `id`（编号）和 `session`，最早的排在最前。
 - `sessions` 里每个会话的 `state`（显示的状态：`waiting`、`error`、`running`、`done`）、`project`、`row`（行号）、`visible`、`pid` 和 `waiting`（还有几条“等你”记录）。hook 等到上限退出后，`waits` 里没有它了，`waiting` 仍算它。
 
-和会话表有关的几项：`total`（显示着的会话数）、`rows`（排好后的前 6 行，每行 `row`、`state`、`minutes`、`project`）、`synced`、`frame`（现在该写给卡片的一帧，十六进制，不带“新进入”位）、`card_frame`（卡片最近确认收到的一帧）、`max_write` 和 `name_limit`（见上文“卡片怎么收状态”）、`heartbeats`（发了几次心跳）。`--log` 记录里每次写入记 `write`、确认记 `ack`，都带 `what`（`rows` 或 `heartbeat`）和 `frame`。
+和会话表有关的几项：`total`（显示着的会话数）、`rows`（排好后的前 6 行，每行 `row`、`state`、`minutes`、`project`、`project_thread`）、`synced`、`frame`（现在该写给卡片的一帧，十六进制，不带“新进入”位）、`card_frame`（卡片最近确认收到的一帧）、`max_write` 和 `name_limit`（见上文“卡片怎么收状态”）、`heartbeats`（发了几次心跳）。`--log` 记录里每次写入记 `write`、确认记 `ack`，都带 `what`（`rows` 或 `heartbeat`）和 `frame`。
 
 `--log` 记录里多了几种行，`kind` 是：
 

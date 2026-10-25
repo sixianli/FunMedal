@@ -51,7 +51,8 @@ def screen_tools(tmp_path_factory):
 
 def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0):
     lines = [f"theme {theme}", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
-    lines += [f"row {state} {minutes} {title}" for state, minutes, title in rows]
+    lines += [f"row {state} {minutes} {'p' if any(project) else '-'} {title}"
+              for state, minutes, title, *project in rows]
     scene = tools / f"{name}.txt"
     scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
     png, rgb, wire = out_dir / f"{name}.png", tools / f"{name}.rgb", tools / f"{name}.wire"
@@ -71,7 +72,8 @@ def scene_of(on_card):
     reply = on_card["reply"]
     if reply["linked"] == "0":
         return "unlinked", [], 0
-    rows = [(r["state"], "-" if r["minutes"] is None else str(r["minutes"]), r["name"]) for r in on_card["rows"]]
+    rows = [(r["state"], "-" if r["minutes"] is None else str(r["minutes"]), r["name"], r["project_thread"])
+            for r in on_card["rows"]]
     return ("empty" if reply["total"] == "0" else "rows"), rows, int(reply["total"])
 
 
