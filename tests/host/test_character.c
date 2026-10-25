@@ -123,7 +123,7 @@ static void test_art_rejects_bad_blobs(void)
     check(!character_art_load(blob, sizeof blob), "an image taller than its box is rejected");
     make_blob(CHARACTER_POSES);
     set_entry(0, 26420, 65026, TABLE_END);
-    check(!character_art_load(blob, sizeof blob), "an image whose size would overflow is rejected");
+    check(!character_art_load(blob, sizeof blob), "an absurdly large image is rejected before its size is used");
     make_blob(CHARACTER_POSES);
     set_entry(0, small.w, 1, TABLE_END);
     check(character_art_load(blob, sizeof blob), "a well formed blob loads");
