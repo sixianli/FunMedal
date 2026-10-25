@@ -5,8 +5,8 @@ PREBUILT=$(pwd -P)/prebuilt
 
 command -v idf.py >/dev/null 2>&1 \
     || { echo "update-prebuilt.sh: 没找到 idf.py。先在这个终端运行 ESP-IDF 的 export.sh，见 README“安装”第 2 步。" >&2; exit 1; }
-if [ -n "$(git status --porcelain -- . ':(exclude)prebuilt')" ]; then
-    echo "update-prebuilt.sh: firmware/ 下有没提交的改动。先提交，编译好的文件才能对上一个确定的提交。" >&2
+if [ -n "$(git status --porcelain -- . ':(exclude)prebuilt' ../assets/default ../tools/gen_assets.py ../tools/pngio.py)" ]; then
+    echo "update-prebuilt.sh: firmware/、assets/default/ 或 tools/ 里的素材脚本有没提交的改动。先提交，编译好的文件才能对上一个确定的提交。" >&2
     exit 1
 fi
 

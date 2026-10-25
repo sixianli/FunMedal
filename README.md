@@ -75,7 +75,7 @@ sh tools/fetch-fonts.sh
 cd firmware && idf.py -p <端口> build flash
 ```
 
-改了固件、提交之后，用 `sh tools/update-prebuilt.sh` 重新生成 `firmware/prebuilt/`（同样要先运行上面的 `export …`），再提交它。`firmware/` 下有没提交的改动时，这个脚本不动手。忘了更新的话，`tests/test_flash.py` 会报编译好的文件和源码对不上。
+改了固件、提交之后，用 `sh tools/update-prebuilt.sh` 重新生成 `firmware/prebuilt/`（同样要先运行上面的 `export …`），再提交它。`firmware/`、默认素材包 `assets/default/` 或生成素材的脚本有没提交的改动时，这个脚本不动手。忘了更新的话，`tests/test_flash.py` 会报编译好的文件和源码对不上。
 
 ### 3. 编译桥接程序，装上 Claude Code 插件
 

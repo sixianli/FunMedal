@@ -299,6 +299,14 @@ static void test_character_stages(void)
         check((theme->draw_home != NULL) == grid, what);
         snprintf(what, sizeof(what), "theme %u home lies in the sixth cell or the footer", index);
         check(rect_inside(character_bounds(&theme->home), grid ? theme->slots[THEME_SLOTS - 1] : theme->footer), what);
+        character_box_t small = character_art_box(CHARACTER_SMALL);
+        const character_stage_t *stages[] = {&theme->home, &theme->message};
+        for (int k = 0; k < 2; k++) {
+            snprintf(what, sizeof(what), "theme %u stage %d shows the whole box inside its clip", index, k);
+            check(rect_inside(stages[k]->box, stages[k]->clip), what);
+            snprintf(what, sizeof(what), "theme %u stage %d box holds the largest small image", index, k);
+            check(stages[k]->box.w >= small.w && stages[k]->box.h >= small.h, what);
+        }
         snprintf(what, sizeof(what), "theme %u message stage lies in the body or the footer", index);
         check(rect_inside(character_bounds(&theme->message), grid ? theme->body : theme->footer), what);
         rect_t home = character_bounds(&theme->home);

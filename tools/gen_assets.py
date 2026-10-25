@@ -1,6 +1,7 @@
 import argparse
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -25,7 +26,7 @@ def load_pose(path: Path) -> tuple[int, int, bytes]:
         raise AssetError(f"{path}: 找不到这张图")
     try:
         width, height, rgba = pngio.read_rgba(path)
-    except (pngio.PngError, ValueError) as error:
+    except (pngio.PngError, ValueError, IndexError, struct.error, zlib.error) as error:
         raise AssetError(f"{path}: {error}") from error
     alphas = rgba[3::4]
     if min(alphas) == 255:

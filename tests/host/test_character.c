@@ -72,24 +72,63 @@ static void test_frame_keys(void)
           "a zZ step changes the key");
 }
 
+enum {
+    ENTRIES = CHARACTER_POSES * CHARACTER_SIZES,
+    TABLE_END = 8 + 8 * ENTRIES,
+    BLOB = TABLE_END + 400,
+};
+
+static uint8_t blob[BLOB];
+
+static void set_entry(int i, int w, int h, int offset)
+{
+    uint8_t *entry = blob + 8 + 8 * i;
+    entry[0] = (uint8_t)w;
+    entry[1] = (uint8_t)(w >> 8);
+    entry[2] = (uint8_t)h;
+    entry[3] = (uint8_t)(h >> 8);
+    entry[4] = (uint8_t)offset;
+    entry[5] = (uint8_t)(offset >> 8);
+}
+
+static void make_blob(int poses)
+{
+    memset(blob, 0, sizeof blob);
+    memcpy(blob, "FMA1", 4);
+    blob[4] = (uint8_t)poses;
+    blob[5] = CHARACTER_SIZES;
+    for (int i = 0; i < poses * CHARACTER_SIZES; i++) {
+        set_entry(i, 1, 1, TABLE_END);
+    }
+}
+
 static void test_art_rejects_bad_blobs(void)
 {
     static const uint8_t junk[] = "FMA1";
     check(!character_art_load(junk, sizeof junk - 1), "a header without a table is rejected");
-    uint8_t blob[8 + 8 * CHARACTER_SIZES + 4] = {'F', 'M', 'A', '1', 1, CHARACTER_SIZES, 0, 0};
-    for (int s = 0; s < CHARACTER_SIZES; s++) {
-        uint8_t *entry = blob + 8 + 8 * s;
-        entry[0] = 1;
-        entry[2] = 1;
-        entry[4] = 8 + 8 * CHARACTER_SIZES;
-    }
-    blob[8] = 2;
+    make_blob(CHARACTER_POSES);
+    set_entry(0, 1, 1, BLOB - 1);
     check(!character_art_load(blob, sizeof blob), "a table pointing past the end is rejected");
     check(character_art_image(CHARACTER_LYING, CHARACTER_SMALL) == NULL, "a rejected blob leaves no image");
-    blob[8] = 1;
+    make_blob(CHARACTER_POSES - 1);
+    check(!character_art_load(blob, sizeof blob), "a pack missing a pose is rejected");
+    character_box_t small = character_art_box(CHARACTER_SMALL);
+    character_box_t large = character_art_box(CHARACTER_LARGE);
+    check(small.w == 64 && small.h == 74 && large.w == 84 && large.h == 108, "the boxes match gen_assets.py");
+    make_blob(CHARACTER_POSES);
+    set_entry(0, small.w + 1, 1, TABLE_END);
+    check(!character_art_load(blob, sizeof blob), "an image wider than its box is rejected");
+    make_blob(CHARACTER_POSES);
+    set_entry(1, 1, large.h + 1, TABLE_END);
+    check(!character_art_load(blob, sizeof blob), "an image taller than its box is rejected");
+    make_blob(CHARACTER_POSES);
+    set_entry(0, 26420, 65026, TABLE_END);
+    check(!character_art_load(blob, sizeof blob), "an image whose size would overflow is rejected");
+    make_blob(CHARACTER_POSES);
+    set_entry(0, small.w, 1, TABLE_END);
     check(character_art_load(blob, sizeof blob), "a well formed blob loads");
     check(character_art_image(CHARACTER_LYING, CHARACTER_LARGE) != NULL, "its images are found");
-    check(character_art_image(CHARACTER_TILT, CHARACTER_SMALL) == NULL, "poses it does not have are missing");
+    check(character_art_image(CHARACTER_CHEER, CHARACTER_SMALL) != NULL, "the last pose is found");
 }
 
 int main(void)

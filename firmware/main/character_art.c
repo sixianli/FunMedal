@@ -9,6 +9,8 @@
 #define ART_HEADER 8
 #define ART_ENTRY 8
 
+static const character_box_t BOXES[CHARACTER_SIZES] = {{64, 74}, {84, 108}};
+
 static image_t images[CHARACTER_POSES][CHARACTER_SIZES];
 static int loaded_poses;
 static uint32_t fingerprint;
@@ -23,6 +25,11 @@ static uint32_t read32(const uint8_t *p)
     return read16(p) | read16(p + 2) << 16;
 }
 
+character_box_t character_art_box(character_size_t size)
+{
+    return BOXES[size];
+}
+
 bool character_art_load(const uint8_t *data, size_t size)
 {
     memset(images, 0, sizeof images);
@@ -34,7 +41,7 @@ bool character_art_load(const uint8_t *data, size_t size)
     int poses = data[4];
     int sizes = data[5];
     size_t table_end = ART_HEADER + (size_t)poses * (size_t)sizes * ART_ENTRY;
-    if (poses == 0 || poses > CHARACTER_POSES || sizes != CHARACTER_SIZES || table_end > size) {
+    if (poses != CHARACTER_POSES || sizes != CHARACTER_SIZES || table_end > size) {
         return false;
     }
     image_t found[CHARACTER_POSES][CHARACTER_SIZES] = {0};
@@ -46,7 +53,8 @@ bool character_art_load(const uint8_t *data, size_t size)
             size_t offset = read32(entry + 4);
             size_t pixels = (size_t)w * (size_t)h;
             size_t need = pixels * 2 + (pixels + 1) / 2;
-            if (pixels == 0 || offset < table_end || offset > size || need > size - offset) {
+            if (w == 0 || h == 0 || w > BOXES[s].w || h > BOXES[s].h || offset < table_end || offset > size ||
+                need > size - offset) {
                 return false;
             }
             found[pose][s] = (image_t){w, h, data + offset, data + offset + pixels * 2};

@@ -196,7 +196,7 @@ const theme_t theme_comic = {
               THEME_GRID_SLOT(5)},
     .body = {0, THEME_GRID_TOP, DRAW_W, THEME_GRID_FOOTER - THEME_GRID_TOP},
     .footer = {0, THEME_GRID_FOOTER, DRAW_W, THEME_GRID_FOOTER_H},
-    .home = {{169, 199, 64, 74}, {123, 199, 108, 74}, {124, 212, 46, 40}},
+    .home = {{169, 199, 64, 74}, {123, 199, 114, 74}, {124, 212, 46, 40}},
     .message = {{167, 192, 64, 74}, {6, 27, 228, 240}, {120, 205, 46, 40}},
     .character = {COMIC_INK, COMIC_PAPER},
     .draw_background = draw_background,

@@ -26,6 +26,12 @@ typedef enum {
     CHARACTER_SIZES,
 } character_size_t;
 
+typedef struct {
+    int w;
+    int h;
+} character_box_t;
+
+character_box_t character_art_box(character_size_t size);
 bool character_art_init(void);
 bool character_art_load(const uint8_t *data, size_t size);
 const image_t *character_art_image(character_pose_t pose, character_size_t size);

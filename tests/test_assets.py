@@ -79,9 +79,9 @@ def test_other_pack_builds_other_bitmaps(case, default_blob, tmp_path):
     assert all(a[2] != b[2] for a, b in zip(parse(other)[2], parse(default_blob)[2]))
 
 
-@pytest.mark.parametrize("case", ["[SC-15] a pose without transparency, fully opaque, or missing stops the build "
-                                  "with a message naming the file instead of drawing a white box"])
-@pytest.mark.parametrize("damage", ["no-alpha", "opaque", "missing"])
+@pytest.mark.parametrize("case", ["[SC-15] a pose without transparency, fully opaque, missing or cut short stops "
+                                  "the build with a message naming the file instead of drawing a white box"])
+@pytest.mark.parametrize("damage", ["no-alpha", "opaque", "missing", "truncated"])
 def test_bad_pose_stops_the_build(case, damage, tmp_path):
     pack = copy_pack(DEFAULT_PACK, tmp_path / "pack")
     path = pack / "character" / "05-tilt.png"
@@ -90,6 +90,8 @@ def test_bad_pose_stops_the_build(case, damage, tmp_path):
         pngio.write_rgb(path, w, h, bytes(v for i, v in enumerate(rgba) if i % 4 != 3))
     elif damage == "opaque":
         pngio.write_rgba(path, w, h, bytes(255 if i % 4 == 3 else v for i, v in enumerate(rgba)))
+    elif damage == "truncated":
+        path.write_bytes(path.read_bytes()[:200])
     else:
         path.unlink()
     done = generate(pack, tmp_path / "out")
