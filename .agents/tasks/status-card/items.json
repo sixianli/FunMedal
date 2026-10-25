@@ -14,7 +14,11 @@
     "G10": "once",
     "G11": "once",
     "G12": "once",
-    "G13": "once"
+    "G13": "once",
+    "G14": "once",
+    "G15": "once",
+    "G16": "durable",
+    "G17": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -449,6 +453,34 @@
         "by": "claude",
         "on": "2026-10-24",
         "why": "PRD Business Rules 最后一条；沿用 onboarding 任务的测试标签"
+      }
+    },
+    {
+      "id": "SC-17",
+      "title": "角色在每套主题里都全身露出、不压住会话；格子型主题第 6 格留给角色，最多显示 5 个会话，这条规则写在 PRD 里",
+      "goal_ref": [
+        "G16"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules",
+          "quotes": "G16"
+        },
+        {
+          "type": "test",
+          "tag": "SC-17"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-25",
+        "why": "G16 是负责人定下的长期显示规则"
       }
     }
   ]
