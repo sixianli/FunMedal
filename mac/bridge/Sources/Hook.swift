@@ -47,8 +47,22 @@ enum Hook {
         return name.isEmpty || name == "/" ? nil : name
     }
 
+    static func nearestRepository(from cwd: String, within root: String) -> URL? {
+        let top = URL(fileURLWithPath: root).standardizedFileURL.resolvingSymlinksInPath()
+        var directory = URL(fileURLWithPath: cwd).standardizedFileURL.resolvingSymlinksInPath()
+        guard directory.pathComponents.starts(with: top.pathComponents) else { return nil }
+        while directory.pathComponents.count > top.pathComponents.count {
+            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git").path) { return directory }
+            directory = directory.deletingLastPathComponent()
+        }
+        return nil
+    }
+
     static func project(event: String, hook: [String: Any]) -> String? {
         if let root = ProcessInfo.processInfo.environment["CLAUDE_PROJECT_DIR"], !root.isEmpty {
+            if let cwd = hook["cwd"] as? String, !cwd.isEmpty, let repository = nearestRepository(from: cwd, within: root) {
+                return projectName(of: repository.path)
+            }
             return projectName(of: root)
         }
         guard event == "SessionStart", let cwd = hook["cwd"] as? String, !cwd.isEmpty else { return nil }
