@@ -131,8 +131,8 @@ class Bridge:
                         "--log", str(self.log), *extra], check=True)
         self.started = True
 
-    def start(self, timeout=60.0):
-        self.launch()
+    def start(self, *extra, timeout=60.0):
+        self.launch(*extra)
         try:
             return wait_until(lambda: (s := self.status()) and s["card"] == "connected" and s["synced"] and s,
                               timeout, "bridge connected to the card")
@@ -264,9 +264,9 @@ def card_rows(card):
     return {"reply": info_fields(reply), "rows": rows}
 
 
-def start_and_mark(bridge, card, timeout=5.0):
+def start_and_mark(bridge, card, *extra, timeout=5.0):
     before = card.mark()
-    bridge.start()
+    bridge.start(*extra)
     card.wait_for(lambda line: line.startswith("BLE rows "), timeout, before)
     return card.mark()
 
@@ -401,10 +401,10 @@ def newest_claude():
 
 
 @contextmanager
-def real_session(bridge, run_dir, settings_extra=None, program="claude", start_bridge=True):
+def real_session(bridge, run_dir, settings_extra=None, program="claude", start_bridge=True, bridge_args=()):
     require_installed_bridge()
     if start_bridge:
-        bridge.start()
+        bridge.start(*bridge_args)
     else:
         bridge.started = True
     settings = run_dir / "settings.json"

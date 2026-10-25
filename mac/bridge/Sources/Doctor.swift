@@ -55,6 +55,7 @@ enum Doctor {
             linkVersion(status, restart: restart),
             plugin(newest(terminal, desktop)),
             hooksSwitch(home: home),
+            agentsCheck(status, restart: restart),
             claudeVersion(.terminal, terminal, other: desktop, home: home),
             claudeVersion(.desktop, desktop, other: terminal, home: home),
         ]
@@ -161,6 +162,29 @@ enum Doctor {
                            fix: firmware)
         }
         return Finding(mark: .bad, name: name, detail: "卡片 \(cardVersion)，桥接程序 \(bridgeVersion)，桥接程序旧了", fix: install)
+    }
+
+    static func agentsCheck(_ status: [String: Any]?, restart: String) -> Finding {
+        let name = "会话核对"
+        guard let status else { return Finding(mark: .unknown, name: name, detail: "桥接程序没在跑，查不到") }
+        let stuck = "卡片上停着的会话不会自己改过来"
+        switch status["agents_check"] as? String {
+        case "ok":
+            return Finding(mark: .good, name: name, detail: "能读懂 claude agents --json")
+        case "not_yet":
+            return Finding(mark: .good, name: name, detail: "还没核对过，会话表里有会话后才核对")
+        case "no_claude":
+            return Finding(mark: .note, name: name, detail: "没找到 claude，\(stuck)",
+                           fix: "安装 Claude Code，或打开桌面 App 的 Code 页开一个会话")
+        case "failed":
+            return Finding(mark: .note, name: name, detail: "claude agents --json 运行失败，\(stuck)",
+                           fix: "运行 claude update 升级 Claude Code")
+        case "unreadable":
+            return Finding(mark: .note, name: name, detail: "读不懂 claude agents --json 的输出，\(stuck)",
+                           fix: "运行 claude update 升级 Claude Code；还不行就把这一行发给维护者")
+        default:
+            return Finding(mark: .note, name: name, detail: "正在跑的桥接程序太旧，不核对会话", fix: "在仓库目录运行 sh install.sh，\(restart)")
+        }
     }
 
     static func plugin(_ claude: ClaudeCopy?) -> Finding {

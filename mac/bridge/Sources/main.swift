@@ -18,7 +18,7 @@ func defaultSocket() -> String {
     return support.appendingPathComponent("FunMedal/bridge.sock").path
 }
 
-func serve(socket: String, logPath: String?, linkVersion: Int) -> Never {
+func serve(socket: String, logPath: String?, linkVersion: Int, claude: String?, agentsSeconds: Double) -> Never {
     guard UnixSocket.address(socket) != nil else { fail("socket path is too long: \(socket)", setupFailedExit) }
     let directory = (socket as NSString).deletingLastPathComponent
     try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true,
@@ -33,7 +33,8 @@ func serve(socket: String, logPath: String?, linkVersion: Int) -> Never {
         fail("cannot listen on \(socket): \(String(cString: strerror(errno)))", setupFailedExit)
     }
     let log = EventLog(path: logPath)
-    let bridge = Bridge(socketPath: socket, log: log, linkVersion: linkVersion)
+    let bridge = Bridge(socketPath: socket, log: log, linkVersion: linkVersion, claude: claude,
+                        agentsSeconds: agentsSeconds)
     log.write("start", ["pid": Int(getpid()), "socket": socket])
     let acceptor = Thread {
         while true {
@@ -102,13 +103,15 @@ func ask(socket: String, _ message: [String: Any]) -> Int32 {
 signal(SIGPIPE, SIG_IGN)
 var arguments = Array(CommandLine.arguments.dropFirst())
 let usage = "usage: funmedal-bridge serve|hook|status|quit|doctor [--socket PATH] [--log PATH] "
-    + "[--wait-limit SECONDS] [--link-version NUMBER]"
+    + "[--wait-limit SECONDS] [--link-version NUMBER] [--claude PATH] [--agents-seconds SECONDS]"
 guard !arguments.isEmpty else { fail(usage, usageExit) }
 let mode = arguments.removeFirst()
 var socketPath = defaultSocket()
 var logPath: String?
 var waitLimit = Hook.defaultWaitLimit
 var linkVersion = Bridge.linkVersion
+var claudePath: String?
+var agentsSeconds = Bridge.agentsCheckSeconds
 while !arguments.isEmpty {
     let option = arguments.removeFirst()
     guard !arguments.isEmpty else { fail("\(option) needs a value", usageExit) }
@@ -125,13 +128,20 @@ while !arguments.isEmpty {
             fail("--link-version needs a number from 1 to 9999", usageExit)
         }
         linkVersion = version
+    case "--claude": claudePath = arguments.removeFirst()
+    case "--agents-seconds":
+        guard let seconds = Double(arguments.removeFirst()), seconds > 0, seconds.isFinite else {
+            fail("--agents-seconds needs a positive number of seconds", usageExit)
+        }
+        agentsSeconds = seconds
     default: fail("unknown option \(option)", usageExit)
     }
 }
 
 switch mode {
 case "serve":
-    serve(socket: socketPath, logPath: logPath, linkVersion: linkVersion)
+    serve(socket: socketPath, logPath: logPath, linkVersion: linkVersion, claude: claudePath,
+          agentsSeconds: agentsSeconds)
 case "hook":
     Hook.run(socket: socketPath, waitLimit: waitLimit, logPath: logPath)
     exit(0)

@@ -20,7 +20,11 @@ enum RowState: UInt8 {
 }
 
 enum WaitingKind: String, Codable {
-    case permission, plan, notification, question
+    case permission, plan, notification, question, seen
+}
+
+enum Seen: String {
+    case busy, waiting, idle
 }
 
 struct WaitingRecord: Codable {
@@ -70,6 +74,7 @@ struct Sessions: Codable {
     static let rowIDs = 1...255
     static let planTool = "ExitPlanMode"
     static let permissionPrompt = "permission_prompt"
+    static let answersInARow = 2
 
     private(set) var table: [String: Session] = [:]
     private var nextRow = rowIDs.lowerBound
@@ -151,8 +156,25 @@ struct Sessions: Codable {
             if let hook = session.waiting[index].hook { released.append(hook) }
             session.waiting.remove(at: index)
         }
-        session.waiting.removeAll { $0.kind == .notification }
+        session.waiting.removeAll { $0.kind == .notification || $0.kind == .seen }
         return released
+    }
+
+    mutating func observe(session id: String, _ seen: Seen, inARow: Int, now: Double) {
+        _ = change(id, now: now) { session in
+            switch seen {
+            case .waiting:
+                if session.waiting.isEmpty { session.waiting.append(WaitingRecord(kind: .seen)) }
+            case .busy where inARow >= Sessions.answersInARow:
+                session.waiting.removeAll { $0.hook == nil && $0.kind != .question }
+            case .idle where inARow >= Sessions.answersInARow:
+                session.waiting.removeAll { $0.hook == nil && $0.kind != .question }
+                if session.activity == .running { session.activity = .done }
+            default:
+                break
+            }
+            return []
+        }
     }
 
     mutating func hungUp(session id: String, hook: Int) {

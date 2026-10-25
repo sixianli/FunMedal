@@ -65,6 +65,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let writeRetrySeconds = 1.0
     static let heartbeatSeconds = 30.0
     static let pidCheckSeconds = 5.0
+    static let agentsCheckSeconds = 15.0
     static let quitDisconnectSeconds = 1.0
     static let linkVersion = 3
     static let pairingAttempts = 3
@@ -77,6 +78,13 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let savedPath: String
     let log: EventLog
     let linkVersion: Int
+    let agentsSeconds: Double
+    private var claude: String?
+    private let claudeChosen: Bool
+    private var checking = false
+    private var agentsCheck = "not_yet"
+    private var lastEvent: [String: Double] = [:]
+    private var answers: [String: (seen: Seen, inARow: Int)] = [:]
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var characteristics: [CBUUID: CBCharacteristic] = [:]
@@ -99,11 +107,14 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var quitting: DispatchSemaphore?
     private var counts: [String: Int] = [:]
 
-    init(socketPath: String, log: EventLog, linkVersion: Int) {
+    init(socketPath: String, log: EventLog, linkVersion: Int, claude: String?, agentsSeconds: Double) {
         self.socketPath = socketPath
         self.savedPath = socketPath + ".sessions.json"
         self.linkVersion = linkVersion
         self.log = log
+        self.claude = claude
+        self.claudeChosen = claude != nil
+        self.agentsSeconds = agentsSeconds
     }
 
     func start() {
@@ -111,7 +122,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.load()
             self.checkPids()
             self.timers = [self.every(Bridge.heartbeatSeconds) { self.heartbeat() },
-                           self.every(Bridge.pidCheckSeconds) { self.checkPids() }]
+                           self.every(Bridge.pidCheckSeconds) { self.checkPids() },
+                           self.every(self.agentsSeconds) { self.checkAgents() }]
             self.central = CBCentralManager(delegate: self, queue: self.queue)
         }
     }
@@ -163,6 +175,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             guard wait.outcome == nil else { return }
             finish(wait, as: "gave_up")
             sessions.gaveUp(session: wait.session, hook: wait.id)
+            answers[wait.session] = nil
             log.write("wait_gave_up", ["id": wait.id])
             refresh()
         }
@@ -207,6 +220,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                               notificationType: message["notification_type"] as? String,
                               project: message["project"] as? String, pid: message["claude_pid"] as? Int,
                               hook: hook, now: Date().timeIntervalSince1970, asks: asks)
+        lastEvent[session] = event.now
+        answers[session] = nil
         let why = Bridge.releasingEvents[name] ?? "post_tool_use"
         release(sessions.apply(event), why: why)
     }
@@ -272,6 +287,64 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         refresh()
     }
 
+    private func checkAgents() {
+        guard !checking, !sessions.table.isEmpty else { return }
+        checking = true
+        let began = Date().timeIntervalSince1970
+        let known = claude
+        DispatchQueue.global().async {
+            let program = known ?? Bridge.newestClaude()
+            let ran = program.flatMap { Doctor.execute($0, ["agents", "--json"]) }
+            self.queue.async { self.agentsAnswered(ran, program: program, began: began) }
+        }
+    }
+
+    private static func newestClaude() -> String? {
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+        let terminal = Doctor.findClaude().map { Doctor.ClaudeCopy(program: $0, version: Doctor.readVersion($0)) }
+        return Doctor.newest(terminal, Doctor.desktopClaude(home: home))?.program
+    }
+
+    static func parseAgents(_ text: String) -> [String: Seen]? {
+        guard let list = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [Any] else { return nil }
+        var seen: [String: Seen] = [:]
+        for item in list {
+            guard let entry = item as? [String: Any] else { return nil }
+            if let id = entry["sessionId"] as? String, let status = (entry["status"] as? String).flatMap(Seen.init) {
+                seen[id] = status
+            }
+        }
+        return seen
+    }
+
+    private func agentsAnswered(_ ran: Doctor.Ran?, program: String?, began: Double) {
+        checking = false
+        if !claudeChosen { claude = ran?.code == 0 ? program : nil }
+        answers = answers.filter { sessions.table[$0.key] != nil }
+        lastEvent = lastEvent.filter { sessions.table[$0.key] != nil }
+        guard let ran, ran.code == 0, let seen = Bridge.parseAgents(ran.out) else {
+            agentsCheck = program == nil ? "no_claude" : ran?.code == 0 ? "unreadable" : "failed"
+            answers.removeAll()
+            log.write("agents", ["result": agentsCheck, "exit": ran.map { Int($0.code) } ?? NSNull()])
+            return
+        }
+        agentsCheck = "ok"
+        var logged: [String: String] = [:]
+        let now = Date().timeIntervalSince1970
+        for id in sessions.table.keys {
+            guard let status = seen[id], lastEvent[id].map({ $0 < began }) ?? true else {
+                answers[id] = nil
+                continue
+            }
+            let inARow = answers[id].map { $0.seen == status ? $0.inARow + 1 : 1 } ?? 1
+            answers[id] = (status, inARow)
+            logged[id] = status.rawValue
+            sessions.observe(session: id, status, inARow: inARow, now: now)
+        }
+        log.write("agents", ["result": agentsCheck, "seen": logged])
+        refresh()
+    }
+
     private func load() {
         guard let data = FileManager.default.contents(atPath: savedPath) else { return }
         do {
@@ -308,6 +381,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             "card": link,
             "card_version": cardVersion ?? NSNull(),
             "bridge_version": linkVersion,
+            "agents_check": agentsCheck,
             "waits": waits.map { ["id": $0.id, "session": $0.session] },
             "sessions": sessions.table.mapValues { session -> [String: Any] in
                 ["state": session.shown.name, "project": session.project ?? NSNull(), "row": session.row,

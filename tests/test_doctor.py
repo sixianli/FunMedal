@@ -18,10 +18,10 @@ ARTIFACTS_PREFIX = "ob11"
 ARTIFACTS_SUBDIR = "doctor"
 TERMINAL_LINE = "Claude Code 版本（终端）"
 DESKTOP_LINE = "Claude Code 版本（桌面 App）"
-CHECKS = ["桥接程序", "蓝牙", "签名", "卡片", "固件版本", "插件", "hooks 开关", TERMINAL_LINE, DESKTOP_LINE]
+CHECKS = ["桥接程序", "蓝牙", "签名", "卡片", "固件版本", "插件", "hooks 开关", "会话核对", TERMINAL_LINE, DESKTOP_LINE]
 LINE = re.compile(r"^(好|注意|不好|不知道) (.+?)：(.*)$")
 GOOD_STATUS = {"ok": True, "pid": 4242, "bluetooth": "poweredOn", "authorization": "allowedAlways",
-               "card": "connected", "card_version": 2, "bridge_version": 2}
+               "card": "connected", "card_version": 2, "bridge_version": 2, "agents_check": "ok"}
 GOOD_PLUGINS = [{"id": "funmedal@funmedal", "enabled": True}, {"id": "other@elsewhere", "enabled": True}]
 GOOD = {"status": GOOD_STATUS, "version": "2.1.292 (Claude Code)", "plugins": GOOD_PLUGINS, "settings": {},
         "app": "copy", "claude": True, "desktop": {}}
@@ -131,7 +131,7 @@ def changed(**parts):
 
 SITUATIONS = {
     "all-good": (GOOD, {}, None),
-    "bridge-down": (changed(status=None), {"桥接程序": "不好"} | UNKNOWN_CARD, "open -g"),
+    "bridge-down": (changed(status=None), {"桥接程序": "不好", "会话核对": "不知道"} | UNKNOWN_CARD, "open -g"),
     "bluetooth-denied": (changed(status_fields={"authorization": "denied"}), {"蓝牙": "不好"}, "隐私与安全性"),
     "bluetooth-unanswered": (changed(status_fields={"authorization": "notDetermined"}), {"蓝牙": "不好"}, "允许"),
     "bluetooth-off": (changed(status_fields={"bluetooth": "poweredOff", "card": "off", "card_version": None}),
@@ -156,6 +156,11 @@ SITUATIONS = {
                         "claude plugin enable funmedal@funmedal"),
     "hooks-disabled": (changed(settings={"disableAllHooks": True}), {"hooks 开关": "不好"}, "disableAllHooks"),
     "hooks-no-settings": (changed(settings=None), {}, None),
+    "agents-not-yet": (changed(status_fields={"agents_check": "not_yet"}), {}, None),
+    "agents-no-claude": (changed(status_fields={"agents_check": "no_claude"}), {"会话核对": "注意"}, "Code 页"),
+    "agents-failed": (changed(status_fields={"agents_check": "failed"}), {"会话核对": "注意"}, "claude update"),
+    "agents-unreadable": (changed(status_fields={"agents_check": "unreadable"}), {"会话核对": "注意"}, "维护者"),
+    "agents-old-bridge": (changed(status_fields={"agents_check": KeyError}), {"会话核对": "注意"}, "install.sh"),
     "claude-old": (changed(version="2.1.291 (Claude Code)"), {TERMINAL_LINE: "不好"}, "claude update"),
     "claude-missing": (changed(claude=False), {"插件": "不知道", TERMINAL_LINE: "不好", DESKTOP_LINE: "不好"},
                        "Code 页开一个会话"),
@@ -191,6 +196,17 @@ def test_doctor(case, way, run_dir, tmp_path):
      "pairing-failed"),
 ])
 def test_doctor_pairing(case, way, run_dir, tmp_path):
+    check_situation(way, run_dir, tmp_path)
+
+
+@pytest.mark.parametrize("case, way", [
+    ("[SC-20] doctor treats a bridge that has not checked sessions yet as good", "agents-not-yet"),
+    ("[SC-20] doctor notes that no claude was found to check sessions with", "agents-no-claude"),
+    ("[SC-20] doctor notes that claude agents --json failed", "agents-failed"),
+    ("[SC-20] doctor notes an answer from claude agents --json it could not read", "agents-unreadable"),
+    ("[SC-20] doctor notes a running bridge too old to check sessions", "agents-old-bridge"),
+])
+def test_doctor_agents_check(case, way, run_dir, tmp_path):
     check_situation(way, run_dir, tmp_path)
 
 
