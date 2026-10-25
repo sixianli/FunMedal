@@ -22,6 +22,7 @@ typedef struct {
     rect_t box;
     rect_t clip;
     rect_t extra;
+    uint8_t size;
 } character_stage_t;
 
 typedef struct {

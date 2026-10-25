@@ -9,7 +9,7 @@
 #define ART_HEADER 8
 #define ART_ENTRY 8
 
-static const character_box_t BOXES[CHARACTER_SIZES] = {{64, 74}, {84, 108}};
+static const character_box_t BOXES[CHARACTER_SIZES] = {{64, 74}, {84, 108}, {97, 112}, {125, 145}, {173, 200}};
 
 static image_t images[CHARACTER_POSES][CHARACTER_SIZES];
 static int loaded_poses;

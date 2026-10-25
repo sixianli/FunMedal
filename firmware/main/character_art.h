@@ -23,6 +23,9 @@ typedef enum {
 typedef enum {
     CHARACTER_SMALL,
     CHARACTER_LARGE,
+    CHARACTER_HOME_112,
+    CHARACTER_HOME_145,
+    CHARACTER_HOME_200,
     CHARACTER_SIZES,
 } character_size_t;
 

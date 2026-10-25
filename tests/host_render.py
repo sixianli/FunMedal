@@ -61,7 +61,10 @@ def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme
     regions = [tuple(int(v) for v in line.split()[1:3]) for line in done.stdout.splitlines()
                if line.startswith("REGION ")]
     assets = [line.split()[1] for line in done.stdout.splitlines() if line.startswith("ASSETS ")]
-    return {"rgb": rgb.read_bytes(), "wire": wire.read_bytes(), "regions": regions, "assets": assets[0]}
+    character = [tuple(int(v) for v in line.split()[1:5]) for line in done.stdout.splitlines()
+                 if line.startswith("CHARACTER ")]
+    return {"rgb": rgb.read_bytes(), "wire": wire.read_bytes(), "regions": regions, "assets": assets[0],
+            "character": character[0] if character else None}
 
 
 def scene_of(on_card):

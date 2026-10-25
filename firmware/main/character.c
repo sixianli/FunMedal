@@ -102,7 +102,7 @@ static void draw_extra(const band_t *band, rect_t area, character_frame_t frame,
 void character_draw(const band_t *band, const character_stage_t *stage, character_frame_t frame,
                     character_colors_t colors)
 {
-    const image_t *image = character_art_image((character_pose_t)frame.pose, CHARACTER_SMALL);
+    const image_t *image = character_art_image((character_pose_t)frame.pose, (character_size_t)stage->size);
     if (image != NULL) {
         draw_image(band, image, stage->box.x + stage->box.w - image->w, stage->box.y + stage->box.h - image->h,
                    stage->clip);

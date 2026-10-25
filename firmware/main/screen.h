@@ -14,6 +14,7 @@ const theme_t *screen_theme(uint8_t index);
 uint8_t screen_next_theme(uint8_t index);
 uint8_t screen_stored_theme(bool found, uint8_t value);
 void screen_from_rows(screen_t *screen, const rows_table_t *table, int64_t now_us, uint32_t tick);
+character_stage_t screen_character_stage(const theme_t *theme, const screen_t *screen);
 void screen_render(const theme_t *theme, const screen_t *screen, const band_t *band);
 int screen_regions(uint8_t theme, const screen_t *screen, region_t *out);
 const char *screen_age(uint16_t minutes, char *out, size_t size);

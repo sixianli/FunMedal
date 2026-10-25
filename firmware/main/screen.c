@@ -5,6 +5,10 @@
 
 #define HOUR_MINUTES 60
 #define DAY_MINUTES (24 * HOUR_MINUTES)
+#define ROWS_ROOM_GAP 3
+#define HINT_ROOM_GAP 6
+
+static const character_size_t GROWING[] = {CHARACTER_HOME_200, CHARACTER_HOME_145, CHARACTER_HOME_112};
 
 static const theme_t *const THEMES[SCREEN_THEME_COUNT] = {&theme_board, &theme_arcade, &theme_comic, &theme_tower};
 
@@ -54,9 +58,14 @@ void screen_from_rows(screen_t *screen, const rows_table_t *table, int64_t now_u
     }
 }
 
+static bool grid_theme(const theme_t *theme)
+{
+    return theme->draw_home != NULL;
+}
+
 static int session_slots(const theme_t *theme)
 {
-    return theme->draw_home != NULL ? THEME_GRID_SESSIONS : THEME_SLOTS;
+    return grid_theme(theme) ? THEME_GRID_SESSIONS : THEME_SLOTS;
 }
 
 static screen_t fit(const theme_t *theme, const screen_t *screen)
@@ -68,14 +77,76 @@ static screen_t fit(const theme_t *theme, const screen_t *screen)
     return fitted;
 }
 
-static const character_stage_t *stage_for(const theme_t *theme, const screen_t *screen)
+static int home_first_slot(const screen_t *screen)
 {
-    return screen->mode == SCREEN_ROWS ? &theme->home : &theme->message;
+    int first = screen->shown + screen->shown % 2;
+    return first < THEME_SLOTS - 1 ? first : THEME_SLOTS - 1;
 }
 
-static bool home_slot(const theme_t *theme, int i)
+static rect_t home_area(const theme_t *theme, const screen_t *screen)
 {
-    return theme->draw_home != NULL && i == THEME_SLOTS - 1;
+    rect_t first = theme->slots[home_first_slot(screen)];
+    rect_t last = theme->slots[THEME_SLOTS - 1];
+    return (rect_t){first.x, first.y, last.x + last.w - first.x, last.y + last.h - first.y};
+}
+
+static rect_t home_clip(const theme_t *theme, rect_t home)
+{
+    rect_t cell = theme->slots[THEME_SLOTS - 1];
+    rect_t clip = theme->home.clip;
+    int left = clip.x - cell.x;
+    int top = clip.y - cell.y;
+    int right = cell.x + cell.w - clip.x - clip.w;
+    int bottom = cell.y + cell.h - clip.y - clip.h;
+    return (rect_t){home.x + left, home.y + top, home.w - left - right, home.h - top - bottom};
+}
+
+static int room_top(const theme_t *theme, const screen_t *screen, const character_stage_t *stage)
+{
+    if (screen->mode != SCREEN_ROWS) {
+        return theme->body.y + theme->hint_top + theme->hint_font->line_height + HINT_ROOM_GAP;
+    }
+    if (grid_theme(theme)) {
+        return stage->clip.y;
+    }
+    if (screen->shown == 0) {
+        return theme->header.y + theme->header.h + ROWS_ROOM_GAP;
+    }
+    rect_t last = theme->slots[screen->shown - 1];
+    return last.y + last.h + ROWS_ROOM_GAP;
+}
+
+static void grow(character_stage_t *stage, int top)
+{
+    int right = stage->box.x + stage->box.w;
+    int bottom = stage->box.y + stage->box.h;
+    for (size_t i = 0; i < sizeof GROWING / sizeof GROWING[0]; i++) {
+        character_box_t size = character_art_box(GROWING[i]);
+        rect_t box = {right - size.w, bottom - size.h, size.w, size.h};
+        if (box.y >= top && box.x >= stage->clip.x) {
+            stage->extra.x += box.x - stage->box.x;
+            stage->extra.y += box.y - stage->box.y;
+            stage->box = box;
+            stage->size = (uint8_t)GROWING[i];
+            return;
+        }
+    }
+}
+
+character_stage_t screen_character_stage(const theme_t *theme, const screen_t *full)
+{
+    screen_t screen = fit(theme, full);
+    character_stage_t stage = screen.mode == SCREEN_ROWS ? theme->home : theme->message;
+    if (screen.mode == SCREEN_ROWS && grid_theme(theme)) {
+        stage.clip = home_clip(theme, home_area(theme, &screen));
+    }
+    int top = room_top(theme, &screen, &stage);
+    if (top < stage.clip.y) {
+        stage.clip.h += stage.clip.y - top;
+        stage.clip.y = top;
+    }
+    grow(&stage, top);
+    return stage;
 }
 
 void screen_render(const theme_t *theme, const screen_t *full, const band_t *band)
@@ -85,13 +156,14 @@ void screen_render(const theme_t *theme, const screen_t *full, const band_t *ban
     theme->draw_background(band);
     theme->draw_header(band, screen, theme->header);
     if (screen->mode == SCREEN_ROWS) {
+        int home = grid_theme(theme) ? home_first_slot(screen) : THEME_SLOTS;
         for (int i = 0; i < THEME_SLOTS; i++) {
             const row_t *row = &screen->rows[i];
             if (i < screen->shown) {
                 theme->draw_slot(band, row, theme->slots[i], theme->slot_phase(row->state, screen->tick));
-            } else if (home_slot(theme, i)) {
-                theme->draw_home(band, theme->slots[i]);
-            } else {
+            } else if (i == home) {
+                theme->draw_home(band, home_area(theme, screen));
+            } else if (i < home) {
                 theme->draw_empty(band, theme->slots[i]);
             }
         }
@@ -99,7 +171,8 @@ void screen_render(const theme_t *theme, const screen_t *full, const band_t *ban
         theme->draw_message(band, screen->mode, theme->body);
     }
     theme->draw_footer(band, screen, theme->footer);
-    character_draw(band, stage_for(theme, screen), character_frame(screen->tick), theme->character);
+    character_stage_t stage = screen_character_stage(theme, screen);
+    character_draw(band, &stage, character_frame(screen->tick), theme->character);
 }
 
 static uint32_t hash_int(uint32_t hash, uint32_t value)
@@ -121,7 +194,10 @@ static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *sc
 {
     uint32_t key = dirty_hash_text(hash_int(base, (uint32_t)i), "slot");
     if (i >= screen->shown) {
-        return dirty_hash_text(key, home_slot(theme, i) ? "home" : "empty");
+        if (grid_theme(theme) && i >= home_first_slot(screen)) {
+            return hash_int(dirty_hash_text(key, "home"), (uint32_t)home_area(theme, screen).y);
+        }
+        return dirty_hash_text(key, "empty");
     }
     const row_t *row = &screen->rows[i];
     char age[SCREEN_AGE_MAX] = "";
@@ -164,9 +240,11 @@ int screen_regions(uint8_t theme_index, const screen_t *full, region_t *out)
     }
     uint32_t footer = hash_int(dirty_hash_text(base, "footer"), theme->footer_phase(screen->tick));
     out[count++] = region(theme->footer, footer);
-    rect_t bounds = character_bounds(stage_for(theme, screen));
+    character_stage_t stage = screen_character_stage(theme, screen);
+    rect_t bounds = character_bounds(&stage);
     uint32_t character = hash_int(hash_int(character_frame_key(character_frame(screen->tick)), (uint32_t)bounds.x),
                                   (uint32_t)bounds.y);
+    character = hash_int(character, stage.size);
     for (int i = 0; i < count; i++) {
         if (out[i].y < bounds.y + bounds.h && bounds.y < out[i].y + out[i].h) {
             out[i].key = hash_int(out[i].key, character);

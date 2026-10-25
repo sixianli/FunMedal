@@ -176,6 +176,8 @@ int main(int argc, char **argv)
         return 2;
     }
     printf("ASSETS %08x\n", (unsigned)character_art_fingerprint());
+    character_stage_t stage = screen_character_stage(screen_theme(scene.theme), &scene.screen);
+    printf("CHARACTER %d %d %d %d\n", stage.box.x, stage.box.y, stage.box.w, stage.box.h);
     scene_render_rows(&scene, 0, SCENE_H, pixels);
     for (int y = 0; y < SCENE_H; y++) {
         uint8_t *row = raw + y * ROW_BYTES;

@@ -31,6 +31,7 @@
 #define DRIFT_STEPS 4
 #define FOOTER_TOP 10
 #define MESSAGE_TITLE_TOP 76
+#define HINT_FONT font_text
 #define MESSAGE_HINT_TOP 128
 
 static const char *const TITLE = "Claude 日常";
@@ -178,7 +179,7 @@ static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
     draw_dots(band, inner, DOT_PERIOD, COMIC_INK, DOT_ALPHA);
     bool empty = mode == SCREEN_EMPTY;
     draw_centered(band, &font_large, empty ? "没有会话" : "未连接", area, area.y + MESSAGE_TITLE_TOP);
-    draw_centered(band, &font_text, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
+    draw_centered(band, &HINT_FONT, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
                   area.y + MESSAGE_HINT_TOP);
 }
 
@@ -196,8 +197,10 @@ const theme_t theme_comic = {
               THEME_GRID_SLOT(5)},
     .body = {0, THEME_GRID_TOP, DRAW_W, THEME_GRID_FOOTER - THEME_GRID_TOP},
     .footer = {0, THEME_GRID_FOOTER, DRAW_W, THEME_GRID_FOOTER_H},
-    .home = {{169, 199, 64, 74}, {123, 199, 114, 74}, {124, 212, 46, 40}},
-    .message = {{167, 192, 64, 74}, {6, 27, 228, 240}, {120, 205, 46, 40}},
+    .home = {{169, 199, 64, 74}, {123, 199, 114, 74}, {124, 212, 46, 40}, CHARACTER_SMALL},
+    .message = {{167, 192, 64, 74}, {6, 27, 228, 240}, {120, 205, 46, 40}, CHARACTER_SMALL},
+    .hint_font = &HINT_FONT,
+    .hint_top = MESSAGE_HINT_TOP,
     .character = {COMIC_INK, COMIC_PAPER},
     .draw_background = draw_background,
     .draw_header = draw_header,

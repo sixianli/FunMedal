@@ -19,7 +19,7 @@ PRIVATE_PACK = PRIVATE / "pack"
 PREBUILT = ROOT / "firmware" / "prebuilt" / "funmedal.bin"
 POSES = ["01-lying", "02-lying-sleepy", "03-tap-up", "04-tap-down", "05-tilt",
          "06-mumble", "07-call", "08-worry", "09-wave", "10-cheer"]
-BOXES = [(64, 74), (84, 108)]
+BOXES = [(64, 74), (84, 108), (97, 112), (125, 145), (173, 200)]
 
 
 def generate(pack, out):
@@ -52,12 +52,17 @@ def copy_pack(source, target):
     return target
 
 
-@pytest.mark.parametrize("case", ["[SC-15] the default pack in the repository builds ten poses in a 64 by 74 and "
-                                  "an 84 by 108 box, each fitting its box and touching it on at least one side"])
-def test_default_pack_builds(case, default_blob):
+@pytest.mark.parametrize("case, boxes", [
+    ("[SC-15] the default pack in the repository builds ten poses in a 64 by 74 and an 84 by 108 box, each "
+     "fitting its box and touching it on at least one side", [0, 1]),
+    ("[SC-18] the default pack also builds the three growing sizes 97 by 112, 125 by 145 and 173 by 200, each "
+     "fitting its box and touching it on at least one side", [2, 3, 4]),
+])
+def test_default_pack_builds(case, boxes, default_blob):
     images, sizes, sprites = parse(default_blob)
     assert (images, sizes) == (len(POSES), len(BOXES))
-    for size, (bw, bh) in enumerate(BOXES):
+    for size in boxes:
+        bw, bh = BOXES[size]
         fitted = [sprites[i * sizes + size][:2] for i in range(images)]
         assert all(0 < w <= bw and 0 < h <= bh for w, h in fitted), fitted
         assert max(w for w, _ in fitted) == bw or max(h for _, h in fitted) == bh, fitted

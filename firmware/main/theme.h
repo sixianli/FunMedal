@@ -42,6 +42,8 @@ typedef struct {
     rect_t footer;
     character_stage_t home;
     character_stage_t message;
+    const font_t *hint_font;
+    int hint_top;
     character_colors_t character;
     void (*draw_background)(const band_t *band);
     void (*draw_header)(const band_t *band, const screen_t *screen, rect_t area);

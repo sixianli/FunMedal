@@ -11,7 +11,7 @@ import pngio  # noqa: E402
 MAGIC = b"FMA1"
 POSES = ["01-lying", "02-lying-sleepy", "03-tap-up", "04-tap-down", "05-tilt",
          "06-mumble", "07-call", "08-worry", "09-wave", "10-cheer"]
-BOXES = [(64, 74), (84, 108)]
+BOXES = [(64, 74), (84, 108), (97, 112), (125, 145), (173, 200)]
 VISIBLE = 16
 HEADER = 8
 ENTRY = 8

@@ -320,9 +320,61 @@ static void test_character_stages(void)
     }
 }
 
-static const character_stage_t *expected_stage(const theme_t *theme, const scene_t *scene)
+
+static const int GROWN[SCREEN_THEME_COUNT][THEME_SLOTS + 1] = {
+    {145, 200, 200, 145, 145, 74, 74},
+    {145, 200, 200, 145, 145, 74, 74},
+    {74, 145, 145, 74, 74, 74, 74},
+    {74, 145, 145, 74, 74, 74, 74},
+};
+
+static scene_t with_sessions(uint8_t theme, int count, screen_mode_t empty_mode)
 {
-    return scene->screen.mode == SCREEN_ROWS ? &theme->home : &theme->message;
+    scene_t scene = count == 0 ? sessions(empty_mode, 0, 0) : six_rows(0);
+    scene.theme = theme;
+    if (count > 0) {
+        scene.screen.shown = scene.screen.total = (uint8_t)count;
+    }
+    return scene;
+}
+
+static bool apart(rect_t a, rect_t b)
+{
+    return a.x >= b.x + b.w || b.x >= a.x + a.w || a.y >= b.y + b.h || b.y >= a.y + a.h;
+}
+
+static void test_character_grows(void)
+{
+    rect_t screen = {0, 0, SCENE_W, SCENE_H};
+    for (uint8_t index = 0; index < SCREEN_THEME_COUNT; index++) {
+        const theme_t *theme = screen_theme(index);
+        for (int count = 0; count <= THEME_SLOTS; count++) {
+            for (int k = 0; k < (count == 0 ? 2 : 1); k++) {
+                scene_t scene = with_sessions(index, count, k == 0 ? SCREEN_EMPTY : SCREEN_UNLINKED);
+                character_stage_t stage = screen_character_stage(theme, &scene.screen);
+                character_box_t size = character_art_box((character_size_t)stage.size);
+                char what[96];
+                snprintf(what, sizeof(what), "theme %u with %d sessions (screen %d) the character is %d px tall", index,
+                         count, k, GROWN[index][count]);
+                check(stage.box.h == GROWN[index][count], what);
+                snprintf(what, sizeof(what), "theme %u with %d sessions the box is the size of its images", index, count);
+                check(size.w == stage.box.w && size.h == stage.box.h, what);
+                snprintf(what, sizeof(what), "theme %u with %d sessions the whole box is inside its clip", index, count);
+                check(rect_inside(stage.box, stage.clip) && rect_inside(stage.clip, screen), what);
+                snprintf(what, sizeof(what), "theme %u with %d sessions the question and bubble stay on screen", index,
+                         count);
+                check(rect_inside(stage.extra, screen), what);
+                int shown = count < sessions_of(theme) ? count : sessions_of(theme);
+                for (int slot = 0; slot < shown; slot++) {
+                    snprintf(what, sizeof(what), "theme %u with %d sessions the character keeps off session slot %d",
+                             index, count, slot);
+                    check(apart(stage.box, theme->slots[slot]) && apart(stage.extra, theme->slots[slot]) &&
+                              apart(stage.clip, theme->slots[slot]),
+                          what);
+                }
+            }
+        }
+    }
 }
 
 static void check_character_step(const char *what, const scene_t *before, const scene_t *after)
@@ -330,7 +382,8 @@ static void check_character_step(const char *what, const scene_t *before, const 
     span_t spans[DIRTY_MAX_REGIONS];
     check_pair(what, before, after, spans);
     const theme_t *theme = screen_theme(before->theme);
-    rect_t bounds = character_bounds(expected_stage(theme, before));
+    character_stage_t stage = screen_character_stage(theme, &before->screen);
+    rect_t bounds = character_bounds(&stage);
     bool moving[THEME_SLOTS] = {false};
     for (int i = 0; i < before->screen.shown && i < sessions_of(theme); i++) {
         row_state_t state = before->screen.rows[i].state;
@@ -633,13 +686,22 @@ static void test_image(void)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2 || !host_fonts_load(argv[1]) || !host_character_load(argv[1])) {
-        printf("usage: test_screen <fonts dir>\n");
+    if (argc < 2 || argc > 3 || !host_fonts_load(argv[1]) || !host_character_load(argv[1])) {
+        printf("usage: test_screen <fonts dir> [grow]\n");
         return 2;
+    }
+    if (argc == 3 && strcmp(argv[2], "grow") == 0) {
+        test_character_grows();
+        test_character_moves();
+        if (failures == 0) {
+            printf("ALL PASSED\n");
+        }
+        return failures == 0 ? 0 : 1;
     }
     test_primitives();
     test_image();
     test_character_stages();
+    test_character_grows();
     test_character_moves();
     test_home_cell();
     test_tiles();

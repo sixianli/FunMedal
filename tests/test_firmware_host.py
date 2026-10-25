@@ -1,5 +1,7 @@
 import os
 import re
+import shutil
+import struct
 import subprocess
 import sys
 from datetime import datetime
@@ -167,6 +169,17 @@ def screen_artifacts():
     return path
 
 
+@pytest.fixture(scope="module")
+def blank_tools(screen_tools, tmp_path_factory):
+    tools = tmp_path_factory.mktemp("blank-tools") / "tools"
+    shutil.copytree(screen_tools, tools)
+    poses, sizes = 10, 5
+    table_end = 8 + 8 * poses * sizes
+    entries = b"".join(struct.pack("<HHI", 1, 1, table_end) for _ in range(poses * sizes))
+    (tools / "character.bin").write_bytes(b"FMA1" + struct.pack("<BBH", poses, sizes, 0) + entries + bytes(3))
+    return tools
+
+
 def render(tools, artifacts, name, mode="rows", rows=(), total=None, tick=0):
     result = render_screen(tools, artifacts, name, mode, rows, total, tick)
     return result["rgb"], result["regions"]
@@ -210,8 +223,8 @@ def ink_in(image, top, height, background):
     ("[SC-3] three sessions fill three slots and leave the other three empty", 3),
     ("[SC-3] six sessions fill all six slots", 6),
 ])
-def test_sessions_fill_their_slots(case, count, screen_tools, screen_artifacts):
-    image, regions = render(screen_tools, screen_artifacts, f"board-{count}", rows=SIX_ROWS[:count])
+def test_sessions_fill_their_slots(case, count, blank_tools, screen_artifacts):
+    image, regions = render(blank_tools, screen_artifacts, f"board-{count}", rows=SIX_ROWS[:count])
     background = pixel(image, 0, H - 1)
     for i, (top, height) in enumerate(regions[1:7]):
         ink = ink_in(image, top, height, background)
@@ -246,3 +259,59 @@ def test_character_keeps_its_cell(case, theme, screen_tools, screen_artifacts):
         assert changed, "the header shows no +N"
         assert all(y < 24 for _, y in changed), changed[:10]
     assert changed_pixels(six["rgb"], seven["rgb"])
+
+
+@pytest.mark.parametrize("case", ["[SC-18] for every theme and 0 to 6 sessions the character takes the tallest of "
+                                  "74, 112, 145 and 200 px that fits the free space, as in the owner's pictures, "
+                                  "and neither she nor her question mark or bubble touches a session slot"])
+def test_character_grows_on_host(case, screen_tools):
+    result = subprocess.run([str(screen_tools / "test_screen"), str(screen_tools), "grow"], capture_output=True,
+                            text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+def inside(points, box):
+    x, y, w, h = box
+    return all(x <= px < x + w and y <= py < y + h for px, py in points)
+
+
+@pytest.mark.parametrize("case, theme, count, height", [
+    ("[SC-18] on the board two sessions leave room for her 200 px picture, drawn only below the sessions", 0, 2, 200),
+    ("[SC-18] on the arcade four sessions give her the 145 px picture, drawn only below the sessions", 1, 4, 145),
+    ("[SC-18] in the comic theme two sessions give her the 145 px picture inside the merged home", 2, 2, 145),
+    ("[SC-18] in the tower theme five sessions keep her at the default 74 px in the sixth cell", 3, 5, 74),
+    ("[SC-18] on the board with no session she grows to 145 px below the hint text", 0, 0, 145),
+])
+def test_character_drawn_at_its_size(case, theme, count, height, screen_tools, blank_tools, screen_artifacts):
+    mode = "rows" if count else "empty"
+    rows = SIX_ROWS[:count]
+    full = render_screen(screen_tools, screen_artifacts, f"grow-{theme}-{count}", mode, rows, tick=51, theme=theme)
+    bare = render_screen(blank_tools, screen_artifacts, f"grow-{theme}-{count}-bare", mode, rows, tick=51,
+                         theme=theme)
+    x, y, w, h = full["character"]
+    assert h == height
+    changed = changed_pixels(full["rgb"], bare["rgb"])
+    assert changed and inside(changed, (x, y, w, h)), (full["character"], changed[:10])
+    drawn = max(py for _, py in changed) - min(py for _, py in changed) + 1
+    assert drawn > 74 if height > 74 else drawn <= 74, drawn
+    if theme < 2:
+        slots = [(0, 24 + 36 * i, W, 36) for i in range(count)]
+    else:
+        slots = [(3 + i % 2 * 120, 24 + i // 2 * 86, 114, 80) for i in range(count)]
+    assert not any(inside([point], slot) for point in changed for slot in slots), slots
+
+
+@pytest.mark.parametrize("case, theme", [
+    ("[SC-18] in the comic theme with two sessions the four free cells are drawn as one home with no gaps", 2),
+    ("[SC-18] in the tower theme with two sessions the four free cells are drawn as one home with no gaps", 3),
+])
+def test_free_cells_merge_into_one_home(case, theme, blank_tools, screen_artifacts):
+    two = render_screen(blank_tools, screen_artifacts, f"home-{theme}-2", rows=SIX_ROWS[:2], theme=theme)["rgb"]
+    five = render_screen(blank_tools, screen_artifacts, f"home-{theme}-5", rows=SIX_ROWS[:5], theme=theme)["rgb"]
+    home = pixel(two, 180, 240)
+    assert pixel(five, 180, 240) == home
+    for x, y in ((60, 150), (120, 150), (60, 193), (120, 193), (180, 150)):
+        assert pixel(two, x, y) == home, (x, y)
+    assert pixel(five, 120, 240) != home

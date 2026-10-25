@@ -34,6 +34,7 @@
 #define FOOTER_RULE 5
 #define FOOTER_TEXT_TOP 16
 #define MESSAGE_TITLE_TOP 76
+#define HINT_FONT font_pixel
 #define MESSAGE_HINT_TOP 128
 
 static const char *const TITLE = "CLAUDE · CONTROL";
@@ -191,7 +192,7 @@ static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
     draw_panel(band, frame, MODULE_RADIUS, 1, empty ? TOWER_LINE : TOWER_AMBER, TOWER_MODULE);
     draw_centered(band, &font_large, empty ? "没有会话" : "未连接", area, area.y + MESSAGE_TITLE_TOP,
                   empty ? TOWER_TITLE : TOWER_AMBER);
-    draw_centered(band, &font_pixel, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
+    draw_centered(band, &HINT_FONT, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
                   area.y + MESSAGE_HINT_TOP, TOWER_NAME);
 }
 
@@ -209,8 +210,10 @@ const theme_t theme_tower = {
               THEME_GRID_SLOT(5)},
     .body = {0, THEME_GRID_TOP, DRAW_W, THEME_GRID_FOOTER - THEME_GRID_TOP},
     .footer = {0, THEME_GRID_FOOTER, DRAW_W, THEME_GRID_FOOTER_H},
-    .home = {{169, 200, 64, 74}, {121, 197, 112, 78}, {124, 214, 46, 40}},
-    .message = {{168, 193, 64, 74}, {4, 25, 232, 244}, {121, 207, 46, 40}},
+    .home = {{169, 200, 64, 74}, {121, 197, 112, 78}, {124, 214, 46, 40}, CHARACTER_SMALL},
+    .message = {{168, 193, 64, 74}, {4, 25, 232, 244}, {121, 207, 46, 40}, CHARACTER_SMALL},
+    .hint_font = &HINT_FONT,
+    .hint_top = MESSAGE_HINT_TOP,
     .character = {TOWER_NAME, TOWER_MODULE},
     .draw_background = draw_background,
     .draw_header = draw_header,

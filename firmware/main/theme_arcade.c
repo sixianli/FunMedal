@@ -38,6 +38,7 @@
 #define SCANLINE_PERIOD 3
 #define SCANLINE_ALPHA 7
 #define MESSAGE_TITLE_TOP 64
+#define HINT_FONT font_pixel
 #define MESSAGE_HINT_TOP 116
 
 static const char *const TITLE = "CLAUDE CODE";
@@ -176,7 +177,7 @@ static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
 {
     bool empty = mode == SCREEN_EMPTY;
     draw_centered(band, &font_large, empty ? "没有会话" : "未连接", area, area.y + MESSAGE_TITLE_TOP, ARCADE_YELLOW);
-    draw_centered(band, &font_pixel, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
+    draw_centered(band, &HINT_FONT, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
                   area.y + MESSAGE_HINT_TOP, ARCADE_GREEN);
     scanlines(band, area);
 }
@@ -201,8 +202,10 @@ const theme_t theme_arcade = {
     },
     .body = {0, HEADER_H, DRAW_W, FOOTER_TOP - HEADER_H},
     .footer = {0, FOOTER_TOP, DRAW_W, FOOTER_H},
-    .home = {{168, 243, 64, 74}, {0, 240, 240, 80}, {120, 246, 46, 44}},
-    .message = {{168, 243, 64, 74}, {0, 240, 240, 80}, {120, 246, 46, 44}},
+    .home = {{168, 243, 64, 74}, {0, 240, 240, 80}, {120, 246, 46, 44}, CHARACTER_SMALL},
+    .message = {{168, 243, 64, 74}, {0, 240, 240, 80}, {120, 246, 46, 44}, CHARACTER_SMALL},
+    .hint_font = &HINT_FONT,
+    .hint_top = MESSAGE_HINT_TOP,
     .character = {ARCADE_YELLOW, ARCADE_BACKGROUND},
     .draw_background = draw_background,
     .draw_header = draw_header,

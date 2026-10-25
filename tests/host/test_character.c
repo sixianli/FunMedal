@@ -112,9 +112,13 @@ static void test_art_rejects_bad_blobs(void)
     check(character_art_image(CHARACTER_LYING, CHARACTER_SMALL) == NULL, "a rejected blob leaves no image");
     make_blob(CHARACTER_POSES - 1);
     check(!character_art_load(blob, sizeof blob), "a pack missing a pose is rejected");
+    static const character_box_t boxes[CHARACTER_SIZES] = {{64, 74}, {84, 108}, {97, 112}, {125, 145}, {173, 200}};
+    for (int s = 0; s < CHARACTER_SIZES; s++) {
+        character_box_t box = character_art_box((character_size_t)s);
+        check(box.w == boxes[s].w && box.h == boxes[s].h, "the boxes match gen_assets.py");
+    }
     character_box_t small = character_art_box(CHARACTER_SMALL);
     character_box_t large = character_art_box(CHARACTER_LARGE);
-    check(small.w == 64 && small.h == 74 && large.w == 84 && large.h == 108, "the boxes match gen_assets.py");
     make_blob(CHARACTER_POSES);
     set_entry(0, small.w + 1, 1, TABLE_END);
     check(!character_art_load(blob, sizeof blob), "an image wider than its box is rejected");
