@@ -13,7 +13,7 @@ import pytest
 from bridge_harness import (HEARTBEAT_FLAG, HIDDEN_MINUTES, Bridge, artifacts, bash, bridge, bridge_cli,  # noqa: F401
                             card, card_rows, event, hook_env, info_fields, require_bridge_app, rows_writes, run_dir, wait_until,
                             write_summary)
-from host_render import compare_screen, scene_of, screen_tools  # noqa: F401
+from host_render import H, compare_screen, scene_of, screen_tools  # noqa: F401
 
 ARTIFACTS_PREFIX = "sc"
 ARTIFACTS_SUBDIR = "rows"
@@ -26,6 +26,8 @@ TICK_US = 100_000
 BENCH_RUNS = 5
 ANIMATION_WATCH_S = 1.0
 THEME_SAVE_DELAY_S = 1.0
+GROWN_H = 200
+GROWN_THEMES = ["board", "arcade"]
 
 
 def prompt(bridge, session, project, **extra):
@@ -369,6 +371,38 @@ def test_draw_speed(case, card, bridge, run_dir):
     assert after["shown_tick"] != before["shown_tick"] and after["draw_errors"] == before["draw_errors"], animation
     assert len(on_card["rows"]) == 6, on_card
     assert all(r["shown"] == "6" for t in timing.values() for r in t["runs"]), timing
+    assert all(t["max_total_us"] < TICK_US for t in timing.values()), timing
+
+
+@pytest.mark.parametrize("case", ["[SC-18] with two sessions on the card the character is drawn at its biggest size "
+                                  "byte for byte as on the host, and the band from her top to the screen bottom and "
+                                  "the whole screen each redraw within one 100 ms animation step"])
+@pytest.mark.parametrize("way", GROWN_THEMES)
+def test_grown_character_draw_speed(case, way, card, bridge, run_dir, screen_tools):
+    theme = GROWN_THEMES.index(way)
+    mark = card.mark()
+    assert card.request(f"theme {theme}") == f"OK theme {theme}"
+    card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
+    try:
+        bridge.start()
+        for session, project in (("a", "alpha"), ("b", "beta")):
+            prompt(bridge, session, project)
+        bridge.settle_rows([("running", "alpha"), ("running", "beta")], total=2)
+        screen = compare_screen(card, screen_tools, run_dir, f"grown-{theme}", *scene_of(card_rows(card)))
+        top = screen["character"][1]
+        before = info_fields(card.request("info"))
+        time.sleep(ANIMATION_WATCH_S)
+        after = info_fields(card.request("info"))
+        timing = {"character_band": bench(card, top, H - top), "whole_screen": bench(card, 0, H)}
+    finally:
+        card.request("theme 0")
+    animation = {"draws": int(after["draws"]) - int(before["draws"]), "ticks": int(after["tick"]) - int(before["tick"])}
+    write_summary(run_dir, {"screen": screen, "animation": animation, "timing": timing})
+    assert screen["theme"] == theme and screen["differing_pixels"] == 0, screen
+    assert screen["character"][3] == GROWN_H, screen
+    assert 5 <= animation["draws"] <= animation["ticks"] + 1, animation
+    assert after["draw_errors"] == before["draw_errors"], (before, after)
+    assert all(r["shown"] == "2" for t in timing.values() for r in t["runs"]), timing
     assert all(t["max_total_us"] < TICK_US for t in timing.values()), timing
 
 

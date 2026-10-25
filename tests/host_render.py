@@ -82,4 +82,5 @@ def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0):
     host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]))
     assert meta["assets"] == host["assets"], (meta["assets"], host["assets"])
     differing = sum(1 for i in range(0, len(data), 2) if data[i:i + 2] != host["wire"][i:i + 2])
-    return {"meta": meta, "theme": int(meta["theme"]), "assets": meta["assets"], "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing}
+    return {"meta": meta, "theme": int(meta["theme"]), "assets": meta["assets"], "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing,
+            "character": host["character"]}
