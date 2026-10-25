@@ -142,14 +142,62 @@ static void test_tiles(void)
 {
     scene_t pattern = {.test_pattern = true};
     scene_t pairing = {.pairing = SCENE_PAIRING_NUMCMP, .pair_code = 123456};
-    scene_t unlinked = sessions(SCREEN_UNLINKED, 0, 0);
-    scene_t empty = sessions(SCREEN_EMPTY, 0, 0);
-    scene_t rows = six_rows(0);
     check_tiles("pattern", &pattern);
     check_tiles("pairing", &pairing);
-    check_tiles("unlinked", &unlinked);
-    check_tiles("empty", &empty);
-    check_tiles("six rows", &rows);
+    check(SCREEN_THEME_COUNT == 4, "four themes");
+    for (uint8_t theme = 0; theme < SCREEN_THEME_COUNT; theme++) {
+        scene_t unlinked = sessions(SCREEN_UNLINKED, 0, 0);
+        scene_t empty = sessions(SCREEN_EMPTY, 0, 0);
+        scene_t rows = six_rows(0);
+        unlinked.theme = empty.theme = rows.theme = theme;
+        char what[48];
+        snprintf(what, sizeof(what), "theme %u unlinked", theme);
+        check_tiles(what, &unlinked);
+        snprintf(what, sizeof(what), "theme %u empty", theme);
+        check_tiles(what, &empty);
+        snprintf(what, sizeof(what), "theme %u six rows", theme);
+        check_tiles(what, &rows);
+    }
+}
+
+static rect_t slot_band(const theme_t *theme, int slot)
+{
+    int top = theme->header.y + theme->header.h;
+    int bottom = theme->footer.y;
+    for (int i = 0; i < THEME_SLOTS; i++) {
+        const rect_t *other = &theme->slots[i];
+        if (other->y < theme->slots[slot].y && other->y + other->h > top) {
+            top = other->y + other->h;
+        }
+        if (other->y > theme->slots[slot].y && other->y < bottom) {
+            bottom = other->y;
+        }
+    }
+    if (bottom < theme->footer.y) {
+        bottom = theme->slots[slot].y + theme->slots[slot].h;
+    }
+    return (rect_t){0, top, SCENE_W, bottom - top};
+}
+
+static void test_theme_slots(void)
+{
+    for (uint8_t theme_index = 0; theme_index < SCREEN_THEME_COUNT; theme_index++) {
+        const theme_t *theme = screen_theme(theme_index);
+        scene_t rows = six_rows(0);
+        rows.theme = theme_index;
+        char what[64];
+        for (int slot = 0; slot < THEME_SLOTS; slot++) {
+            scene_t state = rows;
+            state.screen.rows[slot].state = rows.screen.rows[slot].state == ROW_ERROR ? ROW_DONE : ROW_ERROR;
+            state.screen.rows[slot].minutes = state.screen.rows[slot].state == ROW_DONE ? 9 : ROWS_HIDDEN_MINUTES;
+            snprintf(what, sizeof(what), "theme %u slot %d state change redraws its band only", theme_index, slot);
+            check_only(what, &rows, &state, slot_band(theme, slot));
+        }
+        scene_t more = rows;
+        more.screen.total = 7;
+        snprintf(what, sizeof(what), "theme %u seventh session changes the header only", theme_index);
+        check_only(what, &rows, &more, theme->header);
+    }
 }
 
 static void test_first_draw_is_everything(void)
@@ -230,11 +278,36 @@ static uint32_t next_random(uint32_t *seed)
     return *seed >> 8;
 }
 
-static void test_random_sequence(void)
+static void test_theme_order(void)
+{
+    check(screen_next_theme(0) == 1, "board is followed by arcade");
+    check(screen_next_theme(1) == 2, "arcade is followed by comic");
+    check(screen_next_theme(2) == 3, "comic is followed by tower");
+    check(screen_next_theme(3) == 0, "tower wraps round to board");
+    check(screen_next_theme(200) == 1, "an unknown theme counts as board");
+    check(screen_stored_theme(false, 3) == 0, "nothing stored means board");
+    check(screen_stored_theme(true, 2) == 2, "a stored theme is used");
+    check(screen_stored_theme(true, SCREEN_THEME_COUNT) == 0, "a stored theme out of range means board");
+}
+
+static void test_arcade_error_shakes(void)
+{
+    scene_t before = sessions(SCREEN_ROWS, 2, 0);
+    before.theme = 1;
+    add(&before, ROW_ERROR, 0, "SiBlog");
+    add(&before, ROW_DONE, 5, "FunMedal");
+    scene_t after = before;
+    after.screen.tick = 1;
+    check_only("arcade error row shakes and redraws its own row only", &before, &after, screen_theme(1)->slots[0]);
+    check(memcmp(first, second, sizeof(first)) != 0, "arcade error row moves between ticks");
+}
+
+static void random_sequence(uint8_t theme)
 {
     static const char *const names[] = {"FunMedal", "SiBlog", "绘本工坊", "a", "一个名字特别特别长的项目会被截短"};
-    uint32_t seed = 7;
+    uint32_t seed = 7 + theme;
     scene_t before = six_rows(0);
+    before.theme = theme;
     for (int step = 0; step < 300; step++) {
         scene_t after = before;
         uint32_t pick = next_random(&seed) % 6;
@@ -257,9 +330,16 @@ static void test_random_sequence(void)
         }
         span_t spans[DIRTY_MAX_REGIONS];
         char what[48];
-        snprintf(what, sizeof(what), "random step %d", step);
+        snprintf(what, sizeof(what), "theme %u random step %d", theme, step);
         check_pair(what, &before, &after, spans);
         before = after;
+    }
+}
+
+static void test_random_sequence(void)
+{
+    for (uint8_t theme = 0; theme < SCREEN_THEME_COUNT; theme++) {
+        random_sequence(theme);
     }
 }
 
@@ -343,6 +423,57 @@ static void test_primitives(void)
     for (int i = 0; i < DRAW_W * 10; i++) {
         band_pixels[i] = black;
     }
+    draw_dashed(&band, (rect_t){20, 100, 40, 10}, 2, 4, 0xffffff);
+    check(band_pixels[0 * DRAW_W + 20] != black && band_pixels[0 * DRAW_W + 23] != black, "a dash starts at the corner");
+    check(band_pixels[0 * DRAW_W + 24] == black && band_pixels[0 * DRAW_W + 28] != black, "dashes and gaps alternate");
+    check(band_pixels[9 * DRAW_W + 20] != black && band_pixels[5 * DRAW_W + 30] == black, "a dashed border leaves the middle alone");
+    check(band_pixels[4 * DRAW_W + 59] == black && band_pixels[8 * DRAW_W + 59] != black, "the right edge is dashed too");
+
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        band_pixels[i] = black;
+    }
+    draw_dots(&band, (rect_t){0, 100, 30, 10}, 6, 0xffffff, 15);
+    int dots = 0;
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        dots += band_pixels[i] != black;
+    }
+    check(dots == 5 * 2, "dots fall every sixth pixel in both directions inside the rectangle");
+    check(band_pixels[3 * DRAW_W + 3] != black && band_pixels[9 * DRAW_W + 27] != black, "dots sit half a period in");
+
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        band_pixels[i] = black;
+    }
+    draw_tint(&band, (rect_t){0, 100, 10, 10}, 0, 0xffffff, 8);
+    uint32_t tinted = draw_rgb(band_pixels[5 * DRAW_W + 5]);
+    check(tinted != 0 && tinted != 0xffffff, "a tint blends with what is underneath");
+
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        band_pixels[i] = black;
+    }
+    draw_wedge(&band, (rect_t){100, 100, 10, 10}, 0, 0xffffff, 15);
+    check(band_pixels[1 * DRAW_W + 105] != black, "wedge step 0 runs clockwise from twelve o'clock");
+    check(band_pixels[1 * DRAW_W + 103] == black, "wedge step 0 leaves the left of twelve o'clock alone");
+    check(band_pixels[8 * DRAW_W + 105] == black, "wedge step 0 leaves the bottom alone");
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        band_pixels[i] = black;
+    }
+    draw_wedge(&band, (rect_t){100, 100, 10, 10}, 8, 0xffffff, 15);
+    check(band_pixels[9 * DRAW_W + 104] != black, "wedge step 8 points to six o'clock");
+    int wedge_lit = 0;
+    for (int step = 0; step < DRAW_WEDGE_STEPS; step++) {
+        draw_wedge(&band, (rect_t){100, 100, 10, 10}, step, 0xffffff, 15);
+    }
+    for (int y = 0; y < 10; y++) {
+        for (int x = 100; x < 110; x++) {
+            wedge_lit += band_pixels[y * DRAW_W + x] != black;
+        }
+    }
+    check(wedge_lit > 70 && wedge_lit < 100, "all wedges together fill the circle and not its corners");
+    check(band_pixels[0 * DRAW_W + 100] == black, "a wedge never reaches the square's corner");
+
+    for (int i = 0; i < DRAW_W * 10; i++) {
+        band_pixels[i] = black;
+    }
     draw_round(&band, (rect_t){0, 95, DRAW_W, 20}, 8, 0xffffff);
     draw_stripes(&band, (rect_t){0, 95, DRAW_W, 20}, 8, 16, 3, 0xff0000, 15);
     draw_text(&band, &font_text, "FunMedal 绘本", 4, 92, DRAW_W, 0x0000ff);
@@ -361,6 +492,9 @@ int main(int argc, char **argv)
     test_first_draw_is_everything();
     test_animation();
     test_changes();
+    test_theme_slots();
+    test_arcade_error_shakes();
+    test_theme_order();
     test_random_sequence();
     test_age();
     test_from_rows();

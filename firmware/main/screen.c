@@ -6,11 +6,21 @@
 #define HOUR_MINUTES 60
 #define DAY_MINUTES (24 * HOUR_MINUTES)
 
-static const theme_t *const THEMES[SCREEN_THEME_COUNT] = {&theme_board};
+static const theme_t *const THEMES[SCREEN_THEME_COUNT] = {&theme_board, &theme_arcade, &theme_comic, &theme_tower};
 
 const theme_t *screen_theme(uint8_t index)
 {
     return THEMES[index < SCREEN_THEME_COUNT ? index : 0];
+}
+
+uint8_t screen_next_theme(uint8_t index)
+{
+    return index < SCREEN_THEME_COUNT ? (uint8_t)((index + 1) % SCREEN_THEME_COUNT) : 1;
+}
+
+uint8_t screen_stored_theme(bool found, uint8_t value)
+{
+    return found && value < SCREEN_THEME_COUNT ? value : 0;
 }
 
 const char *screen_age(uint16_t minutes, char *out, size_t size)
@@ -49,9 +59,13 @@ void screen_render(const theme_t *theme, const screen_t *screen, const band_t *b
     theme->draw_background(band);
     theme->draw_header(band, screen, theme->header);
     if (screen->mode == SCREEN_ROWS) {
-        for (int i = 0; i < screen->shown && i < THEME_SLOTS; i++) {
+        for (int i = 0; i < THEME_SLOTS; i++) {
             const row_t *row = &screen->rows[i];
-            theme->draw_slot(band, row, theme->slots[i], theme->slot_phase(row->state, screen->tick));
+            if (i < screen->shown) {
+                theme->draw_slot(band, row, theme->slots[i], theme->slot_phase(row->state, screen->tick));
+            } else {
+                theme->draw_empty(band, theme->slots[i]);
+            }
         }
     } else {
         theme->draw_message(band, screen->mode, theme->body);
@@ -67,6 +81,11 @@ static uint32_t hash_int(uint32_t hash, uint32_t value)
 static region_t region(rect_t area, uint32_t key)
 {
     return (region_t){(int16_t)area.y, (int16_t)area.h, key};
+}
+
+static region_t span_region(int top, int bottom, uint32_t key)
+{
+    return (region_t){(int16_t)top, (int16_t)(bottom - top), key};
 }
 
 static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *screen, int i)
@@ -95,12 +114,24 @@ int screen_regions(uint8_t theme_index, const screen_t *screen, region_t *out)
     header = hash_int(hash_int(hash_int(header, screen->mode), screen->total), screen->shown);
     out[count++] = region(theme->header, header);
     if (screen->mode == SCREEN_ROWS) {
-        for (int i = 0; i < THEME_SLOTS; i++) {
-            out[count++] = region(theme->slots[i], slot_key(base, theme, screen, i));
+        int top = theme->header.y + theme->header.h;
+        for (int i = 0; i < THEME_SLOTS;) {
+            int y = theme->slots[i].y;
+            int bottom = y + theme->slots[i].h;
+            uint32_t key = DIRTY_HASH_START;
+            for (; i < THEME_SLOTS && theme->slots[i].y == y; i++) {
+                key = hash_int(key, slot_key(base, theme, screen, i));
+            }
+            if (i == THEME_SLOTS) {
+                bottom = theme->footer.y;
+            }
+            out[count++] = span_region(top, bottom, key);
+            top = bottom;
         }
     } else {
         out[count++] = region(theme->body, hash_int(dirty_hash_text(base, "body"), screen->mode));
     }
-    out[count++] = region(theme->footer, dirty_hash_text(base, "footer"));
+    uint32_t footer = hash_int(dirty_hash_text(base, "footer"), theme->footer_phase(screen->tick));
+    out[count++] = region(theme->footer, footer);
     return count;
 }

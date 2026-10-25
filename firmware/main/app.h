@@ -8,6 +8,8 @@
 void app_show_board(void);
 void app_set_pattern(void);
 void app_set_fill(uint32_t rgb);
+uint8_t app_get_theme(void);
+void app_set_theme(uint8_t theme);
 void app_get_scene(scene_t *scene);
 const char *app_top_state(void);
 void app_get_draw_stats(uint32_t *draws, uint32_t *errors, uint32_t *shown_tick);

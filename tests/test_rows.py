@@ -25,6 +25,7 @@ NAME_MAX = 32
 TICK_US = 100_000
 BENCH_RUNS = 5
 ANIMATION_WATCH_S = 1.0
+THEME_SAVE_DELAY_S = 1.0
 
 
 def prompt(bridge, session, project, **extra):
@@ -281,6 +282,55 @@ def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
     assert frame["total"] == 7 and frame["shown"] == 6, frame
     assert on_card["reply"]["total"] == "7" and len(on_card["rows"]) == 6, on_card
     assert "omega" not in [r["name"] for r in on_card["rows"]], on_card
+
+
+def press_middle_key(card):
+    assert card.request("key up press") == "OK key up press"
+
+
+@pytest.mark.parametrize("case", ["[SC-8] the middle key turns board, arcade, comic, tower, board in order, each theme "
+                                  "draws byte for byte as the host renderer, the card saves the theme a second after "
+                                  "the last change, and the theme survives a reboot"])
+def test_theme_key_and_reboot(case, card, bridge, run_dir, screen_tools):
+    mark = card.mark()
+    assert card.request("theme 0") == "OK theme 0"
+    card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
+    bridge.start()
+    for session, project in (("w", "web"), ("e", "api"), ("r", "app"), ("d", "docs")):
+        prompt(bridge, session, project)
+    bridge.hook(event("Stop", "d", stop_hook_active=False), project="docs")
+    bridge.hook(event("StopFailure", "e", error="server_error"), project="api")
+    run = bridge.hook_async(event("PermissionRequest", "w", **bash("x")), project="web")
+    turns, screens = [], []
+    try:
+        bridge.settle_rows([("waiting", "web"), ("error", "api"), ("running", "app"), ("done", "docs")])
+        for expected in (1, 2, 3, 0):
+            mark = card.mark()
+            press_middle_key(card)
+            _, changed_t, _ = card.wait_for(lambda line, n=expected: line == f"THEME {n}", 5.0, mark)
+            _, saved_t, saved = card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
+            turns.append({"theme": expected, "saved": saved, "save_after_s": saved_t - changed_t})
+            screens.append(compare_screen(card, screen_tools, run_dir, f"theme-{expected}", *scene_of(card_rows(card))))
+        mark = card.mark()
+        press_middle_key(card)
+        press_middle_key(card)
+        card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
+        time.sleep(THEME_SAVE_DELAY_S * 1.5)
+        quick = [line for _, line in card.since(mark) if line.startswith("THEME")]
+        mark = card.mark()
+        assert card.request("reboot") == "OK reboot"
+        card.wait_for(lambda line: line.startswith("READY "), 20.0, mark)
+        rebooted = info_fields(card.request("info"))
+    finally:
+        run.stop()
+        card.request("theme 0")
+    write_summary(run_dir, {"turns": turns, "screens": screens, "quick": quick, "rebooted": rebooted})
+    assert [s["theme"] for s in screens] == [1, 2, 3, 0], screens
+    assert all(s["mode"] == "rows" and s["differing_pixels"] == 0 for s in screens), screens
+    assert all(t["saved"] == f"THEME saved {t['theme']} rc=ESP_OK" for t in turns), turns
+    assert all(THEME_SAVE_DELAY_S * 0.8 <= t["save_after_s"] <= THEME_SAVE_DELAY_S * 1.5 for t in turns), turns
+    assert quick == ["THEME 1", "THEME 2", "THEME saved 2 rc=ESP_OK"], quick
+    assert rebooted["theme"] == "2" and int(rebooted["uptime_s"]) < 60, rebooted
 
 
 def bench(card, y0, rows):

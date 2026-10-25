@@ -13,7 +13,8 @@ FIRMWARE_MAIN = ROOT / "firmware" / "main"
 HOST = ROOT / "tests" / "host"
 GEN_FONTS = ROOT / "tools" / "gen_fonts.py"
 SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
-    "scene", "font", "link_version", "draw", "dirty", "screen", "theme_board", "rows")] + [HOST / "host_fonts.c"]
+    "scene", "font", "link_version", "draw", "dirty", "screen",
+    "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows")] + [HOST / "host_fonts.c"]
 W, H = 240, 320
 
 
@@ -38,8 +39,8 @@ def screen_tools(tmp_path_factory):
     return tools
 
 
-def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0):
-    lines = ["theme 0", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
+def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0):
+    lines = [f"theme {theme}", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
     lines += [f"row {state} {minutes} {title}" for state, minutes, title in rows]
     scene = tools / f"{name}.txt"
     scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -64,6 +65,6 @@ def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0):
     meta, width, height, data = card.snapshot()
     assert (width, height) == (W, H)
     cardlink.write_png(out_dir / f"{name}-card.png", width, height, cardlink.rgb565_wire_to_rgb(data))
-    host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]))
+    host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]))
     differing = sum(1 for i in range(0, len(data), 2) if data[i:i + 2] != host["wire"][i:i + 2])
-    return {"meta": meta, "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing}
+    return {"meta": meta, "theme": int(meta["theme"]), "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing}

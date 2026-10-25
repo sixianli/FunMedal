@@ -50,12 +50,12 @@ static void print_info(void)
     app_get_draw_stats(&draws, &draw_errors, &shown_tick);
     char security[40];
     ble_link_security(security, sizeof(security));
-    console_printf("OK info fw=%s state=%s pattern=%d mode=%s tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
+    console_printf("OK info fw=%s state=%s pattern=%d mode=%s theme=%u tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
                    "gap=%d,%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
                    "ble=%s ble_writes=%lu sec=%s gatt_changed=%u audio=%s link=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, app_top_state(), scene.test_pattern, SCREEN_MODES[scene.screen.mode],
-                   (unsigned long)scene.screen.tick, (unsigned long)shown_tick, config.invert, config.bgr,
+                   (unsigned)scene.theme, (unsigned long)scene.screen.tick, (unsigned long)shown_tick, config.invert, config.bgr,
                    config.mirror_x, config.mirror_y, config.gap_x, config.gap_y, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
@@ -131,9 +131,9 @@ static void snap(void)
     int64_t waited_us = 0;
     int64_t max_wait_us = 0;
     int timeouts = 0;
-    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d\n", SCENE_W, SCENE_H,
-                       app_top_state(), (unsigned long)scene.screen.tick, SCREEN_MODES[scene.screen.mode],
-                       scene.test_pattern);
+    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d theme=%u\n",
+                       SCENE_W, SCENE_H, app_top_state(), (unsigned long)scene.screen.tick,
+                       SCREEN_MODES[scene.screen.mode], scene.test_pattern, (unsigned)scene.theme);
     bool ok = write_all(line, (size_t)len, &waited_us, &timeouts);
     max_wait_us = waited_us;
     for (int y = 0; ok && y < SCENE_H; y++) {
@@ -390,7 +390,7 @@ static void bench_command(const char *args)
     rows_table_t table;
     int64_t now_us;
     app_get_rows(&table, &now_us);
-    scene = (scene_t){0};
+    scene = (scene_t){.theme = app_get_theme()};
     screen_from_rows(&scene.screen, &table, now_us, (uint32_t)(now_us / (THEME_TICK_MS * 1000LL)));
     span_t span = {(int16_t)y0, (int16_t)rows};
     int64_t render_us;
@@ -403,6 +403,22 @@ static void bench_command(const char *args)
     }
     console_printf("OK bench y0=%d rows=%d shown=%u render_us=%lld total_us=%lld\n", y0, rows,
                    (unsigned)scene.screen.shown, (long long)render_us, (long long)total_us);
+}
+
+static void theme_command(const char *args)
+{
+    if (args[0] == '\0') {
+        console_printf("OK theme %u\n", (unsigned)app_get_theme());
+        return;
+    }
+    char *end = NULL;
+    unsigned long theme = strtoul(args, &end, 10);
+    if (end == args || *end != '\0' || theme >= SCREEN_THEME_COUNT) {
+        console_printf("ERR theme usage: theme [0-%d]\n", SCREEN_THEME_COUNT - 1);
+        return;
+    }
+    app_set_theme((uint8_t)theme);
+    console_printf("OK theme %lu\n", theme);
 }
 
 static void handle(char *line)
@@ -423,6 +439,8 @@ static void handle(char *line)
         }
         app_show_board();
         console_printf("OK board\n");
+    } else if (strcmp(line, "theme") == 0) {
+        theme_command(args);
     } else if (strcmp(line, "pattern") == 0) {
         app_set_pattern();
         console_printf("OK pattern\n");

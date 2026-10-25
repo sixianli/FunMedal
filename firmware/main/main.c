@@ -13,10 +13,14 @@
 #include "freertos/task.h"
 #include "key_input.h"
 #include "link_version.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "screen.h"
 
 #define TICK_US (THEME_TICK_MS * 1000LL)
+#define THEME_NAMESPACE "funmedal"
+#define THEME_KEY "theme"
+#define THEME_SAVE_DELAY_US 1000000LL
 
 static const char *TAG = "app";
 static SemaphoreHandle_t lock;
@@ -27,6 +31,7 @@ static uint32_t draw_errors;
 static uint32_t shown_tick;
 static const char *top_state = "idle";
 static rows_table_t rows_table;
+static esp_timer_handle_t theme_save_timer;
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -76,6 +81,55 @@ void app_show_board(void)
     scene.fill = false;
     xSemaphoreGive(lock);
     xTaskNotifyGive(display_task_handle);
+}
+
+static uint8_t load_theme(void)
+{
+    nvs_handle_t nvs;
+    uint8_t value = 0;
+    bool found = false;
+    if (nvs_open(THEME_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
+        found = nvs_get_u8(nvs, THEME_KEY, &value) == ESP_OK;
+        nvs_close(nvs);
+    }
+    return screen_stored_theme(found, value);
+}
+
+static void save_theme(void *arg)
+{
+    (void)arg;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    uint8_t theme = scene.theme;
+    xSemaphoreGive(lock);
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(THEME_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(nvs, THEME_KEY, theme);
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+    console_event("THEME saved %u rc=%s\n", (unsigned)theme, esp_err_to_name(err));
+}
+
+uint8_t app_get_theme(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    uint8_t theme = scene.theme;
+    xSemaphoreGive(lock);
+    return theme;
+}
+
+void app_set_theme(uint8_t theme)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    scene.theme = theme;
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+    esp_timer_stop(theme_save_timer);
+    esp_timer_start_once(theme_save_timer, THEME_SAVE_DELAY_US);
+    console_event("THEME %u\n", (unsigned)theme);
 }
 
 void app_set_fill(uint32_t rgb)
@@ -247,6 +301,9 @@ static void on_key(const key_event_t *event)
     scene_t now;
     app_get_scene(&now);
     on_pairing_key(&now, event);
+    if (event->type == KEY_EVENT_PRESS && event->key == KEY_UP) {
+        app_set_theme(screen_next_theme(now.theme));
+    }
 }
 
 void app_main(void)
@@ -258,6 +315,9 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
     lock = xSemaphoreCreateMutex();
+    scene.theme = load_theme();
+    const esp_timer_create_args_t save_args = {.callback = save_theme, .name = "theme_save"};
+    ESP_ERROR_CHECK(esp_timer_create(&save_args, &theme_save_timer));
     bool fonts_ok = font_init();
     ESP_ERROR_CHECK(display_init(&DEFAULT_DISPLAY));
     xTaskCreate(display_task, "display", 4096, NULL, 5, &display_task_handle);

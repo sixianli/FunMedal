@@ -1,5 +1,6 @@
 #include "draw.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 #define TEXT_GLYPHS_MAX 40
@@ -166,6 +167,78 @@ void draw_fill(const band_t *band, rect_t rect, uint32_t rgb)
 void draw_round(const band_t *band, rect_t rect, int radius, uint32_t rgb)
 {
     shape(band, rect, radius, rgb, 15);
+}
+
+void draw_tint(const band_t *band, rect_t rect, int radius, uint32_t rgb, uint8_t alpha)
+{
+    shape(band, rect, radius, rgb, alpha);
+}
+
+void draw_dashed(const band_t *band, rect_t rect, int width, int dash, uint32_t rgb)
+{
+    for (int x = rect.x; x < rect.x + rect.w; x += 2 * dash) {
+        int w = min_int(dash, rect.x + rect.w - x);
+        draw_fill(band, (rect_t){x, rect.y, w, width}, rgb);
+        draw_fill(band, (rect_t){x, rect.y + rect.h - width, w, width}, rgb);
+    }
+    for (int y = rect.y; y < rect.y + rect.h; y += 2 * dash) {
+        int h = min_int(dash, rect.y + rect.h - y);
+        draw_fill(band, (rect_t){rect.x, y, width, h}, rgb);
+        draw_fill(band, (rect_t){rect.x + rect.w - width, y, width, h}, rgb);
+    }
+}
+
+void draw_dots(const band_t *band, rect_t rect, int period, uint32_t rgb, uint8_t alpha)
+{
+    clip_t c = clip(band, rect);
+    for (int y = c.y0; y < c.y1; y++) {
+        if ((y - rect.y) % period != period / 2) {
+            continue;
+        }
+        for (int x = rect.x + period / 2; x < c.x1; x += period) {
+            if (x >= c.x0) {
+                blend_pixel(band, x, y, rgb, alpha);
+            }
+        }
+    }
+}
+
+static const int WEDGE_SIN[DRAW_WEDGE_STEPS] = {
+    0, 392, 724, 946, 1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392,
+};
+
+static int wedge_sin(int step)
+{
+    return WEDGE_SIN[((step % DRAW_WEDGE_STEPS) + DRAW_WEDGE_STEPS) % DRAW_WEDGE_STEPS];
+}
+
+static int wedge_cos(int step)
+{
+    return wedge_sin(step + DRAW_WEDGE_STEPS / 4);
+}
+
+void draw_wedge(const band_t *band, rect_t circle, int step, uint32_t rgb, uint8_t alpha)
+{
+    clip_t c = clip(band, circle);
+    int from_x = wedge_sin(step);
+    int from_y = -wedge_cos(step);
+    int to_x = wedge_sin(step + 1);
+    int to_y = -wedge_cos(step + 1);
+    int r2 = circle.w * circle.w;
+    for (int y = c.y0; y < c.y1; y++) {
+        int dy = 2 * y + 1 - (2 * circle.y + circle.h);
+        for (int x = c.x0; x < c.x1; x++) {
+            int dx = 2 * x + 1 - (2 * circle.x + circle.w);
+            if (dx * dx + dy * dy > r2) {
+                continue;
+            }
+            bool after_from = from_x * dy - from_y * dx >= 0;
+            bool before_to = dx * to_y - dy * to_x > 0;
+            if (after_from && before_to) {
+                blend_pixel(band, x, y, rgb, alpha);
+            }
+        }
+    }
 }
 
 void draw_panel(const band_t *band, rect_t rect, int radius, int border, uint32_t border_rgb, uint32_t fill_rgb)

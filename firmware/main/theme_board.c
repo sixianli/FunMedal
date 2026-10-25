@@ -136,11 +136,23 @@ static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
                   area.y + MESSAGE_HINT_TOP);
 }
 
+static void draw_empty(const band_t *band, rect_t area)
+{
+    (void)band;
+    (void)area;
+}
+
 static void draw_footer(const band_t *band, const screen_t *screen, rect_t area)
 {
     (void)band;
     (void)screen;
     (void)area;
+}
+
+static uint32_t footer_phase(uint32_t tick)
+{
+    (void)tick;
+    return 0;
 }
 
 const theme_t theme_board = {
@@ -158,7 +170,9 @@ const theme_t theme_board = {
     .draw_background = draw_background,
     .draw_header = draw_header,
     .draw_slot = draw_slot,
+    .draw_empty = draw_empty,
     .draw_message = draw_message,
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,
+    .footer_phase = footer_phase,
 };
