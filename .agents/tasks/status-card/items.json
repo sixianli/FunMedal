@@ -21,7 +21,8 @@
     "G17": "once",
     "G18": "durable",
     "G19": "once",
-    "G20": "once"
+    "G20": "once",
+    "G21": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
