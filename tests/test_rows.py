@@ -21,6 +21,8 @@ PID_GONE_WITHIN_S = 15.0
 HEARTBEAT_EVERY_S = 30.0
 FRAME_MAX = 226
 NAME_MAX = 32
+TICK_US = 100_000
+BENCH_RUNS = 5
 
 
 def prompt(bridge, session, project, **extra):
@@ -273,6 +275,38 @@ def test_seven_sessions(case, card, bridge, run_dir):
     assert frame["total"] == 7 and frame["shown"] == 6, frame
     assert on_card["reply"]["total"] == "7" and len(on_card["rows"]) == 6, on_card
     assert "omega" not in [r["name"] for r in on_card["rows"]], on_card
+
+
+def bench(card, y0, rows):
+    runs = [dict(p.split("=", 1) for p in card.request(f"bench {y0} {rows}").split()[2:]) for _ in range(BENCH_RUNS)]
+    totals = sorted(int(r["total_us"]) for r in runs)
+    return {"runs": runs, "median_total_us": totals[len(totals) // 2], "max_total_us": totals[-1]}
+
+
+@pytest.mark.parametrize("case", ["[SC-6] with six sessions on the card one 36 pixel slot, one 80 pixel band and all "
+                                  "six slots each redraw within one 100 ms animation step"])
+def test_draw_speed(case, card, bridge, run_dir):
+    bridge.start()
+    projects = {"w": "waiting-project", "e": "eta", "r1": "zeta-a-rather-long-project-nm", "r2": "Beta",
+                "d1": "alpha", "d2": "omega"}
+    for session, project in projects.items():
+        prompt(bridge, session, project)
+    bridge.hook(event("Stop", "d1", stop_hook_active=False), project="alpha")
+    bridge.hook(event("Stop", "d2", stop_hook_active=False), project="omega")
+    bridge.hook(event("StopFailure", "e", error="server_error"), project="eta")
+    run = bridge.hook_async(event("PermissionRequest", "w", **bash("x")), project="waiting-project")
+    try:
+        bridge.settle_rows([("waiting", "waiting-project"), ("error", "eta"), ("running", "Beta"),
+                            ("running", "zeta-a-rather-long-project-nm"), ("done", "alpha"),
+                            ("done", "omega")], total=6)
+        on_card = card_rows(card)
+        timing = {"slot": bench(card, 96, 36), "band_80": bench(card, 24, 80), "six_slots": bench(card, 24, 216)}
+    finally:
+        run.stop()
+    write_summary(run_dir, {"card": on_card, "timing": timing})
+    assert len(on_card["rows"]) == 6, on_card
+    assert all(r["shown"] == "6" for t in timing.values() for r in t["runs"]), timing
+    assert all(t["max_total_us"] < TICK_US for t in timing.values()), timing
 
 
 @pytest.mark.parametrize("case", ["[SC-7] a done row carries the minutes since it finished, other rows carry none, "

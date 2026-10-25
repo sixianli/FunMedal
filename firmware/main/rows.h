@@ -46,6 +46,7 @@ typedef struct {
 
 typedef struct {
     bool linked;
+    bool has_table;
     rows_frame_t frame;
     int64_t table_us;
     int64_t heard_us;

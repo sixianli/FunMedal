@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "app.h"
 #include "audio.h"
 #include "ble_link.h"
@@ -12,8 +14,10 @@
 #include "key_input.h"
 #include "link_version.h"
 #include "nvs_flash.h"
+#include "screen.h"
 
-#define FRAME_PERIOD_MS 500
+#define PET_FRAME_TICKS 5
+#define TICK_US (THEME_TICK_MS * 1000LL)
 
 static const char *TAG = "app";
 static SemaphoreHandle_t lock;
@@ -158,27 +162,57 @@ static void drop_silent_link(void)
     }
 }
 
+static uint32_t take_snapshot(scene_t *snapshot)
+{
+    int64_t now = esp_timer_get_time();
+    uint32_t tick = (uint32_t)(now / TICK_US);
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (frame_mode == APP_FRAME_AUTO) {
+        scene.frame = (uint8_t)(tick / PET_FRAME_TICKS % PET_FRAMES);
+    }
+    *snapshot = scene;
+    screen_from_rows(&snapshot->screen, &rows_table, now, tick);
+    xSemaphoreGive(lock);
+    return (uint32_t)((TICK_US - now % TICK_US + 999) / 1000);
+}
+
 static void display_task(void *arg)
 {
+    static scene_t snapshot;
+    region_t drawn[DIRTY_MAX_REGIONS];
+    int drawn_count = 0;
+    bool valid = false;
+    uint32_t drawn_generation = 0;
+    uint32_t wait_ms = 0;
     for (;;) {
-        bool notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FRAME_PERIOD_MS)) > 0;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
         drop_silent_link();
-        xSemaphoreTake(lock, portMAX_DELAY);
-        if (!notified && frame_mode == APP_FRAME_AUTO) {
-            scene.frame = (uint8_t)((scene.frame + 1) % PET_FRAMES);
+        wait_ms = take_snapshot(&snapshot);
+        region_t regions[DIRTY_MAX_REGIONS];
+        int count = scene_regions(&snapshot, regions);
+        uint32_t generation = display_generation();
+        bool same_panel = valid && generation == drawn_generation;
+        span_t spans[DIRTY_MAX_REGIONS];
+        int span_count = dirty_spans(drawn, same_panel ? drawn_count : 0, regions, count, spans);
+        if (span_count == 0) {
+            continue;
         }
-        scene_t snapshot = scene;
-        xSemaphoreGive(lock);
-        esp_err_t err = display_draw(&snapshot);
+        esp_err_t err = display_draw_spans(&snapshot, spans, span_count, NULL, NULL);
+        valid = err == ESP_OK;
+        if (valid) {
+            memcpy(drawn, regions, sizeof(region_t) * (size_t)count);
+            drawn_count = count;
+            drawn_generation = generation;
+        }
         xSemaphoreTake(lock, portMAX_DELAY);
-        if (err == ESP_OK) {
+        if (valid) {
             draws++;
             shown_frame = snapshot.frame;
         } else {
             draw_errors++;
         }
         xSemaphoreGive(lock);
-        if (err != ESP_OK) {
+        if (!valid) {
             ESP_LOGE(TAG, "draw failed: %s", esp_err_to_name(err));
         }
     }

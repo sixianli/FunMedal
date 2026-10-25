@@ -158,6 +158,7 @@ void rows_heard(rows_table_t *table, rows_kind_t kind, const rows_frame_t *frame
 {
     table->heard_us = now_us;
     if (kind == ROWS_TABLE) {
+        table->has_table = true;
         table->frame = *frame;
         table->table_us = now_us;
     }

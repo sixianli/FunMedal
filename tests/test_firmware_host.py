@@ -1,6 +1,9 @@
+import os
 import re
+import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -14,6 +17,13 @@ GEN_FONTS = ROOT / "tools" / "gen_fonts.py"
 OUTSIDE_LEVEL_ONE = ["\u5011", "\u8aaa", "\u30a2", "\U0001f600"]
 LINK_SOURCES = [FIRMWARE_MAIN / "link_version.c"]
 ROWS_SOURCES = [FIRMWARE_MAIN / "rows.c"]
+HOST = ROOT / "tests" / "host"
+SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
+    "scene", "pet_art", "font", "link_version", "draw", "dirty", "screen", "theme_board", "rows")] + [HOST / "host_fonts.c"]
+SIX_ROWS = [("waiting", "-", "FunMedal"), ("error", "-", "SiBlog"), ("running", "-", "himawari-agent"),
+            ("running", "-", "\u7ed8\u672c\u5de5\u574a"), ("done", "5", "agent-skills"),
+            ("done", "135", "\u4e00\u4e2a\u540d\u5b57\u7279\u522b\u7279\u522b\u957f\u7684\u9879\u76ee\u4f1a\u88ab\u622a\u77ed")]
+W, H = 240, 320
 C_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 
@@ -128,3 +138,91 @@ def test_link_version_parsing_on_host(case, tmp_path):
     print(result.stdout)
     assert result.returncode == 0, result.stdout
     assert "ALL PASSED" in result.stdout
+
+
+@pytest.fixture(scope="module")
+def screen_tools(fonts):
+    build(HOST / "test_screen.c", fonts / "test_screen", SCREEN_SOURCES)
+    build(HOST / "render_png.c", fonts / "render_png", SCREEN_SOURCES)
+    return fonts
+
+
+@pytest.fixture(scope="module")
+def screen_artifacts():
+    base = Path(os.environ.get("FM_ARTIFACTS") or ROOT / "artifacts" / f"sc-screens-{datetime.now():%Y%m%d-%H%M%S}")
+    path = base.resolve() / "screens"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def render(tools, artifacts, name, mode="rows", rows=(), total=None, tick=0):
+    lines = ["theme 0", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
+    lines += [f"row {state} {minutes} {title}" for state, minutes, title in rows]
+    scene = tools / f"{name}.txt"
+    scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    png, rgb = tools / f"{name}.png", tools / f"{name}.rgb"
+    done = subprocess.run([str(tools / "render_png"), str(tools), str(scene), str(png), str(rgb)],
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    shutil.copy(png, artifacts / png.name)
+    regions = [tuple(int(v) for v in line.split()[1:3]) for line in done.stdout.splitlines()
+               if line.startswith("REGION ")]
+    return rgb.read_bytes(), regions
+
+
+def pixel(image, x, y):
+    at = (y * W + x) * 3
+    return image[at:at + 3]
+
+
+def changed_pixels(a, b):
+    return [(i // 3 % W, i // 3 // W) for i in range(0, len(a), 3) if a[i:i + 3] != b[i:i + 3]]
+
+
+@pytest.mark.parametrize("case", ["[SC-6] between any two frames every changed pixel lies in a redrawn region, "
+                                  "and animation, new names and new states redraw only their own slot"])
+def test_dirty_regions_on_host(case, screen_tools):
+    result = subprocess.run([str(screen_tools / "test_screen"), str(screen_tools)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("case", ["[SC-6] seven sessions draw six slots and add +1 to the header, nothing else"])
+def test_seventh_session_adds_plus_one(case, screen_tools, screen_artifacts):
+    six, six_regions = render(screen_tools, screen_artifacts, "board-6", rows=SIX_ROWS)
+    seven, seven_regions = render(screen_tools, screen_artifacts, "board-7", rows=SIX_ROWS, total=7)
+    slots = [(24 + 36 * i, 36) for i in range(6)]
+    assert six_regions == seven_regions == [(0, 24), *slots, (240, 80)]
+    changed = changed_pixels(six, seven)
+    assert changed, "the header shows no +1"
+    assert all(y < 24 and x >= W // 2 for x, y in changed), changed[:10]
+
+
+def ink_in(image, top, height, background):
+    return sum(pixel(image, x, y) != background for y in range(top, top + height) for x in range(W))
+
+
+@pytest.mark.parametrize("case, count", [
+    ("[SC-3] one session fills the first slot and leaves the other five empty", 1),
+    ("[SC-3] three sessions fill three slots and leave the other three empty", 3),
+    ("[SC-3] six sessions fill all six slots", 6),
+])
+def test_sessions_fill_their_slots(case, count, screen_tools, screen_artifacts):
+    image, regions = render(screen_tools, screen_artifacts, f"board-{count}", rows=SIX_ROWS[:count])
+    background = pixel(image, 0, H - 1)
+    for i, (top, height) in enumerate(regions[1:7]):
+        ink = ink_in(image, top, height, background)
+        assert (ink > 1000) == (i < count), (i, ink)
+
+
+@pytest.mark.parametrize("case", ["[SC-10] the unlinked and the empty screens differ and draw no session slots"])
+def test_unlinked_and_empty_screens(case, screen_tools, screen_artifacts):
+    unlinked, unlinked_regions = render(screen_tools, screen_artifacts, "board-unlinked", mode="unlinked")
+    empty, empty_regions = render(screen_tools, screen_artifacts, "board-empty", mode="empty")
+    assert unlinked_regions == empty_regions == [(0, 24), (24, 216), (240, 80)]
+    changed = changed_pixels(unlinked, empty)
+    assert changed and all(24 <= y < 240 for _, y in changed)
+    background = pixel(unlinked, 0, H - 1)
+    for image in (unlinked, empty):
+        assert ink_in(image, 24, 216, background) > 1000

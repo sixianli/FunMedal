@@ -18,6 +18,9 @@ typedef struct {
 esp_err_t display_init(const display_config_t *config);
 esp_err_t display_apply(const display_config_t *config);
 void display_get_config(display_config_t *config);
-esp_err_t display_draw(const scene_t *scene);
+esp_err_t display_draw_spans(const scene_t *scene, const span_t *spans, int count, int64_t *render_us,
+                             int64_t *total_us);
+uint32_t display_generation(void);
+void display_invalidate(void);
 void display_backlight(int percent);
 void display_last_timing(int64_t *render_us, int64_t *total_us);

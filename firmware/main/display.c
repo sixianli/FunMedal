@@ -24,6 +24,7 @@ static int64_t last_total_us;
 static SemaphoreHandle_t free_strips;
 static SemaphoreHandle_t lock;
 static display_config_t current;
+static uint32_t generation;
 
 static bool on_color_done(esp_lcd_panel_io_handle_t handle, esp_lcd_panel_io_event_data_t *data, void *ctx)
 {
@@ -133,6 +134,7 @@ esp_err_t display_apply(const display_config_t *config)
     wait_idle();
     display_config_t previous = current;
     esp_err_t err = create_panel(config);
+    generation++;
     if (err != ESP_OK && create_panel(&previous) != ESP_OK) {
         ESP_LOGE(TAG, "restoring the previous panel settings failed; drawing will fail until the next lcd command succeeds");
     }
@@ -155,26 +157,51 @@ void display_last_timing(int64_t *render_us, int64_t *total_us)
     xSemaphoreGive(lock);
 }
 
-esp_err_t display_draw(const scene_t *scene)
+uint32_t display_generation(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    uint32_t value = generation;
+    xSemaphoreGive(lock);
+    return value;
+}
+
+void display_invalidate(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    generation++;
+    xSemaphoreGive(lock);
+}
+
+esp_err_t display_draw_spans(const scene_t *scene, const span_t *spans, int count, int64_t *render_us,
+                             int64_t *total_us)
 {
     esp_err_t err = ESP_OK;
     xSemaphoreTake(lock, portMAX_DELAY);
     int64_t started = esp_timer_get_time();
     int64_t rendering = 0;
-    for (int y = 0, i = 0; y < SCENE_H && err == ESP_OK; y += STRIP_ROWS, i = (i + 1) % STRIP_COUNT) {
-        int rows = SCENE_H - y < STRIP_ROWS ? SCENE_H - y : STRIP_ROWS;
-        xSemaphoreTake(free_strips, portMAX_DELAY);
-        int64_t before = esp_timer_get_time();
-        scene_render_rows(scene, y, rows, strips[i]);
-        rendering += esp_timer_get_time() - before;
-        err = esp_lcd_panel_draw_bitmap(panel, 0, y, SCENE_W, y + rows, strips[i]);
-        if (err != ESP_OK) {
-            xSemaphoreGive(free_strips);
+    int strip = 0;
+    for (int s = 0; s < count && err == ESP_OK; s++) {
+        int end = spans[s].y + spans[s].h;
+        for (int y = spans[s].y; y < end && err == ESP_OK; y += STRIP_ROWS) {
+            int rows = end - y < STRIP_ROWS ? end - y : STRIP_ROWS;
+            xSemaphoreTake(free_strips, portMAX_DELAY);
+            int64_t before = esp_timer_get_time();
+            scene_render_rows(scene, y, rows, strips[strip]);
+            rendering += esp_timer_get_time() - before;
+            err = esp_lcd_panel_draw_bitmap(panel, 0, y, SCENE_W, y + rows, strips[strip]);
+            if (err != ESP_OK) {
+                xSemaphoreGive(free_strips);
+            }
+            strip = (strip + 1) % STRIP_COUNT;
         }
     }
     wait_idle();
     last_render_us = rendering;
     last_total_us = esp_timer_get_time() - started;
+    if (render_us != NULL) {
+        *render_us = last_render_us;
+        *total_us = last_total_us;
+    }
     xSemaphoreGive(lock);
     return err;
 }

@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "draw.h"
 #include "font.h"
 #include "link_version.h"
+#include "screen.h"
 
 #define MAX_RUN_GLYPHS 64
 #define MAX_RUNS 16
@@ -63,23 +65,6 @@ static const char *const LINK_NAMES[] = {
     [SCENE_LINK_UPDATE_FIRMWARE] = "update_firmware",
     [SCENE_LINK_UPDATE_BRIDGE] = "update_bridge",
 };
-
-uint16_t scene_rgb565_wire(uint32_t rgb)
-{
-    uint16_t c = (uint16_t)(((rgb >> 8) & 0xf800) | ((rgb >> 5) & 0x07e0) | ((rgb >> 3) & 0x001f));
-    return (uint16_t)((c >> 8) | (c << 8));
-}
-
-static uint32_t blend(uint32_t bg, uint32_t fg, uint8_t alpha)
-{
-    uint32_t out = 0;
-    for (int shift = 0; shift <= 16; shift += 8) {
-        int b = (bg >> shift) & 0xff;
-        int f = (fg >> shift) & 0xff;
-        out |= (uint32_t)(b + (f - b) * alpha / 15) << shift;
-    }
-    return out;
-}
 
 uint32_t scene_background_rgb(pet_state_t state, uint8_t frame)
 {
@@ -161,7 +146,7 @@ static void draw_run_row(const text_run_t *run, int y, uint32_t bg, uint32_t fg,
             }
             uint8_t alpha = font_alpha(run->font, &glyph, gx, ly);
             if (alpha) {
-                row[px] = scene_rgb565_wire(blend(bg, fg, alpha));
+                row[px] = draw_wire(draw_blend(bg, fg, alpha));
             }
         }
         x += glyph.width;
@@ -170,7 +155,7 @@ static void draw_run_row(const text_run_t *run, int y, uint32_t bg, uint32_t fg,
 
 static void render_runs(const runs_t *runs, uint32_t bg, uint32_t fg, int y0, int rows, uint16_t *out)
 {
-    uint16_t background = scene_rgb565_wire(bg);
+    uint16_t background = draw_wire(bg);
     for (int y = y0; y < y0 + rows; y++) {
         uint16_t *row = out + (y - y0) * SCENE_W;
         for (int x = 0; x < SCENE_W; x++) {
@@ -260,7 +245,7 @@ static void render_pet(const scene_t *scene, int y0, int rows, uint16_t *out)
                     color = pet_palette[sprite[sy][sx]];
                 }
             }
-            row[x] = scene_rgb565_wire(color);
+            row[x] = draw_wire(color);
         }
         draw_run_row(&label.items[0], y, bg, style->text, row);
     }
@@ -269,7 +254,7 @@ static void render_pet(const scene_t *scene, int y0, int rows, uint16_t *out)
 void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
 {
     if (scene->fill) {
-        uint16_t color = scene_rgb565_wire(scene->fill_rgb);
+        uint16_t color = draw_wire(scene->fill_rgb);
         for (int i = 0; i < rows * SCENE_W; i++) {
             out[i] = color;
         }
@@ -278,7 +263,7 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
     if (scene->test_pattern) {
         for (int y = y0; y < y0 + rows; y++) {
             for (int x = 0; x < SCENE_W; x++) {
-                *out++ = scene_rgb565_wire(pattern_pixel(x, y));
+                *out++ = draw_wire(pattern_pixel(x, y));
             }
         }
         return;
@@ -287,7 +272,42 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
         render_pairing(scene, y0, rows, out);
     } else if (link_mismatch(scene)) {
         render_link(scene, y0, rows, out);
+    } else if (scene->sessions) {
+        band_t band = {out, y0, rows};
+        screen_render(screen_theme(scene->theme), &scene->screen, &band);
     } else {
         render_pet(scene, y0, rows, out);
     }
+}
+
+static uint32_t hash_int(uint32_t hash, uint32_t value)
+{
+    return dirty_hash(hash, &value, sizeof value);
+}
+
+static uint32_t whole_screen_key(const scene_t *scene)
+{
+    if (scene->fill) {
+        return hash_int(dirty_hash_text(DIRTY_HASH_START, "fill"), scene->fill_rgb);
+    }
+    if (scene->test_pattern) {
+        return dirty_hash_text(DIRTY_HASH_START, "pattern");
+    }
+    if (scene->pairing != SCENE_PAIRING_NONE) {
+        return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "pairing"), scene->pairing), scene->pair_code);
+    }
+    if (link_mismatch(scene)) {
+        return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "link"), scene->link), scene->link_peer);
+    }
+    return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "pet"), scene->state), scene->frame % PET_FRAMES);
+}
+
+int scene_regions(const scene_t *scene, region_t *out)
+{
+    bool covered = scene->fill || scene->test_pattern || scene->pairing != SCENE_PAIRING_NONE || link_mismatch(scene);
+    if (scene->sessions && !covered) {
+        return screen_regions(scene->theme, &scene->screen, out);
+    }
+    out[0] = (region_t){0, SCENE_H, whole_screen_key(scene)};
+    return 1;
 }

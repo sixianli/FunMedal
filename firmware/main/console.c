@@ -18,6 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "key_input.h"
+#include "screen.h"
 
 #define FIRMWARE_VERSION "funmedal-0.1"
 #define LINE_MAX_LEN 96
@@ -370,6 +371,34 @@ static void tone_command(char *args)
     console_printf("OK tone %d %d %d\n", hz, ms, volume);
 }
 
+static void bench_command(const char *args)
+{
+    int y0 = 0;
+    int rows = 0;
+    char extra = 0;
+    if (sscanf(args, "%d %d %c", &y0, &rows, &extra) != 2 || y0 < 0 || rows < 1 || y0 + rows > SCENE_H) {
+        console_printf("ERR bench usage: bench <y0> <rows> with y0 + rows <= %d\n", SCENE_H);
+        return;
+    }
+    static scene_t scene;
+    rows_table_t table;
+    int64_t now_us;
+    app_get_rows(&table, &now_us);
+    scene = (scene_t){.state = PET_IDLE, .sessions = true};
+    screen_from_rows(&scene.screen, &table, now_us, (uint32_t)(now_us / (THEME_TICK_MS * 1000LL)));
+    span_t span = {(int16_t)y0, (int16_t)rows};
+    int64_t render_us;
+    int64_t total_us;
+    esp_err_t err = display_draw_spans(&scene, &span, 1, &render_us, &total_us);
+    display_invalidate();
+    if (err != ESP_OK) {
+        console_printf("ERR bench draw failed %s\n", esp_err_to_name(err));
+        return;
+    }
+    console_printf("OK bench y0=%d rows=%d shown=%u render_us=%lld total_us=%lld\n", y0, rows,
+                   (unsigned)scene.screen.shown, (long long)render_us, (long long)total_us);
+}
+
 static void handle(char *line)
 {
     char *space = strchr(line, ' ');
@@ -438,6 +467,8 @@ static void handle(char *line)
         int64_t total_us;
         display_last_timing(&render_us, &total_us);
         console_printf("OK timing render_us=%lld total_us=%lld\n", (long long)render_us, (long long)total_us);
+    } else if (strcmp(line, "bench") == 0) {
+        bench_command(args);
     } else if (strcmp(line, "tone") == 0) {
         tone_command(args);
     } else if (strcmp(line, "backlight") == 0) {
