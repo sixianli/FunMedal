@@ -29,7 +29,8 @@
     "G25": "once",
     "G26": "once",
     "G27": "once",
-    "G28": "once"
+    "G28": "once",
+    "G29": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -651,7 +652,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G29",
           "question": "卡片上项目 thread 名字前的橙色 P 贴纸，认可吗？"
         }
       ],
