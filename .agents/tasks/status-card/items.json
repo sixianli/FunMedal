@@ -30,7 +30,8 @@
     "G26": "once",
     "G27": "once",
     "G28": "once",
-    "G29": "once"
+    "G29": "once",
+    "G30": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -347,7 +348,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G30",
           "question": "当着你演示了 PRD 验收第 10 条，认可吗？"
         }
       ],
