@@ -353,7 +353,7 @@ def card(artifacts):
         info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
         (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
         assert " ble=" in info, info
-        watcher.request("frame auto")
+        watcher.request("board")
         yield watcher
     finally:
         lines = [f"{t:.3f} {line}" for t, line in watcher.lines]

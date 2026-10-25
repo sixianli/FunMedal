@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 
-from bridge_harness import (Bridge, artifacts, bash, bridge, bridge_cli, card, card_lines, card_states,  # noqa: F401
+from bridge_harness import (Bridge, artifacts, bash, bridge, bridge_cli, card, card_lines, card_rows, card_states,  # noqa: F401
                             event, hook_times, info_fields, raw_exchange, real_session, request_touch,
                             require_bridge_app, rows_writes, run_dir, shown_states, start_and_mark,
                             wait_session_ready, wait_until, write_summary)
@@ -72,10 +72,16 @@ def wait_for_waits(bridge, count):
 
 @pytest.mark.parametrize("case", ["[FM-13] connecting writes the current table over what the card showed"])
 def test_connect_writes_current_state(case, card, bridge):
-    assert card.request("state error") == "OK state error"
+    before = wait_until(lambda: (r := card_rows(card))["reply"]["linked"] == "0" and r, 10.0, "card unlinked")
+    before_mode = info_fields(card.request("info"))["mode"]
     start = card.mark()
     bridge.start()
-    card.wait_for(lambda line: line == "STATE idle", 5.0, start)
+    card.wait_for(lambda line: line.startswith("BLE rows "), 5.0, start)
+    after = card_rows(card)
+    after_mode = info_fields(card.request("info"))["mode"]
+    assert before["reply"]["linked"] == "0", before
+    assert after["reply"] == {"total": "0", "shown": "0", "linked": "1"}, after
+    assert (before_mode, after_mode) == ("unlinked", "empty")
     assert rows_writes(card, start) == [EMPTY_TABLE]
 
 
@@ -485,9 +491,11 @@ def test_ended_hook_counts_as_answered(case, card, bridge, run_dir):
     run = bridge.hook_async(event("PermissionRequest", "e", **bash("make clean")))
     wait_for_waits(bridge, 1)
     bridge.settle(["waiting"])
+    waiting, _, _ = card.wait_for(lambda line: line == "STATE waiting", 5.0, start)
     run.proc.kill()
     run.proc.wait(5.0)
     status = bridge.settle(["running"])
+    card.wait_for(lambda line: line == "STATE working", 5.0, waiting)
     write_summary(run_dir, {"status": status, "states": card_states(card, start), "waits": wait_log(bridge)})
     assert status["waits"] == [] and status["sessions"]["e"]["waiting"] == 0, status
     assert card_states(card, start) == ["working", "waiting", "working"]

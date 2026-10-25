@@ -22,13 +22,6 @@
 #define LINK_HINT_TOP 170
 
 typedef struct {
-    const char *name;
-    const char *label;
-    uint32_t background[PET_FRAMES];
-    uint32_t text;
-} state_style_t;
-
-typedef struct {
     const font_t *font;
     const char *text;
     size_t len;
@@ -40,14 +33,6 @@ typedef struct {
     text_run_t items[MAX_RUNS];
     int count;
 } runs_t;
-
-static const state_style_t STYLES[PET_STATE_COUNT] = {
-    [PET_IDLE] = {"idle", "空闲", {0x2b2d42, 0x2b2d42}, 0xedf2f4},
-    [PET_WORKING] = {"working", "干活中", {0x1d4e89, 0x1d4e89}, 0xffffff},
-    [PET_WAITING] = {"waiting", "等你批准", {0xff9f1c, 0xffbf69}, 0x1a1c2c},
-    [PET_DONE] = {"done", "完成了", {0x2a9d8f, 0x2a9d8f}, 0xffffff},
-    [PET_ERROR] = {"error", "出错了", {0x9b2226, 0x9b2226}, 0xffffff},
-};
 
 static const char *const PAIRING_TITLE = "蓝牙配对";
 static const char *const NUMCMP_HINTS[] = {"数字和 Mac 上的相同时", "按右侧最上面的键配对", "按右侧最下面的键取消"};
@@ -66,26 +51,6 @@ static const char *const LINK_NAMES[] = {
     [SCENE_LINK_UPDATE_BRIDGE] = "update_bridge",
 };
 
-uint32_t scene_background_rgb(pet_state_t state, uint8_t frame)
-{
-    return STYLES[state].background[frame % PET_FRAMES];
-}
-
-uint32_t scene_text_rgb(pet_state_t state)
-{
-    return STYLES[state].text;
-}
-
-const char *scene_state_name(pet_state_t state)
-{
-    return STYLES[state].name;
-}
-
-const char *scene_state_label(pet_state_t state)
-{
-    return STYLES[state].label;
-}
-
 const char *scene_link_name(scene_link_t link)
 {
     return LINK_NAMES[link];
@@ -102,17 +67,6 @@ scene_link_t scene_link_for(uint16_t own, uint16_t peer)
 static bool link_mismatch(const scene_t *scene)
 {
     return scene->link == SCENE_LINK_UPDATE_FIRMWARE || scene->link == SCENE_LINK_UPDATE_BRIDGE;
-}
-
-bool scene_state_from_name(const char *name, pet_state_t *state)
-{
-    for (int i = 0; i < PET_STATE_COUNT; i++) {
-        if (strcmp(name, STYLES[i].name) == 0) {
-            *state = (pet_state_t)i;
-            return true;
-        }
-    }
-    return false;
 }
 
 static void add_run(runs_t *runs, const font_t *font, const char *text, size_t len, int x, int top)
@@ -225,32 +179,6 @@ static uint32_t pattern_pixel(int x, int y)
     return 0x000000;
 }
 
-static void render_pet(const scene_t *scene, int y0, int rows, uint16_t *out)
-{
-    const state_style_t *style = &STYLES[scene->state];
-    uint8_t frame = scene->frame % PET_FRAMES;
-    uint32_t bg = style->background[frame];
-    const uint8_t (*sprite)[PET_SIZE] = pet_sprites[scene->state][frame];
-    runs_t label = {.count = 0};
-    add_centered(&label, &font_large, style->label, SCENE_LABEL_Y);
-    for (int y = y0; y < y0 + rows; y++) {
-        uint16_t *row = out + (y - y0) * SCENE_W;
-        int sy = (y - SCENE_PET_Y) / SCENE_PET_SCALE;
-        bool in_pet_rows = y >= SCENE_PET_Y && sy < PET_SIZE;
-        for (int x = 0; x < SCENE_W; x++) {
-            uint32_t color = bg;
-            if (in_pet_rows && x >= SCENE_PET_X) {
-                int sx = (x - SCENE_PET_X) / SCENE_PET_SCALE;
-                if (sx < PET_SIZE && sprite[sy][sx] != 0) {
-                    color = pet_palette[sprite[sy][sx]];
-                }
-            }
-            row[x] = draw_wire(color);
-        }
-        draw_run_row(&label.items[0], y, bg, style->text, row);
-    }
-}
-
 void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
 {
     if (scene->fill) {
@@ -272,11 +200,9 @@ void scene_render_rows(const scene_t *scene, int y0, int rows, uint16_t *out)
         render_pairing(scene, y0, rows, out);
     } else if (link_mismatch(scene)) {
         render_link(scene, y0, rows, out);
-    } else if (scene->sessions) {
+    } else {
         band_t band = {out, y0, rows};
         screen_render(screen_theme(scene->theme), &scene->screen, &band);
-    } else {
-        render_pet(scene, y0, rows, out);
     }
 }
 
@@ -296,16 +222,13 @@ static uint32_t whole_screen_key(const scene_t *scene)
     if (scene->pairing != SCENE_PAIRING_NONE) {
         return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "pairing"), scene->pairing), scene->pair_code);
     }
-    if (link_mismatch(scene)) {
-        return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "link"), scene->link), scene->link_peer);
-    }
-    return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "pet"), scene->state), scene->frame % PET_FRAMES);
+    return hash_int(hash_int(dirty_hash_text(DIRTY_HASH_START, "link"), scene->link), scene->link_peer);
 }
 
 int scene_regions(const scene_t *scene, region_t *out)
 {
     bool covered = scene->fill || scene->test_pattern || scene->pairing != SCENE_PAIRING_NONE || link_mismatch(scene);
-    if (scene->sessions && !covered) {
+    if (!covered) {
         return screen_regions(scene->theme, &scene->screen, out);
     }
     out[0] = (region_t){0, SCENE_H, whole_screen_key(scene)};

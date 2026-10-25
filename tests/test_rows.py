@@ -11,8 +11,9 @@ from pathlib import Path
 import pytest
 
 from bridge_harness import (HEARTBEAT_FLAG, HIDDEN_MINUTES, Bridge, artifacts, bash, bridge, bridge_cli,  # noqa: F401
-                            card, card_rows, event, hook_env, require_bridge_app, rows_writes, run_dir, wait_until,
+                            card, card_rows, event, hook_env, info_fields, require_bridge_app, rows_writes, run_dir, wait_until,
                             write_summary)
+from host_render import compare_screen, scene_of, screen_tools  # noqa: F401
 
 ARTIFACTS_PREFIX = "sc"
 ARTIFACTS_SUBDIR = "rows"
@@ -23,6 +24,7 @@ FRAME_MAX = 226
 NAME_MAX = 32
 TICK_US = 100_000
 BENCH_RUNS = 5
+ANIMATION_WATCH_S = 1.0
 
 
 def prompt(bridge, session, project, **extra):
@@ -94,7 +96,7 @@ def test_project_names(case, artifacts, tmp_path):
 
 @pytest.mark.parametrize("case", ["[SC-3] three projects with one session each show as three rows with their project "
                                   "names and states on the card within 3 seconds"])
-def test_three_projects(case, card, bridge, run_dir):
+def test_three_projects(case, card, bridge, run_dir, screen_tools):
     bridge.start()
     mark = card.mark()
     for session, project in (("a", "alpha"), ("b", "beta"), ("c", "gamma")):
@@ -107,9 +109,11 @@ def test_three_projects(case, card, bridge, run_dir):
     status = bridge.settle_rows([("running", "alpha"), ("running", "gamma"), ("done", "beta")], total=3)
     shown_after = time.monotonic() - started
     on_card = card_rows(card)
+    screen = compare_screen(card, screen_tools, run_dir, "three", *scene_of(on_card))
     summary = {"hidden": hidden, "status": status, "shown_after_s": shown_after, "card": on_card,
-               "card_writes": rows_writes(card, mark), "frames": bridge.frames()}
+               "card_writes": rows_writes(card, mark), "frames": bridge.frames(), "screen": screen}
     write_summary(run_dir, summary)
+    assert screen["meta"]["mode"] == "rows" and screen["differing_pixels"] == 0, screen
     assert hidden["total"] == 0 and hidden["rows"] == [] and len(hidden["sessions"]) == 3, summary
     assert shown_after < SHOW_WITHIN_S, summary
     assert status["max_write"] >= FRAME_MAX and status["name_limit"] == NAME_MAX, summary
@@ -255,7 +259,7 @@ def test_twenty_requests(case, card, bridge, run_dir):
 
 @pytest.mark.parametrize("case", ["[SC-6] seven sessions show six rows ordered waiting, error, running, done and by "
                                   "project name, and the one left out is running or done"])
-def test_seven_sessions(case, card, bridge, run_dir):
+def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
     bridge.start()
     for session in ("r1", "r2", "d1", "d2", "e1", "w1", "w2"):
         prompt(bridge, session, {"r1": "zeta", "r2": "Beta", "d1": "alpha", "d2": "omega", "e1": "eta",
@@ -268,10 +272,12 @@ def test_seven_sessions(case, card, bridge, run_dir):
     status = bridge.settle_rows([("waiting", "aa"), ("waiting", "zz"), ("error", "eta"), ("running", "Beta"),
                                  ("running", "zeta"), ("done", "alpha")], total=7)
     on_card = card_rows(card)
+    screen = compare_screen(card, screen_tools, run_dir, "seven", *scene_of(on_card))
     frame = bridge.frames()[-1]
     for run in runs:
         run.stop()
-    write_summary(run_dir, {"status": status, "card": on_card, "frame": frame})
+    write_summary(run_dir, {"status": status, "card": on_card, "frame": frame, "screen": screen})
+    assert screen["differing_pixels"] == 0, screen
     assert frame["total"] == 7 and frame["shown"] == 6, frame
     assert on_card["reply"]["total"] == "7" and len(on_card["rows"]) == 6, on_card
     assert "omega" not in [r["name"] for r in on_card["rows"]], on_card
@@ -300,10 +306,17 @@ def test_draw_speed(case, card, bridge, run_dir):
                             ("running", "zeta-a-rather-long-project-nm"), ("done", "alpha"),
                             ("done", "omega")], total=6)
         on_card = card_rows(card)
+        before = info_fields(card.request("info"))
+        time.sleep(ANIMATION_WATCH_S)
+        after = info_fields(card.request("info"))
         timing = {"slot": bench(card, 96, 36), "band_80": bench(card, 24, 80), "six_slots": bench(card, 24, 216)}
     finally:
         run.stop()
-    write_summary(run_dir, {"card": on_card, "timing": timing})
+    animation = {"before": before, "after": after, "draws": int(after["draws"]) - int(before["draws"]),
+                 "ticks": int(after["tick"]) - int(before["tick"])}
+    write_summary(run_dir, {"card": on_card, "animation": animation, "timing": timing})
+    assert 5 <= animation["draws"] <= animation["ticks"] + 1, animation
+    assert after["shown_tick"] != before["shown_tick"] and after["draw_errors"] == before["draw_errors"], animation
     assert len(on_card["rows"]) == 6, on_card
     assert all(r["shown"] == "6" for t in timing.values() for r in t["runs"]), timing
     assert all(t["max_total_us"] < TICK_US for t in timing.values()), timing
@@ -340,16 +353,22 @@ def test_done_minutes_and_bytes(case, card, run_dir):
 
 @pytest.mark.parametrize("case", ["[SC-10] with no sessions the bridge writes an empty table, and after it quits the "
                                   "card no longer counts itself linked"])
-def test_empty_and_quit(case, card, bridge, run_dir):
+def test_empty_and_quit(case, card, bridge, run_dir, screen_tools):
     mark = card.mark()
     bridge.start()
+    card.wait_for(lambda line: line.startswith("BLE rows "), 5.0, mark)
     frame = bridge.frames()[-1]
     linked = card_rows(card)
+    empty = compare_screen(card, screen_tools, run_dir, "empty", *scene_of(linked))
     bridge.quit()
     unlinked = wait_until(lambda: (r := card_rows(card)) and r["reply"]["linked"] == "0" and r, 10.0, "card unlinked")
-    write_summary(run_dir, {"frame": frame, "linked": linked, "unlinked": unlinked, "writes": rows_writes(card, mark)})
+    gone = compare_screen(card, screen_tools, run_dir, "unlinked", *scene_of(unlinked))
+    write_summary(run_dir, {"frame": frame, "linked": linked, "unlinked": unlinked, "writes": rows_writes(card, mark),
+                            "screens": [empty, gone]})
     assert frame == {"bytes": 4, "format": 1, "total": 0, "shown": 0, "flags": 0, "rows": []}, frame
     assert linked["reply"] == {"total": "0", "shown": "0", "linked": "1"}, linked
+    assert (empty["meta"]["mode"], empty["differing_pixels"]) == ("empty", 0), empty
+    assert (gone["meta"]["mode"], gone["differing_pixels"]) == ("unlinked", 0), gone
 
 
 @pytest.mark.parametrize("case", ["[SC-10] the bridge writes the table only when it changes and a four byte heartbeat "

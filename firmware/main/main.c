@@ -16,25 +16,17 @@
 #include "nvs_flash.h"
 #include "screen.h"
 
-#define PET_FRAME_TICKS 5
 #define TICK_US (THEME_TICK_MS * 1000LL)
 
 static const char *TAG = "app";
 static SemaphoreHandle_t lock;
 static TaskHandle_t display_task_handle;
-static scene_t scene = {.state = PET_IDLE};
-static int frame_mode = APP_FRAME_AUTO;
+static scene_t scene;
 static uint32_t draws;
 static uint32_t draw_errors;
-static int shown_frame = -1;
+static uint32_t shown_tick;
+static const char *top_state = "idle";
 static rows_table_t rows_table;
-
-static const pet_state_t ROW_PET_STATES[] = {
-    [ROW_WAITING] = PET_WAITING,
-    [ROW_ERROR] = PET_ERROR,
-    [ROW_RUNNING] = PET_WORKING,
-    [ROW_DONE] = PET_DONE,
-};
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -45,45 +37,45 @@ static const display_config_t DEFAULT_DISPLAY = {
     .gap_y = 0,
 };
 
+static int64_t locked_scene(scene_t *out)
+{
+    int64_t now = esp_timer_get_time();
+    *out = scene;
+    screen_from_rows(&out->screen, &rows_table, now, (uint32_t)(now / TICK_US));
+    return now;
+}
+
 void app_get_scene(scene_t *out)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    *out = scene;
+    locked_scene(out);
     xSemaphoreGive(lock);
 }
 
-void app_get_draw_stats(uint32_t *done, uint32_t *failed, int *frame)
+const char *app_top_state(void)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    const char *name = top_state;
+    xSemaphoreGive(lock);
+    return name;
+}
+
+void app_get_draw_stats(uint32_t *done, uint32_t *failed, uint32_t *tick)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
     *done = draws;
     *failed = draw_errors;
-    *frame = shown_frame;
+    *tick = shown_tick;
     xSemaphoreGive(lock);
 }
 
-int app_frame_mode(void)
+void app_show_board(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    int mode = frame_mode;
-    xSemaphoreGive(lock);
-    return mode;
-}
-
-void app_set_state(pet_state_t state)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    bool changed = scene.state != state || scene.test_pattern || scene.fill;
-    scene.state = state;
     scene.test_pattern = false;
     scene.fill = false;
-    if (frame_mode != APP_FRAME_AUTO) {
-        scene.frame = (uint8_t)frame_mode;
-    }
     xSemaphoreGive(lock);
     xTaskNotifyGive(display_task_handle);
-    if (changed) {
-        console_event("STATE %s\n", scene_state_name(state));
-    }
 }
 
 void app_set_fill(uint32_t rgb)
@@ -104,17 +96,6 @@ void app_set_pattern(void)
     xTaskNotifyGive(display_task_handle);
 }
 
-void app_set_frame_mode(int frame)
-{
-    xSemaphoreTake(lock, portMAX_DELAY);
-    frame_mode = frame;
-    if (frame != APP_FRAME_AUTO) {
-        scene.frame = (uint8_t)frame;
-    }
-    xSemaphoreGive(lock);
-    xTaskNotifyGive(display_task_handle);
-}
-
 void app_rows_link(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -124,14 +105,22 @@ void app_rows_link(void)
 
 void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
 {
+    const char *top = kind == ROWS_TABLE ? rows_top_name(frame) : NULL;
     xSemaphoreTake(lock, portMAX_DELAY);
     rows_heard(&rows_table, kind, frame, esp_timer_get_time());
+    bool changed = top != NULL && strcmp(top, top_state) != 0;
+    if (changed) {
+        top_state = top;
+    }
     xSemaphoreGive(lock);
     if (kind != ROWS_TABLE) {
         return;
     }
+    xTaskNotifyGive(display_task_handle);
     app_link_in_use();
-    app_set_state(frame->shown == 0 ? PET_IDLE : ROW_PET_STATES[frame->rows[0].state]);
+    if (changed) {
+        console_event("STATE %s\n", top);
+    }
 }
 
 void app_rows_lose(void)
@@ -164,14 +153,8 @@ static void drop_silent_link(void)
 
 static uint32_t take_snapshot(scene_t *snapshot)
 {
-    int64_t now = esp_timer_get_time();
-    uint32_t tick = (uint32_t)(now / TICK_US);
     xSemaphoreTake(lock, portMAX_DELAY);
-    if (frame_mode == APP_FRAME_AUTO) {
-        scene.frame = (uint8_t)(tick / PET_FRAME_TICKS % PET_FRAMES);
-    }
-    *snapshot = scene;
-    screen_from_rows(&snapshot->screen, &rows_table, now, tick);
+    int64_t now = locked_scene(snapshot);
     xSemaphoreGive(lock);
     return (uint32_t)((TICK_US - now % TICK_US + 999) / 1000);
 }
@@ -207,7 +190,7 @@ static void display_task(void *arg)
         xSemaphoreTake(lock, portMAX_DELAY);
         if (valid) {
             draws++;
-            shown_frame = snapshot.frame;
+            shown_tick = snapshot.screen.tick;
         } else {
             draw_errors++;
         }

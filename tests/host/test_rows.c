@@ -63,9 +63,13 @@ static void test_table(void)
     check(out.rows[2].state == ROW_DONE && out.rows[2].minutes == 61, "done row keeps its minutes");
     check(strcmp(rows_state_name(ROW_WAITING), "waiting") == 0 && strcmp(rows_state_name(ROW_DONE), "done") == 0,
           "state names");
+    check(strcmp(rows_top_name(&out), "waiting") == 0, "top name follows the first row");
+    out.rows[0].state = ROW_RUNNING;
+    check(strcmp(rows_top_name(&out), "working") == 0, "a running first row is working");
 
     at = frame(data, 0, 0, 0);
     check(parse(data, at, &out) == ROWS_TABLE && out.total == 0 && out.shown == 0, "empty table");
+    check(strcmp(rows_top_name(&out), "idle") == 0, "an empty table is idle");
 
     at = frame(data, 9, 6, 0);
     for (int i = 0; i < 6; i++) {

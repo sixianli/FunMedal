@@ -164,11 +164,11 @@ static bool read_scene(const char *path, scene_t *scene)
 
 int main(int argc, char **argv)
 {
-    if ((argc != 4 && argc != 5) || !host_fonts_load(argv[1])) {
-        printf("usage: render_png <fonts dir> <scene file> <out.png> [out.rgb]\n");
+    if (argc < 4 || argc > 6 || !host_fonts_load(argv[1])) {
+        printf("usage: render_png <fonts dir> <scene file> <out.png> [out.rgb] [out.wire]\n");
         return 2;
     }
-    scene_t scene = {.state = PET_IDLE, .sessions = true};
+    scene_t scene = {0};
     if (!read_scene(argv[2], &scene)) {
         printf("FAIL cannot read scene %s\n", argv[2]);
         return 2;
@@ -189,13 +189,21 @@ int main(int argc, char **argv)
         printf("FAIL cannot write %s\n", argv[3]);
         return 2;
     }
-    if (argc == 5) {
+    if (argc >= 5) {
         FILE *out = fopen(argv[4], "wb");
         for (int y = 0; out != NULL && y < SCENE_H; y++) {
             fwrite(raw + y * ROW_BYTES + 1, 1, SCENE_W * 3, out);
         }
         if (out == NULL || fclose(out) != 0) {
             printf("FAIL cannot write %s\n", argv[4]);
+            return 2;
+        }
+    }
+    if (argc == 6) {
+        FILE *out = fopen(argv[5], "wb");
+        if (out == NULL || fwrite(pixels, sizeof pixels[0], SCENE_W * SCENE_H, out) != SCENE_W * SCENE_H ||
+            fclose(out) != 0) {
+            printf("FAIL cannot write %s\n", argv[5]);
             return 2;
         }
     }

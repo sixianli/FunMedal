@@ -34,10 +34,9 @@ def version_entries(bridge):
 @pytest.mark.parametrize("case", ["[OB-13] with the same link version the bridge reads the card's version, writes its "
                                   "own and then writes the session table"])
 def test_same_version_connects(case, card, bridge, run_dir):
-    assert card.request("state error") == "OK state error"
     start = card.mark()
     status = bridge.start()
-    card.wait_for(lambda line: line == "STATE idle", 10.0, start)
+    card.wait_for(lambda line: line.startswith("BLE rows "), 10.0, start)
     summary = {"status": status, "link": link_lines(card, start), "writes": rows_writes(card, start),
                "info": info_fields(card.request("info")), "versions": version_entries(bridge)}
     write_summary(run_dir, summary)

@@ -141,6 +141,14 @@ const char *rows_state_name(row_state_t state)
     return state >= ROW_WAITING && state <= ROW_DONE ? STATE_NAMES[state] : "unknown";
 }
 
+const char *rows_top_name(const rows_frame_t *frame)
+{
+    if (frame->shown == 0) {
+        return "idle";
+    }
+    return frame->rows[0].state == ROW_RUNNING ? "working" : rows_state_name(frame->rows[0].state);
+}
+
 void rows_init(rows_table_t *table)
 {
     memset(table, 0, sizeof *table);

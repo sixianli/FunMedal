@@ -32,25 +32,31 @@ static const char *TAG = "console";
 static _Atomic uint32_t events_dropped;
 static volatile uint32_t replies_dropped;
 
+static const char *const SCREEN_MODES[] = {
+    [SCREEN_UNLINKED] = "unlinked",
+    [SCREEN_EMPTY] = "empty",
+    [SCREEN_ROWS] = "rows",
+};
+
 static void print_info(void)
 {
     scene_t scene;
     display_config_t config;
     app_get_scene(&scene);
     display_get_config(&config);
-    int frame = app_frame_mode();
     uint32_t draws;
     uint32_t draw_errors;
-    int shown_frame;
-    app_get_draw_stats(&draws, &draw_errors, &shown_frame);
+    uint32_t shown_tick;
+    app_get_draw_stats(&draws, &draw_errors, &shown_tick);
     char security[40];
     ble_link_security(security, sizeof(security));
-    console_printf("OK info fw=%s state=%s pattern=%d frame=%s invert=%d bgr=%d mirror=%d,%d gap=%d,%d shown_frame=%d "
+    console_printf("OK info fw=%s state=%s pattern=%d mode=%s tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
+                   "gap=%d,%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
                    "ble=%s ble_writes=%lu sec=%s gatt_changed=%u audio=%s link=%s uptime_s=%lld\n",
-                   FIRMWARE_VERSION, scene_state_name(scene.state), scene.test_pattern,
-                   frame == APP_FRAME_AUTO ? "auto" : (frame ? "1" : "0"), config.invert, config.bgr, config.mirror_x,
-                   config.mirror_y, config.gap_x, config.gap_y, shown_frame, (unsigned long)draws,
+                   FIRMWARE_VERSION, app_top_state(), scene.test_pattern, SCREEN_MODES[scene.screen.mode],
+                   (unsigned long)scene.screen.tick, (unsigned long)shown_tick, config.invert, config.bgr,
+                   config.mirror_x, config.mirror_y, config.gap_x, config.gap_y, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
                    (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
@@ -125,8 +131,9 @@ static void snap(void)
     int64_t waited_us = 0;
     int64_t max_wait_us = 0;
     int timeouts = 0;
-    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s frame=%d pattern=%d\n", SCENE_W, SCENE_H,
-                       scene_state_name(scene.state), scene.frame, scene.test_pattern);
+    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d\n", SCENE_W, SCENE_H,
+                       app_top_state(), (unsigned long)scene.screen.tick, SCREEN_MODES[scene.screen.mode],
+                       scene.test_pattern);
     bool ok = write_all(line, (size_t)len, &waited_us, &timeouts);
     max_wait_us = waited_us;
     for (int y = 0; ok && y < SCENE_H; y++) {
@@ -200,7 +207,6 @@ static void lcd_command(char *args)
         console_printf("ERR lcd %s\n", esp_err_to_name(err));
         return;
     }
-    app_set_frame_mode(app_frame_mode());
     display_get_config(&config);
     console_printf("OK lcd invert=%d bgr=%d mirror=%d,%d gap=%d,%d\n", config.invert, config.bgr, config.mirror_x,
                    config.mirror_y, config.gap_x, config.gap_y);
@@ -384,7 +390,7 @@ static void bench_command(const char *args)
     rows_table_t table;
     int64_t now_us;
     app_get_rows(&table, &now_us);
-    scene = (scene_t){.state = PET_IDLE, .sessions = true};
+    scene = (scene_t){0};
     screen_from_rows(&scene.screen, &table, now_us, (uint32_t)(now_us / (THEME_TICK_MS * 1000LL)));
     span_t span = {(int16_t)y0, (int16_t)rows};
     int64_t render_us;
@@ -408,26 +414,15 @@ static void handle(char *line)
     }
     if (strcmp(line, "info") == 0) {
         print_info();
-    } else if (strcmp(line, "state") == 0) {
-        pet_state_t state;
-        if (!scene_state_from_name(args, &state)) {
-            console_printf("ERR state unknown name\n");
-            return;
-        }
-        app_set_state(state);
-        console_printf("OK state %s\n", scene_state_name(state));
     } else if (strcmp(line, "rows") == 0) {
         print_rows();
-    } else if (strcmp(line, "frame") == 0) {
-        if (strcmp(args, "auto") == 0) {
-            app_set_frame_mode(APP_FRAME_AUTO);
-        } else if (strcmp(args, "0") == 0 || strcmp(args, "1") == 0) {
-            app_set_frame_mode(args[0] - '0');
-        } else {
-            console_printf("ERR frame usage: frame 0|1|auto\n");
+    } else if (strcmp(line, "board") == 0) {
+        if (args[0] != '\0') {
+            console_printf("ERR board takes no arguments\n");
             return;
         }
-        console_printf("OK frame %s\n", args);
+        app_show_board();
+        console_printf("OK board\n");
     } else if (strcmp(line, "pattern") == 0) {
         app_set_pattern();
         console_printf("OK pattern\n");

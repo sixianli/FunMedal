@@ -23,7 +23,7 @@ static void check(int ok, const char *what)
 
 static scene_t sessions(screen_mode_t mode, uint8_t total, uint32_t tick)
 {
-    scene_t scene = {.state = PET_IDLE, .sessions = true};
+    scene_t scene = {0};
     scene.screen.mode = mode;
     scene.screen.total = total;
     scene.screen.tick = tick;
@@ -140,12 +140,12 @@ static void check_nothing(const char *what, const scene_t *before, const scene_t
 
 static void test_tiles(void)
 {
-    scene_t pet = {.state = PET_WAITING};
-    scene_t pairing = {.state = PET_IDLE, .pairing = SCENE_PAIRING_NUMCMP, .pair_code = 123456};
+    scene_t pattern = {.test_pattern = true};
+    scene_t pairing = {.pairing = SCENE_PAIRING_NUMCMP, .pair_code = 123456};
     scene_t unlinked = sessions(SCREEN_UNLINKED, 0, 0);
     scene_t empty = sessions(SCREEN_EMPTY, 0, 0);
     scene_t rows = six_rows(0);
-    check_tiles("pet", &pet);
+    check_tiles("pattern", &pattern);
     check_tiles("pairing", &pairing);
     check_tiles("unlinked", &unlinked);
     check_tiles("empty", &empty);
@@ -216,12 +216,12 @@ static void test_changes(void)
     span_t spans[DIRTY_MAX_REGIONS];
     scene_t empty = sessions(SCREEN_EMPTY, 0, 0);
     scene_t unlinked = sessions(SCREEN_UNLINKED, 0, 0);
-    scene_t pet = {.state = PET_DONE};
+    scene_t pattern = {.test_pattern = true};
     check_pair("rows to empty", &rows, &empty, spans);
     check_pair("empty to unlinked", &empty, &unlinked, spans);
     check_pair("empty to rows", &empty, &rows, spans);
-    check(check_pair("pet to sessions", &pet, &rows, spans) == 1 && spans[0].h == SCENE_H,
-          "leaving the pet screen redraws everything");
+    check(check_pair("pattern to board", &pattern, &rows, spans) == 1 && spans[0].h == SCENE_H,
+          "leaving the test pattern redraws everything");
 }
 
 static uint32_t next_random(uint32_t *seed)

@@ -54,6 +54,7 @@ typedef struct {
 
 rows_kind_t rows_parse(const uint8_t *data, size_t len, rows_frame_t *out);
 const char *rows_state_name(row_state_t state);
+const char *rows_top_name(const rows_frame_t *frame);
 void rows_init(rows_table_t *table);
 void rows_link(rows_table_t *table, int64_t now_us);
 void rows_heard(rows_table_t *table, rows_kind_t kind, const rows_frame_t *frame, int64_t now_us);

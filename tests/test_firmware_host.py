@@ -1,12 +1,13 @@
 import os
 import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pytest
+
+from host_render import SCREEN_SOURCES, render as render_screen
 
 ROOT = Path(__file__).resolve().parents[1]
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
@@ -18,8 +19,6 @@ OUTSIDE_LEVEL_ONE = ["\u5011", "\u8aaa", "\u30a2", "\U0001f600"]
 LINK_SOURCES = [FIRMWARE_MAIN / "link_version.c"]
 ROWS_SOURCES = [FIRMWARE_MAIN / "rows.c"]
 HOST = ROOT / "tests" / "host"
-SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
-    "scene", "pet_art", "font", "link_version", "draw", "dirty", "screen", "theme_board", "rows")] + [HOST / "host_fonts.c"]
 SIX_ROWS = [("waiting", "-", "FunMedal"), ("error", "-", "SiBlog"), ("running", "-", "himawari-agent"),
             ("running", "-", "\u7ed8\u672c\u5de5\u574a"), ("done", "5", "agent-skills"),
             ("done", "135", "\u4e00\u4e2a\u540d\u5b57\u7279\u522b\u7279\u522b\u957f\u7684\u9879\u76ee\u4f1a\u88ab\u622a\u77ed")]
@@ -156,18 +155,8 @@ def screen_artifacts():
 
 
 def render(tools, artifacts, name, mode="rows", rows=(), total=None, tick=0):
-    lines = ["theme 0", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
-    lines += [f"row {state} {minutes} {title}" for state, minutes, title in rows]
-    scene = tools / f"{name}.txt"
-    scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    png, rgb = tools / f"{name}.png", tools / f"{name}.rgb"
-    done = subprocess.run([str(tools / "render_png"), str(tools), str(scene), str(png), str(rgb)],
-                          capture_output=True, text=True)
-    assert done.returncode == 0, done.stdout + done.stderr
-    shutil.copy(png, artifacts / png.name)
-    regions = [tuple(int(v) for v in line.split()[1:3]) for line in done.stdout.splitlines()
-               if line.startswith("REGION ")]
-    return rgb.read_bytes(), regions
+    result = render_screen(tools, artifacts, name, mode, rows, total, tick)
+    return result["rgb"], result["regions"]
 
 
 def pixel(image, x, y):
