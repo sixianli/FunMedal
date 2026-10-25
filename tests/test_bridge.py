@@ -17,7 +17,8 @@ from bridge_harness import (Bridge, artifacts, bash, bridge, bridge_cli, card, c
 ARTIFACTS_PREFIX = "fm13"
 ARTIFACTS_SUBDIR = "bridge"
 HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "tool_use_id", "source", "reason", "error",
-               "notification_type", "claude_pid", "project"}
+               "notification_type", "claude_pid", "project", "asks"}
+WRAP_UP = "mcp__ccd_turn__wrap_up"
 MIN_STACK_FREE_BYTES = 1024
 ALREADY_RUNNING_EXIT = 3
 FIXED_CHANGED_HANDLE = 3
@@ -151,6 +152,73 @@ def test_parallel_permission_requests(case, card, bridge, run_dir):
     assert card_states(card, start) == expected_states
 
 
+@pytest.mark.parametrize("case", ["[SC-19] a next-step box that asks a question shows waiting until the next "
+                                  "prompt, and one without a question ends the turn as done"])
+def test_wrap_up_question_shows_waiting(case, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    asked = wrap_up("要提交吗？")
+    steps = [
+        (event("UserPromptSubmit", "q", prompt="x"), ["running"]),
+        (event("PreToolUse", "q", tool_use_id="w1", **asked), ["running"]),
+        (event("PostToolUse", "q", tool_use_id="w1", tool_response={}, **asked), ["waiting"]),
+        (event("PreToolUse", "q", tool_use_id="b1", **bash("ls")), ["waiting"]),
+        (event("PostToolUse", "q", tool_use_id="b1", tool_response={}, **bash("ls")), ["waiting"]),
+        (event("Notification", "q", notification_type="idle_prompt", message="Claude is waiting for your input"),
+         ["waiting"]),
+        (event("Stop", "q", stop_hook_active=False), ["waiting"]),
+        (event("UserPromptSubmit", "q", prompt="好"), ["running"]),
+        (event("PreToolUse", "q", tool_use_id="w2", **wrap_up()), ["running"]),
+        (event("PostToolUse", "q", tool_use_id="w2", tool_response={}, **wrap_up()), ["running"]),
+        (event("Stop", "q", stop_hook_active=False), ["done"]),
+        (event("UserPromptSubmit", "q", prompt="再来"), ["running"]),
+        (event("PostToolUseFailure", "q", tool_use_id="w3", error="ask too long", **asked), ["running"]),
+        (event("Stop", "q", stop_hook_active=False), ["done"]),
+        (event("UserPromptSubmit", "q", prompt="再来"), ["running"]),
+        (event("PostToolUse", "q", tool_use_id="w4", tool_response={}, **asked), ["waiting"]),
+        (event("StopFailure", "q", error="rate_limit"), ["error"]),
+    ]
+    seen = []
+    try:
+        for payload, expected in steps:
+            result, _ = bridge.hook(payload, wait_limit=0)
+            assert result.returncode == 0
+            status = bridge.settle(expected)
+            seen.append({"event": payload["hook_event_name"], "tool": payload.get("tool_name"),
+                         "rows": shown_states(status), "waiting": status["sessions"]["q"]["waiting"]})
+    finally:
+        write_summary(run_dir, {"steps": seen, "states": card_states(card, start), "status": bridge.status()})
+    assert card_states(card, start) == ["working", "waiting", "working", "done", "working", "done", "working",
+                                        "waiting", "error"]
+    assert bridge.status()["waits"] == []
+
+
+@pytest.mark.parametrize("case", ["[SC-19] a multiple-choice question shows waiting while it is open and running "
+                                  "once it is answered"])
+def test_choice_question_shows_waiting(case, card, bridge, run_dir):
+    start = start_and_mark(bridge, card)
+    question = {"tool_name": "AskUserQuestion",
+                "tool_input": {"questions": [{"question": "选哪个？", "header": "选择",
+                                              "options": [{"label": "甲", "description": "甲"},
+                                                          {"label": "乙", "description": "乙"}],
+                                              "multiSelect": False}]}}
+    bridge.hook(event("UserPromptSubmit", "c", prompt="x"))
+    bridge.hook(event("PreToolUse", "c", tool_use_id="a1", **question))
+    bridge.settle(["running"])
+    run = bridge.hook_async(event("PermissionRequest", "c", **question))
+    wait_for_waits(bridge, 1)
+    waiting = bridge.settle(["waiting"])
+    bridge.hook(event("PostToolUse", "c", tool_use_id="a1", tool_response={}, **question), wait_limit=0)
+    result = run.result()
+    running = bridge.settle(["running"])
+    bridge.hook(event("Stop", "c", stop_hook_active=False))
+    done = bridge.settle(["done"])
+    write_summary(run_dir, {"result": result, "waiting": waiting, "running": running, "done": done,
+                            "states": card_states(card, start), "waits": wait_log(bridge)})
+    assert result["exit"] == 0 and result["stdout"] == "", result
+    assert card_states(card, start) == ["working", "waiting", "working", "done"]
+    assert wait_log(bridge) == [("wait_released", "post_tool_use"), ("wait_closed", "released")]
+
+
 @pytest.mark.parametrize("case", ["[FM-13] a hook for an event other than session start exits at once with no "
                                   "output when no bridge is listening"])
 def test_hook_without_bridge(case, tmp_path):
@@ -171,15 +239,43 @@ def test_hook_without_bridge(case, tmp_path):
         os.unlink(stale)
 
 
-@pytest.mark.parametrize("case", ["[FM-13] hook sends only the listed fields and never tool content"])
-def test_hook_sends_only_listed_fields(case, artifacts):
-    require_bridge_app()
-    secret = f"fm13-secret-{uuid.uuid4().hex}"
+def capture_listener():
     path = os.path.join(tempfile.gettempdir(), f"fm-capture-{uuid.uuid4().hex[:8]}.sock")
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(path)
     listener.listen(4)
     listener.settimeout(5.0)
+    return listener, path
+
+
+def send_to_listener(listener, path, payload, captured):
+    received = {}
+
+    def serve_one():
+        client, _ = listener.accept()
+        data = b""
+        while b"\n" not in data and (chunk := client.recv(65536)):
+            data += chunk
+        client.sendall(b'{"ok":true}\n')
+        client.close()
+        received["data"] = data
+
+    server = threading.Thread(target=serve_one)
+    server.start()
+    result, elapsed = bridge_cli("hook", "--socket", path, payload=json.dumps(payload).encode())
+    server.join(5.0)
+    data = received.get("data", b"")
+    message = json.loads(data) if data else {}
+    captured.append({"event": payload["hook_event_name"], "exit": result.returncode, "s": elapsed,
+                     "stdout": result.stdout.decode(), "sent": message})
+    return result, data, message
+
+
+@pytest.mark.parametrize("case", ["[FM-13] hook sends only the listed fields and never tool content"])
+def test_hook_sends_only_listed_fields(case, artifacts):
+    require_bridge_app()
+    secret = f"fm13-secret-{uuid.uuid4().hex}"
+    listener, path = capture_listener()
     write = {"tool_name": "Write", "tool_input": {"file_path": f"/tmp/{secret}.txt", "content": secret}}
     cases = [
         (event("PostToolUse", "c", tool_use_id="t1", tool_response={"output": secret}, **write),
@@ -193,25 +289,7 @@ def test_hook_sends_only_listed_fields(case, artifacts):
     captured = []
     try:
         for payload, expected in cases:
-            received = {}
-
-            def serve_one():
-                client, _ = listener.accept()
-                data = b""
-                while b"\n" not in data and (chunk := client.recv(65536)):
-                    data += chunk
-                client.sendall(b'{"ok":true}\n')
-                client.close()
-                received["data"] = data
-
-            server = threading.Thread(target=serve_one)
-            server.start()
-            result, elapsed = bridge_cli("hook", "--socket", path, payload=json.dumps(payload).encode())
-            server.join(5.0)
-            data = received.get("data", b"")
-            message = json.loads(data) if data else {}
-            captured.append({"event": payload["hook_event_name"], "exit": result.returncode, "s": elapsed,
-                             "stdout": result.stdout.decode(), "sent": message})
+            result, data, message = send_to_listener(listener, path, payload, captured)
             assert result.returncode == 0 and result.stdout == b"", result
             assert secret.encode() not in data, data
             assert set(message) <= HOOK_FIELDS, message
@@ -223,6 +301,46 @@ def test_hook_sends_only_listed_fields(case, artifacts):
         listener.close()
         os.unlink(path)
         (artifacts / "hook-captured.json").write_text(json.dumps(captured, indent=2) + "\n", encoding="utf-8")
+
+
+def wrap_up(ask=None):
+    tool_input = {"recap": "改好了，还没提交。", "actions": [{"label": "提交"}]}
+    if ask is not None:
+        tool_input["ask"] = ask
+    return {"tool_name": WRAP_UP, "tool_input": tool_input}
+
+
+@pytest.mark.parametrize("case", ["[SC-19] the hook tells the bridge only whether the next-step box asks a "
+                                  "question, never the question or the recap"])
+def test_hook_passes_only_whether_wrap_up_asks(case, artifacts):
+    require_bridge_app()
+    secret = f"sc19-secret-{uuid.uuid4().hex}"
+    asking = {"tool_name": WRAP_UP, "tool_input": {"recap": secret, "ask": f"要提交吗？{secret}",
+                                                   "actions": [{"label": secret, "message": secret}]}}
+    cases = [
+        (event("PostToolUse", "w", tool_use_id="t1", tool_response={"text": secret}, **asking), True),
+        (event("PreToolUse", "w", tool_use_id="t1", **asking), True),
+        (event("PostToolUse", "w", tool_use_id="t2", tool_response={}, **wrap_up()), False),
+        (event("PostToolUse", "w", tool_use_id="t3", tool_response={}, **wrap_up("")), False),
+        (event("PostToolUse", "w", tool_use_id="t4", tool_response={}, **wrap_up(["不是文字"])), False),
+        (event("PostToolUse", "w", tool_use_id="t6", tool_response={}, **wrap_up(" \n ")), False),
+        (event("PostToolUse", "w", tool_use_id="t5", tool_response={},
+               tool_name="Bash", tool_input={"command": "echo", "ask": "要提交吗？"}), False),
+    ]
+    listener, path = capture_listener()
+    captured = []
+    try:
+        for payload, asks in cases:
+            result, data, message = send_to_listener(listener, path, payload, captured)
+            assert result.returncode == 0 and result.stdout == b"", result
+            assert secret.encode() not in data and "要提交".encode() not in data, data
+            assert set(message) <= HOOK_FIELDS, message
+            assert message.get("asks", False) is asks, message
+    finally:
+        listener.close()
+        os.unlink(path)
+        (artifacts / "sc19-hook-captured.json").write_text(json.dumps(captured, indent=2, ensure_ascii=False) + "\n",
+                                                          encoding="utf-8")
 
 
 @pytest.mark.parametrize("case", ["[FM-13] hook survives bad and huge input without leaking tool content"])

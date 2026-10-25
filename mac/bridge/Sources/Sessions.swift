@@ -20,7 +20,7 @@ enum RowState: UInt8 {
 }
 
 enum WaitingKind: String, Codable {
-    case permission, plan, notification
+    case permission, plan, notification, question
 }
 
 struct WaitingRecord: Codable {
@@ -63,6 +63,7 @@ struct HookEvent {
     var pid: Int?
     var hook: Int?
     var now: Double
+    var asks = false
 }
 
 struct Sessions: Codable {
@@ -117,10 +118,14 @@ struct Sessions: Codable {
             }
         case "PostToolUse", "PostToolUseFailure":
             session.activity = .running
-            return toolFinished(event, &session)
+            let released = toolFinished(event, &session)
+            if event.name == "PostToolUse", event.asks, !session.waiting.contains(where: { $0.kind == .question }) {
+                session.waiting.append(WaitingRecord(kind: .question))
+            }
+            return released
         case "Stop":
             session.activity = .done
-            return clearWaiting(&session)
+            return clearWaiting(&session, keeping: .question)
         case "StopFailure":
             session.activity = .error
             return clearWaiting(&session)
@@ -130,9 +135,9 @@ struct Sessions: Codable {
         return []
     }
 
-    private static func clearWaiting(_ session: inout Session) -> [Int] {
-        let hooks = session.hooks
-        session.waiting.removeAll()
+    private static func clearWaiting(_ session: inout Session, keeping kept: WaitingKind? = nil) -> [Int] {
+        let hooks = session.waiting.filter { $0.kind != kept }.compactMap(\.hook)
+        session.waiting.removeAll { $0.kind != kept }
         return hooks
     }
 

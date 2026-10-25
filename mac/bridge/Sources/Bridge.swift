@@ -199,12 +199,14 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     "error"] {
             if let value = message[key] as? String { fields[key] = value }
         }
+        let asks = message["asks"] as? Bool == true
+        if asks { fields["asks"] = true }
         log.write("event", fields)
         let event = HookEvent(name: name, session: session, toolName: message["tool_name"] as? String,
                               toolKey: message["tool_key"] as? String, toolUseID: message["tool_use_id"] as? String,
                               notificationType: message["notification_type"] as? String,
                               project: message["project"] as? String, pid: message["claude_pid"] as? Int,
-                              hook: hook, now: Date().timeIntervalSince1970)
+                              hook: hook, now: Date().timeIntervalSince1970, asks: asks)
         let why = Bridge.releasingEvents[name] ?? "post_tool_use"
         release(sessions.apply(event), why: why)
     }

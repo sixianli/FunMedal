@@ -81,7 +81,7 @@ offset  size  content
 - **行号**：1 到 255，第一次显示时分配，从上次用到的号往后找、跳过正在用的号，所以刚删掉的会话的号不会马上给别人。
 - **项目名**：hook 送来的目录名，见下文“hook 模式的规矩”。
 - **在做什么**：在跑、答完了、出错之一。
-- **“等你”记录**：一组。有三种：`PermissionRequest` 记的（按“工具名 + 工具参数”认，带着那条还连着的 hook）、`PreToolUse` 遇到 `ExitPlanMode`（计划确认）时记的（按 `tool_use_id` 认）、`Notification` 的 `permission_prompt` 记的（只有一条）。
+- **“等你”记录**：一组。有四种：`PermissionRequest` 记的（按“工具名 + 工具参数”认，带着那条还连着的 hook；选择题 `AskUserQuestion` 弹出时也走这一条）、`PreToolUse` 遇到 `ExitPlanMode`（计划确认）时记的（按 `tool_use_id` 认）、`Notification` 的 `permission_prompt` 记的（只有一条）、下一步框带问题时记的（只有一条，见下文“下一步框里的问题”）。
 - **进入当前状态的时刻**、**`claude` 进程号**、**是否显示**（收到过 `UserPromptSubmit` 才显示）。
 
 会话显示的状态：有“等你”记录时是等你，否则是“在做什么”。
@@ -93,9 +93,9 @@ offset  size  content
 | `PreToolUse`（准备用工具） | 在跑；工具是 `ExitPlanMode` 时加一条“等你” |
 | `PermissionRequest`（要用户批准） | 加一条“等你” |
 | `Notification`，类型是 `permission_prompt` | 加一条“等你”。这是兜底：沙箱里的命令要上网时弹出的批准框不触发 `PermissionRequest`，只有这个通知，而且晚约 6 秒 |
-| `PostToolUse` / `PostToolUseFailure`（工具用完 / 运行失败） | 在跑；去掉同一 `tool_use_id` 的计划记录、同一“工具名 + 工具参数”的第一条批准记录（放走它的 hook）和通知记录 |
+| `PostToolUse` / `PostToolUseFailure`（工具用完 / 运行失败） | 在跑；去掉同一 `tool_use_id` 的计划记录、同一“工具名 + 工具参数”的第一条批准记录（放走它的 hook）和通知记录；hook 带 `asks: true` 时加一条问题记录 |
 | 终端里拒绝，还连着的 `PermissionRequest` hook 被 Claude Code 结束 | 去掉这条记录和通知那条记录（两条记的是同一个弹窗，弹窗出现约 6 秒后才有通知）；没有别的记录时回到在跑 |
-| `Stop`（答完一轮） | 答完了，清掉全部“等你”记录 |
+| `Stop`（答完一轮） | 答完了，清掉问题记录以外的“等你”记录；有问题记录时这一行仍显示等你 |
 | `StopFailure`（因为接口出错结束这一轮，比如额度用完） | 出错了，清掉全部“等你”记录 |
 | `SessionEnd`（会话结束） | 删掉这个会话。`/clear` 会先给旧会话发 `reason: clear` 的 `SessionEnd`，所以旧行消失、新会话发第一句话时出现新行 |
 
@@ -145,12 +145,21 @@ Mac 合盖睡眠时蓝牙连接不一定断，醒来后桥接程序只收到“�
 
 [tests/test_link_version.py](../tests/test_link_version.py) 在真实卡片上测三种情况，2026-10-18 10:16 全部通过（`artifacts/ob13-20261018-101634/`）：版本一样时照常连上、写状态；桥接程序假装是 3 或 1 时，各只连 1 次，15 秒里不再重连，没有写状态，卡片显示对应的提示，截图里三行字都在；之后启动版本一样的桥接程序，卡片恢复正常。
 
+## 下一步框里的问题
+
+下一步框是 Claude Code 电脑端在一轮结束时显示的小结框，由工具 `mcp__ccd_turn__wrap_up`（桌面 App 内部的工具名，App 改名时这里要跟着改）画出来，参数 `ask` 是框里的问题。2026-10-25 实测（`artifacts/g22-probe-20261025-183829/`）：带问题的下一步框只发这个工具的 `PreToolUse`、`PostToolUse`，然后是 `Stop`，没有 `PermissionRequest`，所以原来显示“答完了”。选择题 `AskUserQuestion` 弹出时会发 `PermissionRequest`，本来就显示“等你”。
+
+- hook 看到这个工具的 `ask` 是不为空的文字时，只多传一个 `asks: true`，不传问题和小结本身。
+- 桥接程序在这个工具的 `PostToolUse` 时加一条问题记录（`PostToolUseFailure` 不加：工具失败说明框没画出来），所以“等你”比 `Stop` 早几秒出现。`Stop` 不清这条记录。
+- 你发下一句指令（`UserPromptSubmit`）、这一轮出错（`StopFailure`）或会话结束（`SessionEnd`）时清掉。之后的 `PreToolUse`、`PostToolUse` 不清，因为子代理（Claude 派出去做一部分工作的助手）和主会话用同一个 `session_id`，它的工具事件可能在下一步框之后才到。
+- 做不到的：子代理做完后自动开始的一轮也有 `UserPromptSubmit`，会清掉问题记录；那一轮再次用下一步框提问时才回到“等你”。
+
 ## hook 模式的规矩
 
 - **从不挡住 Claude Code**：桥接程序没在运行、套接字连不上、输入不是 JSON，都直接退出，退出码是 0。唯一的例外是 `SessionStart`：连不上时先启动桥接程序，最多等 3 秒，见下文“会话开始时启动桥接程序”。连接和读写都有 1 秒上限；`PermissionRequest` 不同，桥接程序确认收到请求最多等 2 秒，之后一直连着，见下文“等你批准时 hook 怎么等”。hook 命令本身的参数写错时（比如 `--socket` 后面没有路径），退出码是 64；按官方文档，退出码不是 0 也不是 2 的 hook 算“不挡事的出错”，操作照常进行，会话记录里会多一条 `hook error` 提示。
 - **不往标准输出写任何东西**：`SessionStart` 和 `UserPromptSubmit` 的 hook 往标准输出写的内容，会被 Claude Code 当成上下文交给 Claude。
 - **要批准时一直连着**：`PermissionRequest` 的 hook 不马上退出，规则见下文“等你批准时 hook 怎么等”。它从不回答，所以批准只能在电脑上做。其他事件仍然马上退出。
-- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同，`PermissionRequest`、`PostToolUse`、`PostToolUseFailure` 都算），`tool_use_id`（Claude Code 给每次用工具的编号），`Notification` 的 `notification_type`（通知类型，桥接程序只认 `permission_prompt`），`claude_pid`（这个 hook 属于哪个 `claude` 进程，用来清理进程已经不在的会话；有环境变量 `CLAUDE_PID` 时用它，否则用 hook 的父进程号），以及 `project`（项目名）。不传工具参数本身、命令内容、文件内容、完整的工作目录或用户的指令。
+- **只传需要的几项**：事件名、`session_id`、工具名、`SessionStart` 的 `source`（会话怎么开始的，比如 `startup`、`compact`）、`SessionEnd` 的 `reason`（会话为什么结束）、`StopFailure` 的 `error`（出错类型），“工具名 + 工具参数”的 SHA-256 校验值（一种内容指纹，内容差一个字也不同，`PermissionRequest`、`PostToolUse`、`PostToolUseFailure` 都算），`tool_use_id`（Claude Code 给每次用工具的编号），`Notification` 的 `notification_type`（通知类型，桥接程序只认 `permission_prompt`），`claude_pid`（这个 hook 属于哪个 `claude` 进程，用来清理进程已经不在的会话；有环境变量 `CLAUDE_PID` 时用它，否则用 hook 的父进程号），`project`（项目名），以及 `asks`（只在下一步框带问题时出现，值是 `true`）。不传工具参数本身、命令内容、文件内容、完整的工作目录或用户的指令。
 - **项目名只传目录名**：取环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 也不变）的最后一级；没有这个变量时，只在 `SessionStart` 时取 `cwd` 的最后一级。这个目录里的 `.git` 是文件而不是目录时（git worktree，也就是同一个仓库另开的一份工作副本），读它的 `gitdir:` 一行，指向 `<主仓库>/.git/worktrees/<名字>` 时取主仓库的目录名，所以工作副本里的会话和主仓库的会话显示同一个项目名。以前 `PermissionRequest` 多传一段要显示在卡片上的 `summary`，2026-10-24 起不传了。
 
 ## 等你批准时 hook 怎么等

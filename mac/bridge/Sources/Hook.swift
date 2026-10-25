@@ -4,6 +4,7 @@ import Foundation
 
 enum Hook {
     static let passedThrough = ["source", "reason", "tool_use_id", "notification_type"]
+    static let nextStepTool = "mcp__ccd_turn__wrap_up"
     static let worktreeTail = [".git", "worktrees"]
     static let defaultWaitLimit = 590.0
     static let ackSeconds = 2.0
@@ -54,6 +55,12 @@ enum Hook {
         return projectName(of: cwd)
     }
 
+    static func asksQuestion(_ hook: [String: Any]) -> Bool {
+        guard hook["tool_name"] as? String == nextStepTool, let input = hook["tool_input"] as? [String: Any],
+              let ask = input["ask"] as? String else { return false }
+        return !ask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     static func message(from input: Data) -> [String: Any]? {
         guard let hook = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
               let name = hook["hook_event_name"] as? String, !name.isEmpty,
@@ -69,6 +76,7 @@ enum Hook {
             if let value = hook[field] as? String { message[field] = value }
         }
         if name == "StopFailure", let error = hook["error"] as? String { message["error"] = error }
+        if asksQuestion(hook) { message["asks"] = true }
         if let project = project(event: name, hook: hook) { message["project"] = project }
         return message
     }
