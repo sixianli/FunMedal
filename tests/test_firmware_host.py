@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from host_render import SCREEN_SOURCES, render as render_screen
+from host_render import SCREEN_SOURCES, generate_assets, render as render_screen
 
 ROOT = Path(__file__).resolve().parents[1]
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
@@ -63,6 +63,18 @@ def test_recorded_presses_replay(case, tmp_path):
 def test_rows_on_host(case, tmp_path):
     binary = tmp_path / "test_rows"
     build(ROOT / "tests" / "host" / "test_rows.c", binary, ROWS_SOURCES)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("case", ["[SC-12] the character's daily loop lies 5 s, taps the desk three times, tilts "
+                                  "with a question mark, mumbles with a bubble and dozes with drifting zZ, on a "
+                                  "virtual clock"])
+def test_character_timeline_on_host(case, tmp_path):
+    binary = tmp_path / "test_character"
+    build(HOST / "test_character.c", binary, SCREEN_SOURCES)
     result = subprocess.run([str(binary)], capture_output=True, text=True)
     print(result.stdout)
     assert result.returncode == 0, result.stdout
@@ -141,6 +153,7 @@ def test_link_version_parsing_on_host(case, tmp_path):
 
 @pytest.fixture(scope="module")
 def screen_tools(fonts):
+    generate_assets(fonts)
     build(HOST / "test_screen.c", fonts / "test_screen", SCREEN_SOURCES)
     build(HOST / "render_png.c", fonts / "render_png", SCREEN_SOURCES)
     return fonts
@@ -215,3 +228,21 @@ def test_unlinked_and_empty_screens(case, screen_tools, screen_artifacts):
     background = pixel(unlinked, 0, H - 1)
     for image in (unlinked, empty):
         assert ink_in(image, 24, 216, background) > 1000
+
+
+@pytest.mark.parametrize("case, theme", [
+    ("[SC-17] in the comic theme a sixth and seventh session only add +N to the header and leave the "
+     "character's cell alone", 2),
+    ("[SC-17] in the tower theme a sixth and seventh session only add +N to the header and leave the "
+     "character's cell alone", 3),
+])
+def test_character_keeps_its_cell(case, theme, screen_tools, screen_artifacts):
+    five = render_screen(screen_tools, screen_artifacts, f"theme{theme}-5", rows=SIX_ROWS[:5], tick=70, theme=theme)
+    six = render_screen(screen_tools, screen_artifacts, f"theme{theme}-6", rows=SIX_ROWS, tick=70, theme=theme)
+    seven = render_screen(screen_tools, screen_artifacts, f"theme{theme}-7", rows=SIX_ROWS, total=7, tick=70,
+                          theme=theme)
+    for more in (six, seven):
+        changed = changed_pixels(five["rgb"], more["rgb"])
+        assert changed, "the header shows no +N"
+        assert all(y < 24 for _, y in changed), changed[:10]
+    assert changed_pixels(six["rgb"], seven["rgb"])

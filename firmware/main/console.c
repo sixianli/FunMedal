@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "character_art.h"
 #include "audio.h"
 #include "ble_link.h"
 #include "display.h"
@@ -50,12 +51,13 @@ static void print_info(void)
     app_get_draw_stats(&draws, &draw_errors, &shown_tick);
     char security[40];
     ble_link_security(security, sizeof(security));
-    console_printf("OK info fw=%s state=%s pattern=%d mode=%s theme=%u tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
+    console_printf("OK info fw=%s state=%s pattern=%d mode=%s theme=%u assets=%08lx tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
                    "gap=%d,%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
                    "ble=%s ble_writes=%lu sec=%s gatt_changed=%u audio=%s link=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, app_top_state(), scene.test_pattern, SCREEN_MODES[scene.screen.mode],
-                   (unsigned)scene.theme, (unsigned long)scene.screen.tick, (unsigned long)shown_tick, config.invert, config.bgr,
+                   (unsigned)scene.theme, (unsigned long)character_art_fingerprint(), (unsigned long)scene.screen.tick,
+                   (unsigned long)shown_tick, config.invert, config.bgr,
                    config.mirror_x, config.mirror_y, config.gap_x, config.gap_y, (unsigned long)draws,
                    (unsigned long)draw_errors, key_input_take_max_gap_ms(),
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
@@ -131,9 +133,10 @@ static void snap(void)
     int64_t waited_us = 0;
     int64_t max_wait_us = 0;
     int timeouts = 0;
-    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d theme=%u\n",
+    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d theme=%u assets=%08lx\n",
                        SCENE_W, SCENE_H, app_top_state(), (unsigned long)scene.screen.tick,
-                       SCREEN_MODES[scene.screen.mode], scene.test_pattern, (unsigned)scene.theme);
+                       SCREEN_MODES[scene.screen.mode], scene.test_pattern, (unsigned)scene.theme,
+                       (unsigned long)character_art_fingerprint());
     bool ok = write_all(line, (size_t)len, &waited_us, &timeouts);
     max_wait_us = waited_us;
     for (int y = 0; ok && y < SCENE_H; y++) {

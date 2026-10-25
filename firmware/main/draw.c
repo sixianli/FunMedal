@@ -306,6 +306,28 @@ void draw_sprite(const band_t *band, const uint8_t *indices, const uint32_t *pal
     }
 }
 
+void draw_image(const band_t *band, const image_t *image, int x, int y, rect_t limit)
+{
+    clip_t c = clip(band, (rect_t){x, y, image->w, image->h});
+    c.x0 = max_int(c.x0, limit.x);
+    c.x1 = min_int(c.x1, limit.x + limit.w);
+    c.y0 = max_int(c.y0, limit.y);
+    c.y1 = min_int(c.y1, limit.y + limit.h);
+    for (int py = c.y0; py < c.y1; py++) {
+        uint16_t *row = pixel(band, 0, py);
+        int line = (py - y) * image->w;
+        for (int px = c.x0; px < c.x1; px++) {
+            int i = line + px - x;
+            uint8_t alpha = (uint8_t)(i % 2 ? image->alphas[i / 2] & 0x0f : image->alphas[i / 2] >> 4);
+            if (alpha == 0) {
+                continue;
+            }
+            uint16_t wire = (uint16_t)(image->colors[2 * i] | image->colors[2 * i + 1] << 8);
+            row[px] = alpha >= 15 ? wire : draw_wire(draw_blend(draw_rgb(row[px]), draw_rgb(wire), alpha));
+        }
+    }
+}
+
 typedef struct {
     font_glyph_t glyphs[TEXT_GLYPHS_MAX + 1];
     int count;

@@ -92,9 +92,9 @@ Task 2 动手时和上面不同的几处：新测试放进 `tests/test_rows.py`�
 ### Task 5: 角色、素材包、动作时间线（SC-12、SC-15）
 
 - [ ] 本机把 `private-assets/character/real/` 和 `private-assets/voice/` 整理成 `private-assets/pack/` 的结构（原目录不动）。
-- [ ] `tools/gen_assets.py`：核对透明通道（没有就报错退出）、裁边、缩放到 56×72 和 84×108、RGB565 + 4 位透明度、输出二进制加索引到 `build/`；`assets/default/` 默认素材；CMake 变量 `FUNMEDAL_ASSET_PACK`。
+- [ ] `tools/gen_assets.py`：核对透明通道（没有就报错退出）、裁边、缩放到 64×74 和 84×108、RGB565 + 4 位透明度、输出二进制加索引到 `build/`；`assets/default/` 默认素材；CMake 变量 `FUNMEDAL_ASSET_PACK`。
 - [ ] `tests/test_assets.py`：默认包能构建；换成另一个目录构建出不同的位图；仓库里没有任何文件和 `private-assets` 下的文件字节相同，本机没有 `private-assets` 时报 skipped（`[SC-15]`）。
-- [ ] `character.c`：动作时间线（拍桌子 3 下）、问号气泡 zZ、事件优先级、每套主题的常驻位和满 6 个时的退位；`tests/host/test_character.c` 用虚拟时钟断言各段起止；宿主渲染器连续两帧角色区像素不同（`[SC-12]`）。
+- [ ] `character.c`：动作时间线（拍桌子 3 下）、问号气泡 zZ、事件优先级、每套主题的常驻位；格子型主题第 6 格固定留给角色，最多显示 5 个会话（PRD Business Rules，负责人 2026-10-25 定）；`tests/host/test_character.c` 用虚拟时钟断言各段起止；宿主渲染器连续两帧角色区像素不同（`[SC-12]`）。
 - [ ] 四套主题各出一张带角色的 PNG 给负责人看。
 - [ ] 重新生成预编译固件（`[OB-15]`）。
 

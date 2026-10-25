@@ -10,6 +10,7 @@
 #define COMIC_DONE 0xc8e6c9
 #define COMIC_SHOUT 0xff3d3d
 #define COMIC_WHITE 0xffffff
+#define COMIC_HOME 0xfffbe6
 #define MARGIN 8
 #define STRIP_H 21
 #define TITLE_TOP (-2)
@@ -155,6 +156,12 @@ static void draw_empty(const band_t *band, rect_t area)
     draw_dashed(band, area, BORDER, EMPTY_DASH, COMIC_INK);
 }
 
+static void draw_home(const band_t *band, rect_t area)
+{
+    draw_fill(band, area, COMIC_INK);
+    draw_fill(band, (rect_t){area.x + BORDER, area.y + BORDER, area.w - 2 * BORDER, area.h - 2 * BORDER}, COMIC_HOME);
+}
+
 static void draw_centered(const band_t *band, const font_t *font, const char *text, rect_t area, int top)
 {
     int width = draw_text_width(font, text, area.w - 2 * MARGIN);
@@ -189,10 +196,14 @@ const theme_t theme_comic = {
               THEME_GRID_SLOT(5)},
     .body = {0, THEME_GRID_TOP, DRAW_W, THEME_GRID_FOOTER - THEME_GRID_TOP},
     .footer = {0, THEME_GRID_FOOTER, DRAW_W, THEME_GRID_FOOTER_H},
+    .home = {{169, 199, 64, 74}, {123, 199, 108, 74}, {124, 212, 46, 40}},
+    .message = {{167, 192, 64, 74}, {6, 27, 228, 240}, {120, 205, 46, 40}},
+    .character = {COMIC_INK, COMIC_PAPER},
     .draw_background = draw_background,
     .draw_header = draw_header,
     .draw_slot = draw_slot,
     .draw_empty = draw_empty,
+    .draw_home = draw_home,
     .draw_message = draw_message,
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,

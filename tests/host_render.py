@@ -12,9 +12,12 @@ import cardlink  # noqa: E402
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
 HOST = ROOT / "tests" / "host"
 GEN_FONTS = ROOT / "tools" / "gen_fonts.py"
+GEN_ASSETS = ROOT / "tools" / "gen_assets.py"
+DEFAULT_PACK = ROOT / "assets" / "default"
 SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
     "scene", "font", "link_version", "draw", "dirty", "screen",
-    "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows")] + [HOST / "host_fonts.c"]
+    "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows", "character", "character_art")] + [
+    HOST / "host_fonts.c", HOST / "host_character.c"]
 W, H = 240, 320
 
 
@@ -32,9 +35,16 @@ def generate_fonts(out):
     return out
 
 
+def generate_assets(out, pack=DEFAULT_PACK):
+    done = subprocess.run([sys.executable, str(GEN_ASSETS), "--pack", str(pack), "--out", str(out)],
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    return out
+
+
 @pytest.fixture(scope="module")
 def screen_tools(tmp_path_factory):
-    tools = generate_fonts(tmp_path_factory.mktemp("screen-tools"))
+    tools = generate_assets(generate_fonts(tmp_path_factory.mktemp("screen-tools")))
     build(HOST / "render_png.c", tools / "render_png", SCREEN_SOURCES)
     return tools
 
@@ -50,7 +60,8 @@ def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme
     assert done.returncode == 0, done.stdout + done.stderr
     regions = [tuple(int(v) for v in line.split()[1:3]) for line in done.stdout.splitlines()
                if line.startswith("REGION ")]
-    return {"rgb": rgb.read_bytes(), "wire": wire.read_bytes(), "regions": regions}
+    assets = [line.split()[1] for line in done.stdout.splitlines() if line.startswith("ASSETS ")]
+    return {"rgb": rgb.read_bytes(), "wire": wire.read_bytes(), "regions": regions, "assets": assets[0]}
 
 
 def scene_of(on_card):
@@ -66,5 +77,6 @@ def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0):
     assert (width, height) == (W, H)
     cardlink.write_png(out_dir / f"{name}-card.png", width, height, cardlink.rgb565_wire_to_rgb(data))
     host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]))
+    assert meta["assets"] == host["assets"], (meta["assets"], host["assets"])
     differing = sum(1 for i in range(0, len(data), 2) if data[i:i + 2] != host["wire"][i:i + 2])
-    return {"meta": meta, "theme": int(meta["theme"]), "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing}
+    return {"meta": meta, "theme": int(meta["theme"]), "assets": meta["assets"], "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing}

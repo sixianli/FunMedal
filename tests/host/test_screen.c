@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host_character.h"
 #include "host_fonts.h"
 #include "rows.h"
 #include "scene.h"
@@ -160,6 +161,11 @@ static void test_tiles(void)
     }
 }
 
+static int sessions_of(const theme_t *theme)
+{
+    return theme->draw_home != NULL ? THEME_GRID_SESSIONS : THEME_SLOTS;
+}
+
 static rect_t slot_band(const theme_t *theme, int slot)
 {
     int top = theme->header.y + theme->header.h;
@@ -186,7 +192,7 @@ static void test_theme_slots(void)
         scene_t rows = six_rows(0);
         rows.theme = theme_index;
         char what[64];
-        for (int slot = 0; slot < THEME_SLOTS; slot++) {
+        for (int slot = 0; slot < sessions_of(theme); slot++) {
             scene_t state = rows;
             state.screen.rows[slot].state = rows.screen.rows[slot].state == ROW_ERROR ? ROW_DONE : ROW_ERROR;
             state.screen.rows[slot].minutes = state.screen.rows[slot].state == ROW_DONE ? 9 : ROWS_HIDDEN_MINUTES;
@@ -270,6 +276,113 @@ static void test_changes(void)
     check_pair("empty to rows", &empty, &rows, spans);
     check(check_pair("pattern to board", &pattern, &rows, spans) == 1 && spans[0].h == SCENE_H,
           "leaving the test pattern redraws everything");
+}
+
+static bool rect_inside(rect_t inner, rect_t outer)
+{
+    return inner.w > 0 && inner.h > 0 && inner.x >= outer.x && inner.y >= outer.y &&
+           inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+}
+
+static bool point_inside(int x, int y, rect_t r)
+{
+    return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+}
+
+static void test_character_stages(void)
+{
+    for (uint8_t index = 0; index < SCREEN_THEME_COUNT; index++) {
+        const theme_t *theme = screen_theme(index);
+        bool grid = index >= 2;
+        char what[80];
+        snprintf(what, sizeof(what), "theme %u gives the character a home cell only in grid themes", index);
+        check((theme->draw_home != NULL) == grid, what);
+        snprintf(what, sizeof(what), "theme %u home lies in the sixth cell or the footer", index);
+        check(rect_inside(character_bounds(&theme->home), grid ? theme->slots[THEME_SLOTS - 1] : theme->footer), what);
+        snprintf(what, sizeof(what), "theme %u message stage lies in the body or the footer", index);
+        check(rect_inside(character_bounds(&theme->message), grid ? theme->body : theme->footer), what);
+        rect_t home = character_bounds(&theme->home);
+        for (int slot = 0; slot < sessions_of(theme); slot++) {
+            rect_t cell = theme->slots[slot];
+            bool apart = home.x >= cell.x + cell.w || cell.x >= home.x + home.w || home.y >= cell.y + cell.h ||
+                         cell.y >= home.y + home.h;
+            snprintf(what, sizeof(what), "theme %u character never covers session slot %d", index, slot);
+            check(apart, what);
+        }
+    }
+}
+
+static const character_stage_t *expected_stage(const theme_t *theme, const scene_t *scene)
+{
+    return scene->screen.mode == SCREEN_ROWS ? &theme->home : &theme->message;
+}
+
+static void check_character_step(const char *what, const scene_t *before, const scene_t *after)
+{
+    span_t spans[DIRTY_MAX_REGIONS];
+    check_pair(what, before, after, spans);
+    const theme_t *theme = screen_theme(before->theme);
+    rect_t bounds = character_bounds(expected_stage(theme, before));
+    bool moving[THEME_SLOTS] = {false};
+    for (int i = 0; i < before->screen.shown && i < sessions_of(theme); i++) {
+        row_state_t state = before->screen.rows[i].state;
+        moving[i] = theme->slot_phase(state, before->screen.tick) != theme->slot_phase(state, after->screen.tick);
+    }
+    int inside = 0;
+    int outside = 0;
+    for (int y = 0; y < SCENE_H; y++) {
+        for (int x = 0; x < SCENE_W; x++) {
+            if (first[y * SCENE_W + x] == second[y * SCENE_W + x]) {
+                continue;
+            }
+            bool allowed = point_inside(x, y, bounds);
+            inside += allowed;
+            for (int i = 0; i < THEME_SLOTS && !allowed; i++) {
+                allowed = moving[i] && point_inside(x, y, slot_band(theme, i));
+            }
+            outside += !allowed;
+        }
+    }
+    if (inside == 0 || outside != 0) {
+        printf("FAIL %s: %d pixels changed in the character area, %d elsewhere\n", what, inside, outside);
+        failures++;
+    }
+}
+
+static void test_character_moves(void)
+{
+    static const uint32_t steps[][2] = {{49, 50}, {52, 53}, {67, 68}, {97, 98}, {127, 128}, {132, 133}, {177, 178}};
+    for (uint8_t index = 0; index < SCREEN_THEME_COUNT; index++) {
+        for (int kind = 0; kind < 4; kind++) {
+            for (size_t s = 0; s < sizeof steps / sizeof steps[0]; s++) {
+                scene_t before = kind < 2 ? six_rows(steps[s][0]) : sessions(kind == 2 ? SCREEN_EMPTY : SCREEN_UNLINKED, 0, steps[s][0]);
+                if (kind == 0) {
+                    before.screen.shown = before.screen.total = 5;
+                }
+                before.theme = index;
+                scene_t after = before;
+                after.screen.tick = steps[s][1];
+                char what[80];
+                snprintf(what, sizeof(what), "theme %u scene %d tick %u to %u", index, kind, (unsigned)steps[s][0],
+                         (unsigned)steps[s][1]);
+                check_character_step(what, &before, &after);
+            }
+        }
+    }
+}
+
+static void test_home_cell(void)
+{
+    for (uint8_t index = 2; index < SCREEN_THEME_COUNT; index++) {
+        scene_t five = six_rows(0);
+        five.theme = index;
+        five.screen.shown = five.screen.total = 5;
+        scene_t full = six_rows(0);
+        full.theme = index;
+        char what[80];
+        snprintf(what, sizeof(what), "theme %u sixth session keeps the home cell and only adds +1", index);
+        check_only(what, &five, &full, screen_theme(index)->header);
+    }
 }
 
 static uint32_t next_random(uint32_t *seed)
@@ -481,13 +594,46 @@ static void test_primitives(void)
     check(band_pixels[9 * DRAW_W + 120] != black, "a rounded shape fills its middle");
 }
 
+static void test_image(void)
+{
+    static uint16_t band_pixels[DRAW_W * 2];
+    band_t band = {band_pixels, 100, 2};
+    uint16_t black = draw_wire(0x000000);
+    for (int i = 0; i < DRAW_W * 2; i++) {
+        band_pixels[i] = black;
+    }
+    uint16_t red = draw_wire(0xff0000);
+    uint16_t white = draw_wire(0xffffff);
+    uint8_t colors[16] = {0};
+    colors[8] = (uint8_t)red;
+    colors[9] = (uint8_t)(red >> 8);
+    colors[12] = (uint8_t)white;
+    colors[13] = (uint8_t)(white >> 8);
+    colors[14] = (uint8_t)white;
+    colors[15] = (uint8_t)(white >> 8);
+    static const uint8_t alphas[4] = {0xff, 0xff, 0xf0, 0x8f};
+    image_t image = {4, 2, colors, alphas};
+    draw_image(&band, &image, 10, 99, (rect_t){0, 0, 13, SCENE_H});
+    check(band_pixels[10] == red, "an opaque image pixel is copied");
+    check(band_pixels[11] == black, "a clear image pixel leaves the background");
+    check(band_pixels[12] == draw_wire(draw_blend(0x000000, 0xffffff, 8)), "a half clear pixel blends");
+    check(band_pixels[13] == black, "an image stops at its limit");
+    for (int x = 0; x < DRAW_W; x++) {
+        check(band_pixels[DRAW_W + x] == black, "an image row above the band is not drawn into the next row");
+    }
+}
+
 int main(int argc, char **argv)
 {
-    if (argc != 2 || !host_fonts_load(argv[1])) {
+    if (argc != 2 || !host_fonts_load(argv[1]) || !host_character_load(argv[1])) {
         printf("usage: test_screen <fonts dir>\n");
         return 2;
     }
     test_primitives();
+    test_image();
+    test_character_stages();
+    test_character_moves();
+    test_home_cell();
     test_tiles();
     test_first_draw_is_everything();
     test_animation();

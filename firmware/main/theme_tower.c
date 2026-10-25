@@ -39,6 +39,7 @@
 static const char *const TITLE = "CLAUDE · CONTROL";
 static const char *const FOOTER = "CONTROL · ONLINE";
 static const char *const EMPTY = "— 空 —";
+static const char *const HOME = "CREW";
 static const char *const STATE_WORDS[] = {
     [ROW_WAITING] = "等你",
     [ROW_ERROR] = "出错",
@@ -177,6 +178,12 @@ static void draw_empty(const band_t *band, rect_t area)
     draw_centered(band, &font_pixel, EMPTY, area, area.y + (area.h - font_pixel.line_height) / 2, TOWER_FAINT);
 }
 
+static void draw_home(const band_t *band, rect_t area)
+{
+    draw_panel(band, area, MODULE_RADIUS, 1, TOWER_FAINT, TOWER_MODULE);
+    draw_text(band, &font_pixel, HOME, area.x + MARGIN, area.y + NAME_TOP, area.x + area.w - MARGIN, TOWER_TITLE);
+}
+
 static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
 {
     rect_t frame = {THEME_GRID_LEFT, area.y, DRAW_W - 2 * THEME_GRID_LEFT, area.h - THEME_GRID_GAP};
@@ -202,10 +209,14 @@ const theme_t theme_tower = {
               THEME_GRID_SLOT(5)},
     .body = {0, THEME_GRID_TOP, DRAW_W, THEME_GRID_FOOTER - THEME_GRID_TOP},
     .footer = {0, THEME_GRID_FOOTER, DRAW_W, THEME_GRID_FOOTER_H},
+    .home = {{169, 200, 64, 74}, {121, 197, 112, 78}, {124, 214, 46, 40}},
+    .message = {{168, 193, 64, 74}, {4, 25, 232, 244}, {121, 207, 46, 40}},
+    .character = {TOWER_NAME, TOWER_MODULE},
     .draw_background = draw_background,
     .draw_header = draw_header,
     .draw_slot = draw_slot,
     .draw_empty = draw_empty,
+    .draw_home = draw_home,
     .draw_message = draw_message,
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,

@@ -54,8 +54,34 @@ void screen_from_rows(screen_t *screen, const rows_table_t *table, int64_t now_u
     }
 }
 
-void screen_render(const theme_t *theme, const screen_t *screen, const band_t *band)
+static int session_slots(const theme_t *theme)
 {
+    return theme->draw_home != NULL ? THEME_GRID_SESSIONS : THEME_SLOTS;
+}
+
+static screen_t fit(const theme_t *theme, const screen_t *screen)
+{
+    screen_t fitted = *screen;
+    if (fitted.shown > session_slots(theme)) {
+        fitted.shown = (uint8_t)session_slots(theme);
+    }
+    return fitted;
+}
+
+static const character_stage_t *stage_for(const theme_t *theme, const screen_t *screen)
+{
+    return screen->mode == SCREEN_ROWS ? &theme->home : &theme->message;
+}
+
+static bool home_slot(const theme_t *theme, int i)
+{
+    return theme->draw_home != NULL && i == THEME_SLOTS - 1;
+}
+
+void screen_render(const theme_t *theme, const screen_t *full, const band_t *band)
+{
+    screen_t fitted = fit(theme, full);
+    const screen_t *screen = &fitted;
     theme->draw_background(band);
     theme->draw_header(band, screen, theme->header);
     if (screen->mode == SCREEN_ROWS) {
@@ -63,6 +89,8 @@ void screen_render(const theme_t *theme, const screen_t *screen, const band_t *b
             const row_t *row = &screen->rows[i];
             if (i < screen->shown) {
                 theme->draw_slot(band, row, theme->slots[i], theme->slot_phase(row->state, screen->tick));
+            } else if (home_slot(theme, i)) {
+                theme->draw_home(band, theme->slots[i]);
             } else {
                 theme->draw_empty(band, theme->slots[i]);
             }
@@ -71,6 +99,7 @@ void screen_render(const theme_t *theme, const screen_t *screen, const band_t *b
         theme->draw_message(band, screen->mode, theme->body);
     }
     theme->draw_footer(band, screen, theme->footer);
+    character_draw(band, stage_for(theme, screen), character_frame(screen->tick), theme->character);
 }
 
 static uint32_t hash_int(uint32_t hash, uint32_t value)
@@ -92,7 +121,7 @@ static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *sc
 {
     uint32_t key = dirty_hash_text(hash_int(base, (uint32_t)i), "slot");
     if (i >= screen->shown) {
-        return dirty_hash_text(key, "empty");
+        return dirty_hash_text(key, home_slot(theme, i) ? "home" : "empty");
     }
     const row_t *row = &screen->rows[i];
     char age[SCREEN_AGE_MAX] = "";
@@ -105,9 +134,11 @@ static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *sc
     return hash_int(key, theme->slot_phase(row->state, screen->tick));
 }
 
-int screen_regions(uint8_t theme_index, const screen_t *screen, region_t *out)
+int screen_regions(uint8_t theme_index, const screen_t *full, region_t *out)
 {
     const theme_t *theme = screen_theme(theme_index);
+    screen_t fitted = fit(theme, full);
+    const screen_t *screen = &fitted;
     uint32_t base = hash_int(DIRTY_HASH_START, theme_index < SCREEN_THEME_COUNT ? theme_index : 0);
     int count = 0;
     uint32_t header = dirty_hash_text(base, "header");
@@ -133,5 +164,13 @@ int screen_regions(uint8_t theme_index, const screen_t *screen, region_t *out)
     }
     uint32_t footer = hash_int(dirty_hash_text(base, "footer"), theme->footer_phase(screen->tick));
     out[count++] = region(theme->footer, footer);
+    rect_t bounds = character_bounds(stage_for(theme, screen));
+    uint32_t character = hash_int(hash_int(character_frame_key(character_frame(screen->tick)), (uint32_t)bounds.x),
+                                  (uint32_t)bounds.y);
+    for (int i = 0; i < count; i++) {
+        if (out[i].y < bounds.y + bounds.h && bounds.y < out[i].y + out[i].h) {
+            out[i].key = hash_int(out[i].key, character);
+        }
+    }
     return count;
 }

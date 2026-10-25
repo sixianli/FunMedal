@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "character_art.h"
+#include "host_character.h"
 #include "host_fonts.h"
 #include "scene.h"
 #include "screen.h"
@@ -164,7 +166,7 @@ static bool read_scene(const char *path, scene_t *scene)
 
 int main(int argc, char **argv)
 {
-    if (argc < 4 || argc > 6 || !host_fonts_load(argv[1])) {
+    if (argc < 4 || argc > 6 || !host_fonts_load(argv[1]) || !host_character_load(argv[1])) {
         printf("usage: render_png <fonts dir> <scene file> <out.png> [out.rgb] [out.wire]\n");
         return 2;
     }
@@ -173,6 +175,7 @@ int main(int argc, char **argv)
         printf("FAIL cannot read scene %s\n", argv[2]);
         return 2;
     }
+    printf("ASSETS %08x\n", (unsigned)character_art_fingerprint());
     scene_render_rows(&scene, 0, SCENE_H, pixels);
     for (int y = 0; y < SCENE_H; y++) {
         uint8_t *row = raw + y * ROW_BYTES;

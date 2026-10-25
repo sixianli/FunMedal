@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "character.h"
 #include "draw.h"
 #include "rows.h"
 
@@ -15,6 +16,7 @@
 #define THEME_GRID_GAP 6
 #define THEME_GRID_FOOTER 276
 #define THEME_GRID_FOOTER_H 44
+#define THEME_GRID_SESSIONS (THEME_SLOTS - 1)
 #define THEME_GRID_SLOT(i)                                                                                        \
     {THEME_GRID_LEFT + (i) % 2 * (THEME_GRID_W + THEME_GRID_GAP), THEME_GRID_TOP + (i) / 2 * (THEME_GRID_H + THEME_GRID_GAP), \
      THEME_GRID_W, THEME_GRID_H}
@@ -38,10 +40,14 @@ typedef struct {
     rect_t slots[THEME_SLOTS];
     rect_t body;
     rect_t footer;
+    character_stage_t home;
+    character_stage_t message;
+    character_colors_t character;
     void (*draw_background)(const band_t *band);
     void (*draw_header)(const band_t *band, const screen_t *screen, rect_t area);
     void (*draw_slot)(const band_t *band, const row_t *row, rect_t area, uint32_t phase);
     void (*draw_empty)(const band_t *band, rect_t area);
+    void (*draw_home)(const band_t *band, rect_t area);
     void (*draw_message)(const band_t *band, screen_mode_t mode, rect_t area);
     void (*draw_footer)(const band_t *band, const screen_t *screen, rect_t area);
     uint32_t (*slot_phase)(row_state_t state, uint32_t tick);

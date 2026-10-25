@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "character_art.h"
 #include "audio.h"
 #include "ble_link.h"
 #include "console.h"
@@ -319,12 +320,17 @@ void app_main(void)
     const esp_timer_create_args_t save_args = {.callback = save_theme, .name = "theme_save"};
     ESP_ERROR_CHECK(esp_timer_create(&save_args, &theme_save_timer));
     bool fonts_ok = font_init();
+    bool art_ok = character_art_init();
     ESP_ERROR_CHECK(display_init(&DEFAULT_DISPLAY));
     xTaskCreate(display_task, "display", 4096, NULL, 5, &display_task_handle);
     ESP_ERROR_CHECK(console_start());
     if (!fonts_ok) {
         ESP_LOGE(TAG, "embedded fonts are damaged");
         console_event("FONT damaged\n");
+    }
+    if (!art_ok) {
+        ESP_LOGE(TAG, "embedded character pack is damaged");
+        console_event("ART damaged\n");
     }
     ESP_ERROR_CHECK(key_input_start(on_key));
     ESP_ERROR_CHECK(ble_link_start());

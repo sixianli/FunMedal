@@ -10,7 +10,7 @@ if [ -n "$(git status --porcelain -- . ':(exclude)prebuilt')" ]; then
     exit 1
 fi
 
-idf.py build
+idf.py -DFUNMEDAL_ASSET_PACK="$(pwd -P)/../assets/default" build
 mkdir -p "$PREBUILT"
 rm -f "$PREBUILT"/*.bin
 {

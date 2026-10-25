@@ -17,7 +17,7 @@
 
 ## 现在能做什么
 
-- **显示**：2026-10-25（状态卡片实施计划 Task 3d）起屏幕上是任务板（第一套主题“游戏任务板”）：顶栏，下面一行一个会话，最多 6 行，每行写项目名和状态（等你、出错、在跑、答完了），会话超过 6 个时顶栏右边写“+N”；没连上 Mac 时写“未连接”，连着但没有会话时写“没有会话”。底栏 80 px 留给 Task 5 的角色，现在空着。同日（Task 4）起有四套主题：任务板、街机厅、漫画分格、控制塔，按一下中间的键（`up`）换下一套，换到控制塔后再按回到任务板。换主题 1 秒后把主题号写进 NVS（芯片里掉电不丢的小存储区，命名空间 `funmedal`、键 `theme`），所以断电重开还是上次的主题；读不到时是任务板。连按几下只在最后一下的 1 秒后写一次。显示任务每 100 ms 看一次画面，只重画和上次不一样的横条，见“只重画变了的部分”。以前的单个小人画面和它的生成脚本同日删了。
+- **显示**：2026-10-25（状态卡片实施计划 Task 3d）起屏幕上是任务板（第一套主题“游戏任务板”）：顶栏，下面一行一个会话，最多 6 行，每行写项目名和状态（等你、出错、在跑、答完了），会话超过 6 个时顶栏右边写“+N”；没连上 Mac 时写“未连接”，连着但没有会话时写“没有会话”。2026-10-25（Task 5）起屏幕上一直有一个角色在动，见“角色”一节。同日（Task 4）起有四套主题：任务板、街机厅、漫画分格、控制塔，按一下中间的键（`up`）换下一套，换到控制塔后再按回到任务板。换主题 1 秒后把主题号写进 NVS（芯片里掉电不丢的小存储区，命名空间 `funmedal`、键 `theme`），所以断电重开还是上次的主题；读不到时是任务板。连按几下只在最后一下的 1 秒后写一次。显示任务每 100 ms 看一次画面，只重画和上次不一样的横条，见“只重画变了的部分”。以前的单个小人画面和它的生成脚本同日删了。
 - **按键**：每 10 ms 读一次 GPIO0 的电压，按电压认出是哪个键；连续 3 次读到同一个键才算数，用来滤掉抖动（按键接触瞬间电压来回跳）。按下、按住 0.7 秒、松开各报一次。
 - **USB 串口命令**：Mac 上的测试程序通过 USB 串口（卡片用 USB 线连 Mac 时出现的文字通道）读卡片手上的会话表、截取画面、读按键电压，见“USB 串口命令”。
 - **蓝牙收状态**：卡片是 BLE（低功耗蓝牙）外设，Mac 上的桥接程序连上后写入会话表，卡片照着表画任务板。服务编号、怎么连和桥接程序见 [bridge.md](bridge.md)（FM-13）。
@@ -36,6 +36,14 @@ export IDF_TOOLS_PATH=$HOME/esp/.espressif && . $HOME/esp/esp-idf-v5.5.5/export.
 cd firmware && idf.py -p /dev/cu.usbmodem11301 build flash
 ```
 
+这样编出来的角色图来自仓库里的默认素材包 `assets/default/`（脚本画的简笔人形）。负责人本机要用自己的素材包 `private-assets/pack/`（不进 git）时，编译时用 CMake 变量 `FUNMEDAL_ASSET_PACK` 指过去（相对路径按仓库根目录算）：
+
+```bash
+cd firmware && idf.py -DFUNMEDAL_ASSET_PACK=private-assets/pack -p /dev/cu.usbmodem11301 build flash
+```
+
+注意：CMake 会把这个变量记在 `firmware/build/` 的缓存里，之后不带 `-D` 的 `idf.py build` 还是用私有包。编译日志里有一行 `FunMedal character pack: <目录>`，写的就是这次用的包；要换回默认包，就再带一次 `-DFUNMEDAL_ASSET_PACK=assets/default`。`tools/update-prebuilt.sh` 每次都明确指定默认包，所以预编译固件不会带上私有包。
+
 恢复原厂固件：备份是整块 8 MB Flash（存程序和数据的存储芯片）的完整拷贝，从地址 0 整个写回即可。先用 `shasum -a 256 -c` 校验备份没坏。2026-10-17 写回过一次，原厂固件一直启动到 `99-ready`（`notes/hardware.md` “原厂固件完整备份”那一条）。README “恢复原厂固件”也是从地址 0 写回，只是命令名换成 `esptool`，备份文件名换成 `flash.sh` 存的 `factory-full8MB.bin`。那次用的命令是：
 
 ```bash
@@ -47,7 +55,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 使用者不装 ESP-IDF 也能刷固件（负责人 2026-10-17 定，见 [onboarding.md](onboarding.md)）：仓库里放着编译好的固件，只要装 `esptool` 就能刷。
 
 - **放在哪里**：`firmware/prebuilt/`，跟着仓库走（负责人 2026-10-18 选的，每更新一次，仓库历史多约 0.8 MB）。里面有启动程序 `bootloader.bin`、分区表 `partition-table.bin`、程序 `funmedal.bin`，写到哪个地址记在 `flash_args`，SHA-256 记在 `SHA256SUMS`，编译时所在的提交记在 `SOURCE`。
-- **怎么生成**：`sh tools/update-prebuilt.sh`，要先运行 ESP-IDF 的 `export.sh`。它只在 `firmware/` 下没有没提交的改动时才动手，用 `idf.py build` 编译，按 ESP-IDF 生成的 `build/flash_args` 复制三个文件，再写 `SHA256SUMS` 和 `SOURCE`。脚本放在 `tools/` 而不是 `firmware/`，因为 `firmware/` 下任何文件改了都算固件变了。
+- **怎么生成**：`sh tools/update-prebuilt.sh`，要先运行 ESP-IDF 的 `export.sh`。它只在 `firmware/` 下没有没提交的改动时才动手，用 `idf.py -DFUNMEDAL_ASSET_PACK=<仓库>/assets/default build` 编译（明确指定默认素材包，见“怎么编译和烧录”），按 ESP-IDF 生成的 `build/flash_args` 复制三个文件，再写 `SHA256SUMS` 和 `SOURCE`。脚本放在 `tools/` 而不是 `firmware/`，因为 `firmware/` 下任何文件改了都算固件变了。
 - **怎么刷**：仓库根目录的 `flash.sh <端口>`，依次找 `esptool`、`esptool.py`、`.venv/bin/esptool`。先按 `SHA256SUMS` 核对编译好的文件；`firmware-backup/` 里有 `.bin` 时，核对每个都是整块 8 MB、和同名 `.sha256` 文件里的第一个字段对得上，没有时读两遍整块 Flash，两遍一样才存成 `firmware-backup/factory-full8MB.bin` 并写 `.sha256`；最后用 `write_flash` 把三个文件写到 `flash_args` 里的地址。任何一步失败都停下、退出码不是 0，读备份那一步失败或两遍不一样时不留下备份文件。
 - **为什么不合成一个文件**：`esptool merge_bin` 能把三个文件合成一个从地址 0 开始的文件，但中间的空隙会填满 0xFF。分区表里 NVS 区（存蓝牙配对的地方）在 0x9000–0xEFFF，正好在分区表（0x8000）和程序（0x10000）之间，合成的文件会把它擦掉，配对就没了。分开写只碰三个文件各自的位置。
 - **分区表**（2026-10-25 起，实施计划 Task 3a）：用自己的 `firmware/partitions.csv`，不再用 ESP-IDF 自带的单程序大分区表（程序区只有 1500 KB）。三个区：NVS 区 24 KB 在 0x9000，`phy_init`（存射频校准数据的小区）4 KB 在 0xF000，程序区 `factory` 4 MB 在 0x10000，8 MB Flash 剩下的部分不用。前两个区的位置和大小和原来一样，所以换分区表后配对还在，`flash.sh` 写的三个地址也不变。放大程序区是给后面的字库、角色图和声音留地方：这些素材和程序编在一起，估计合起来约 1.8 MB。`tests/test_flash.py` 的 `test_partition_table` 读编译好的 `partition-table.bin`，核对这三个区的位置和大小，以及程序放得下。
@@ -99,13 +107,13 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 | 命令 | 作用 |
 | --- | --- |
-| `info` | 回报固件版本、`state`（最近一次报的 `STATE`，开机时是 `idle`）、`pattern`（是不是在显示测试图）、`mode`（任务板现在显示什么：`unlinked` 未连接，`empty` 没有会话，`rows` 会话列表）、`theme`（现在的主题号）、`tick`（动画现在走到第几步，开机起每 100 ms 加一）、`shown_tick`（最近一次画到屏幕上的是第几步）、屏幕设置，以及几项运行情况：`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的 ROWS 写入，心跳也算）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一张会话表就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
+| `info` | 回报固件版本、`state`（最近一次报的 `STATE`，开机时是 `idle`）、`pattern`（是不是在显示测试图）、`mode`（任务板现在显示什么：`unlinked` 未连接，`empty` 没有会话，`rows` 会话列表）、`theme`（现在的主题号）、`assets`（卡片里角色图数据的 32 位指纹，十六进制，换了素材包就变）、`tick`（动画现在走到第几步，开机起每 100 ms 加一）、`shown_tick`（最近一次画到屏幕上的是第几步）、屏幕设置，以及几项运行情况：`draws` / `draw_errors`（开机以来画成功和失败的次数）、`key_gap_ms`（上次 `info` 以来，按键任务两次读电压之间最长隔了多少毫秒，正常是 10）、`events_dropped`（主动报的行丢了多少）、`replies_dropped`（有几条命令的回复最后没发出去）、`adc_errors`（读按键电压出错了几次；出错的那一次不判断按键，也不报 `ADC` 行）、`ble`（`connected` 表示有 Mac 连着，`advertising` 表示在等连接）、`ble_writes`（开机以来收到几次有效的 ROWS 写入，心跳也算）、`sec`（蓝牙连接的加密状态）、`gatt_changed`（`Service Changed` 通知的句柄，固定是 3，见下文“换固件后 Mac 还用旧的功能表”）、`audio`（音频芯片和 I2S 初始化好了是 `ready`，否则是 `off`）、`link`（和 Mac 核对连接协议版本的结果：`none` 还没核对，`match` 一样，`update_firmware` Mac 的版本大，`update_bridge` 卡片的版本大；收到一张会话表就从后两种变回 `none`）、`uptime_s`（开机多少秒）。2026-10-24 起去掉了 `prompt`、`voice`、`mic` 三项 |
 | `rows` | 打印卡片手上的会话表：每行一行 `ROW <行号> <waiting\|error\|running\|done> <分钟或 -> <名字>`，分钟是卡片收到后自己往上加的；最后回 `OK rows total=<总数> shown=<行数> linked=<0 或 1>`，`linked` 是 1 表示版本核对一样、正在等 Mac 的会话表 |
 | `board` | 去掉测试图和整屏填色，回到任务板，回 `OK board`；后面带了参数时回 `ERR board takes no arguments`。2026-10-25 起没有 `state`、`frame` 两条命令了，屏幕只跟着 Mac 发来的会话表变 |
 | `theme [主题号]` | 不带参数时回 `OK theme <主题号>`；带 0–3 时换成这套主题，回 `OK theme <主题号>`，和按中间键一样报 `THEME` 行、1 秒后存进 NVS；其他参数回 `ERR theme usage: theme [0-3]` |
 | `pattern` | 显示测试图（四角四色、白边框、尖朝上的三角形），用来确认屏幕方向和颜色 |
 | `fill <rrggbb>` | 整屏填一种颜色 |
-| `snap` | 截取当前画面：先回 `SNAP BEGIN 240 320 state=<同 info> tick=<步数> mode=<同 info> pattern=<0 或 1> theme=<主题号>`，Mac 上的宿主渲染器（[tests/host_render.py](../tests/host_render.py)，在 Mac 上编译同一份画图代码画 PNG 的测试工具）按这个 `tick` 和 `theme` 画同一套主题的同一步，就能和截图逐字节比（四套主题都行，但只限会话画面：显示测试图、整屏填色、配对、版本不配时截的是那些画面，`mode` 仍写任务板背后的状态）；再回 320 行 `SNAP <行号> <这一行像素的十六进制>`，最后回 `SNAP END max_wait_ms=<数> write_timeouts=<数>` |
+| `snap` | 截取当前画面：先回 `SNAP BEGIN 240 320 state=<同 info> tick=<步数> mode=<同 info> pattern=<0 或 1> theme=<主题号> assets=<角色图指纹>`，Mac 上的宿主渲染器（[tests/host_render.py](../tests/host_render.py)，在 Mac 上编译同一份画图代码画 PNG 的测试工具）按这个 `tick` 和 `theme` 画同一套主题的同一步，就能和截图逐字节比（四套主题都行，但只限会话画面：显示测试图、整屏填色、配对、版本不配时截的是那些画面，`mode` 仍写任务板背后的状态）；再回 320 行 `SNAP <行号> <这一行像素的十六进制>`，最后回 `SNAP END max_wait_ms=<数> write_timeouts=<数>` |
 | `lcd invert\|bgr <0\|1>`、`lcd mirror <0\|1> <0\|1>`、`lcd gap <x> <y>` | 调屏幕的颜色反转、颜色顺序、镜像、偏移；会按新设置重建屏幕驱动，成功回 `OK lcd <全部屏幕设置>`。重建失败时退回原来的设置；退回也失败时串口上会多一行 ESP-IDF 的错误日志，之后每次画屏都失败，`info` 的 `draw_errors` 会一直增加 |
 | `adc <1-120>` | 在给定秒数内每 20 ms 回一行 `ADC <毫伏> <原始读数> <判断>`，结束时回 `ADC END` |
 | `backlight <0-100>` | 调背光亮度 |
@@ -123,6 +131,16 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
 
 `snap` 截的是固件按当前状态重新算出的画面，不是显示任务送给屏幕的那份数据，更不是用摄像头拍屏幕。显示任务有没有真的在画，看 `info` 里的 `draws`、`draw_errors` 和 `shown_tick`。屏幕本身显示得对不对，2026-10-16 由用户看实物确认过一次（见 [hardware.md](hardware.md) 的“结论”）。
+
+## 角色（2026-10-25 起，实施计划 Task 5）
+
+屏幕上一直有一个以负责人女儿为原型的角色在动（PRD Business Rules）。
+
+- **图从哪来**：素材包目录里有 `character/01-lying.png` 到 `10-cheer.png` 十张带透明通道的图。编译固件时 [tools/gen_assets.py](../tools/gen_assets.py) 把每张裁掉透明边，等比缩进两个框：平时用的小图 64 × 74，提醒用的大图 84 × 108（Task 6 才用）。同一个框里十张图用同一个缩放比例，按最高的那张（歪头）定，所以换姿势时人不会忽大忽小。每个像素存成 RGB565 颜色加 4 位透明度，写成一个二进制文件 `firmware/build/assets/character.bin`，由 `target_add_binary_data` 嵌进固件。图没有透明通道、全不透明或缺一张时，脚本报出文件名并退出，编译失败，不会画出白方块。读写 PNG 用的是仓库里的 [tools/pngio.py](../tools/pngio.py)，因为本机 Python 没有 Pillow（一个常用的图片处理库）。
+- **文件格式**：开头 8 字节是 `FMA1`、姿势数、尺寸数和 2 字节保留；后面每张图 8 字节一条索引（宽、高、数据在文件里的位置），按“姿势 0 的小图、姿势 0 的大图、姿势 1 的小图……”排；再后面是图的数据，先是颜色（每像素 2 字节），再是透明度（两个像素合一个字节）。[character_art.c](../firmware/main/character_art.c) 开机时检查开头、尺寸数和每条索引是不是都落在文件里面，有一处不对就一张图都不用，串口报 `ART damaged`。`info` 和 `snap` 里的 `assets=` 是整份数据的指纹，Mac 上的截图比对先核对卡片和宿主渲染器用的是同一个包。
+- **怎么动**：[character.c](../firmware/main/character.c) 里一张时间表，动画每 100 ms 走一步，17.8 秒一圈：趴着发呆 5 秒 → 拍桌子 3 下（抬手、拍下各 0.3 秒）→ 歪头，头顶一个“？” 3 秒 → 自言自语，旁边一个“嗯…”的气泡 3 秒 → 打瞌睡，旁边的“zZ”每 0.5 秒往上飘一格，5 秒。问号、气泡和 zZ 用主题自己的两种颜色画。
+- **放在哪**：每套主题在 [theme.h](../firmware/main/theme.h) 的 `.home`（平时）和 `.message`（“没有会话”“未连接”这些整屏消息时）两项里写角色框、裁剪范围和问号气泡的位置，数字是负责人 2026-10-25 看 PNG 定的。任务板和街机厅按行排，角色在底栏右下；漫画分格和控制塔按格子排，第 6 格固定是角色的家（漫画是黑边浅黄格，控制塔是写着“CREW”的模块），所以最多显示 5 个会话，顶栏的“+N”按总数减 5 算。负责人原话：“其他主题也一样，我女儿要给足够的空间，如果遮拦到了其他会话，那就不现实那个会话也要给我女儿 留出空间”。整屏消息时，格子型主题的角色站在大消息框的右下角。Mac 照旧发 6 行，因为换主题只在卡片上，Mac 不知道现在是哪套。
+- **怎么重画**：角色最后画，盖在底栏上面。和角色框上下有重叠的横条，指纹里都混进“角色这一帧”（姿势、问号气泡、zZ 走到第几格）和角色框的位置，所以角色换姿势时只重画它所在的那几块横条。`tests/host/test_screen.c` 的 `test_character_moves` 在四套主题、四种画面下，把每次换姿势前后两帧逐像素比：变了的像素必须在角色框里，或者在自己动画也换了一步的会话格里。
 
 ## 画一整屏要多久（2026-10-24 实测）
 
@@ -147,8 +165,8 @@ Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/
 **怎么知道哪里变了**：每种画面把屏幕从上到下分成几块横条，每块记三样东西：从第几行开始、有多高、一个“内容指纹”。指纹是把这块横条画出来要用到的所有输入（主题号、画面种类、这一格的会话名、状态、显示的“N 分钟前”文字、动画走到第几步）用 FNV-1a（一种很快的散列算法，输入差一点结果就完全不同）算出来的一个 32 位数。显示任务每一步把这次的横条和上次画到屏幕上的横条逐块比：位置、高度、指纹都一样的不画，其余的挨着的合成一段，按 40 行一条送给屏幕。屏幕驱动重建过（`lcd` 命令、`bench` 命令之后）或上次画失败时，整屏重画。代码在 [dirty.c](../firmware/main/dirty.c)、[main.c](../firmware/main/main.c) 的 `display_task`、[display.c](../firmware/main/display.c) 的 `display_draw_spans`。
 
 - 其他画面（配对、版本不配、测试图、整屏填色）只有一块整屏横条，指纹里是画面种类和它自己的内容。以前的小人画面也是这样，每 0.5 秒换帧时整屏重画一次，2026-10-25 删了。
-- 任务板分成顶栏（0–23 行）、6 格会话（每格 36 行，从第 24 行起）、底栏（240–319 行，留给角色，现在是空的）；“未连接”和“没有会话”两种整屏提示把中间 216 行当成一块。所以“在跑”那格的斜纹每走一步、“等你”那格每呼吸一下，只重画自己那格；7 个会话时顶栏右边的“+1”只重画顶栏。街机厅也是这种分法。
-- 漫画分格和控制塔是格子型：会话区 2 列 × 3 行，每格 114 × 80 px，格子之间空 6 px，底栏 44 px（第 276–319 行）。同一行的两格合成一块横条，指纹由两格各自的指纹合起来算；横条从上一块的下边一直到这一行格子的下边，所以格子上方的 6 px 空隙并进这一块，第三行一直到底栏上边。一格变了，同一行的另一格也跟着重画，换来的是横条之间没有缝、整屏每一行都恰好属于一块。
+- 任务板分成顶栏（0–23 行）、6 格会话（每格 36 行，从第 24 行起）、底栏（240–319 行，角色在右下）；“未连接”和“没有会话”两种整屏提示把中间 216 行当成一块。所以“在跑”那格的斜纹每走一步、“等你”那格每呼吸一下，只重画自己那格；7 个会话时顶栏右边的“+1”只重画顶栏。街机厅也是这种分法。
+- 漫画分格和控制塔是格子型：会话区 2 列 × 3 行，每格 114 × 80 px，格子之间空 6 px，底栏 44 px（第 276–319 行）。第 6 格固定是角色的家，最多显示 5 个会话，见“角色”一节。同一行的两格合成一块横条，指纹由两格各自的指纹合起来算；横条从上一块的下边一直到这一行格子的下边，所以格子上方的 6 px 空隙并进这一块，第三行一直到底栏上边。一格变了，同一行的另一格也跟着重画，换来的是横条之间没有缝、整屏每一行都恰好属于一块。
 - 底栏的指纹里有主题自己给的一个“底栏相位”：街机厅的“INSERT COIN”亮 0.6 秒、暗 0.6 秒，只在亮暗切换时重画底栏；其他主题的底栏不动，相位一直是 0。
 - 街机厅“出错”那行左右抖，动画每一步都换位置，所以这一行每 100 ms 重画一次（负责人 2026-10-25 定的）。
 - “答完了”那格的“N 分钟前”只在文字变了时才重画，比如 135 分钟到 136 分钟都显示“2 小时前”，不重画。
