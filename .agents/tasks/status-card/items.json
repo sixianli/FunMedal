@@ -24,7 +24,12 @@
     "G20": "once",
     "G21": "once",
     "G22": "once",
-    "G23": "once"
+    "G23": "once",
+    "G24": "once",
+    "G25": "once",
+    "G26": "once",
+    "G27": "once",
+    "G28": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -551,6 +556,109 @@
         "by": "claude",
         "on": "2026-10-25",
         "why": "负责人发现下一步框在问问题时卡片显示“答完了”（G22），看了实测和方案后同意做（G23）"
+      }
+    },
+    {
+      "id": "SC-20",
+      "title": "会话其实停着（在等一个卡片没收到的批准，或已经闲着）时，卡片上这一行不再一直显示“在跑”：桥接程序定时问 claude agents --json，等你就补“等你”，连续两次闲着就改“答完了”，在忙或查不到就不改",
+      "goal_ref": [
+        "G24",
+        "G27"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules"
+        },
+        {
+          "type": "test",
+          "tag": "SC-20"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-25",
+        "why": "358a4527 等一个卡片没收到的批准 5 个小时，卡片一直显示“在跑”（G24）；负责人同意方案（G27）"
+      }
+    },
+    {
+      "id": "SC-21",
+      "title": "会话在上一级文件夹启动、在子仓库里干活时，卡片显示实际干活的仓库名；在仓库根目录启动的普通会话名字不变",
+      "goal_ref": [
+        "G24",
+        "G27"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules"
+        },
+        {
+          "type": "test",
+          "tag": "SC-21"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-25",
+        "why": "claude.ai 项目派来的会话在 sxl_code_work_space 启动，卡片显示负责人认不出的上一级文件夹名（G24）；负责人同意方案（G27）"
+      }
+    },
+    {
+      "id": "SC-22",
+      "title": "claude.ai 项目里派出来的 thread，卡片上名字前有橙色 P 贴纸，普通本地 thread 没有；Mac 只传“是不是项目 thread”，不传消息内容",
+      "goal_ref": [
+        "G25",
+        "G26",
+        "G27"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules",
+          "quotes": "G25"
+        },
+        {
+          "type": "test",
+          "tag": "SC-22"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "卡片上项目 thread 名字前的橙色 P 贴纸，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-25",
+        "why": "负责人要在卡片上分出项目 thread 和普通本地 thread（G25），看样图选了橙色 P 贴纸（G26），同意方案（G27）"
       }
     }
   ]
