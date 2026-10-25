@@ -100,7 +100,7 @@ Task 2 动手时和上面不同的几处：新测试放进 `tests/test_rows.py`�
 
 ### Task 6: 提醒和声音（SC-5、SC-11）
 
-- [ ] `gen_assets.py` 加声音：转 16 kHz PCM、拼“笑声 + 话”、Python 编 IMA ADPCM；`audio.c` 解码和 I2S 放音；`tests/host/test_audio.c` 解码和 Python 编码器对拍。
+- [ ] `gen_assets.py` 加声音：转 16 kHz PCM（第一版不放笑声）、Python 编 IMA ADPCM；`audio.c` 解码和 I2S 放音；`tests/host/test_audio.c` 解码和 Python 编码器对拍。
 - [ ] 提醒由“新进入”位触发、提醒卡片动画、“连上了”挥手、“答完了”欢呼；串口 `alert` 命令。
 - [ ] `tests/test_bridge.py` 加真实会话：权限请求 3 秒内变等你、终端答掉后恢复（`[SC-5]`）；真机听到声音、看到角色冒头。
 - [ ] `[SC-11]`：按卡片所有键，终端权限弹窗仍在等；宿主测试断言固件源码里没有从按键到蓝牙写 allow/deny 的路径。

@@ -190,13 +190,13 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 **声音**。现有固件只建了 I2S 录音通道，放音通道从没用过（`firmware/main/voice.c:97-118`，TX 传 `NULL`；放音数据线 GPIO2 在引脚表里有、固件里没配）。做法：
 
-1. 构建时 `gen_assets.py` 把 `wait.mp3`、`error.mp3`（24 kHz 单声道，实测 3.24 s 和 2.90 s）和笑声录音转成 16 kHz 单声道 16 位 PCM，把“笑声 + 那句话”拼成一段，再编成 IMA ADPCM（每个采样 4 位）。编码器用 Python 在脚本里写，现有 `voice_codec.c/h` 整个删（`voice_codec.h:56-65` 只有编码和打包，没有解码可复用）。每段约 5 s × 16000 × 0.5 B ≈ 40 KB，两段 80 KB，同样 `EMBED_FILES` 嵌入。
+1. 构建时 `gen_assets.py` 用 ffmpeg 把 `wait.mp3`、`error.mp3`（24 kHz 单声道，实测 3.24 s 和 2.90 s）转成 16 kHz 单声道 16 位 PCM，再编成 IMA ADPCM（每个采样 4 位）。第一版不放笑声，只念那句话（负责人 2026-10-26 定，见 PRD Business Rules 的声音一条）。编码器用 Python 在脚本里写，现有 `voice_codec.c/h` 整个删（`voice_codec.h:56-65` 只有编码和打包，没有解码可复用）。每段约 3.3 s × 16000 × 0.5 B ≈ 26 KB，两段约 50 KB，同样 `EMBED_FILES` 嵌入。
 2. 固件新增 `audio.c`：IMA ADPCM 解码（几十行，宿主测试和 Python 编码器对拍）和 I2S 放音通道：`i2s_new_channel` 只建 TX，`dout = GPIO2`，ES8311 的 DAC 寄存器现有初始化已经写了上电（`voice.c:68-95`），只差把数据送进去和音量寄存器。
 3. 为什么不在卡片上解 mp3：ESP32-C3 单核 160 MHz 解 mp3 可行但要引入解码库，而两段固定的话构建时转一次就够；PRD 也说以后换真人录音别的不动，换素材重新构建即可。
 
 - 最大的风险原来是放音通路从未验证过。Task 0 已实测（`notes/hardware.md`“没有找到的”里喇叭功放那一条）：GPIO2 送 I2S 数据、ES8311 DAC 音量设成 0xBF，喇叭放出了连续稳定的 1 kHz 测试音，负责人听过，不需要另开功放。剩下要注意的是卡片上实时生成或解码声音时不能逐点调用软件浮点函数：第一版测试音逐点调用 `sinf`，算 1 秒的音要 4 秒，声音是断的（`notes/firmware.md`“测试音为什么一开始放得很慢”）。
 
-**素材包**（SC-15）：目录结构固定为 `pack/character/01-lying.png … 10-cheer.png` 和 `pack/voice/laugh.wav、wait.mp3、error.mp3`。仓库里 `assets/default/` 放默认素材：十张用脚本画的简笔人形和两段用 macOS `say` 合成的声音，不含负责人家人的任何形象和声音；负责人本机的是 `private-assets/pack/`，由现有的 `private-assets/character/real/` 十张图和 `private-assets/voice/` 两段话加笑声按这个结构整理一次（Task 5 的第一步，原目录不动）。CMake 变量 `FUNMEDAL_ASSET_PACK` 指定目录，默认 `assets/default`，构建时跑 `gen_assets.py` 生成到 `build/` 下，生成物不进仓库（`build/` 已在 `.gitignore`）。`tests/test_release.py` 的隐私扫描加一条：仓库里任何文件都不和 `private-assets` 下的文件字节相同；本机没有 `private-assets` 时这条测试报 skipped 而不是 passed。这条扫描只能挡住原文件被误放进仓库，挡不住转换后的位图和 ADPCM（哈希已经变了）；真正的保障是生成物只落在 `build/`，加上 `tests/test_assets.py` 断言默认素材包构建出来的位图和私有包的不同。
+**素材包**（SC-15）：目录结构固定为 `pack/character/01-lying.png … 10-cheer.png` 和 `pack/voice/wait.mp3、error.mp3`（以后有了笑声录音再加 `laugh.wav`）。仓库里 `assets/default/` 放默认素材：十张用脚本画的简笔人形和两段用 macOS `say` 合成的声音，不含负责人家人的任何形象和声音；负责人本机的是 `private-assets/pack/`，由现有的 `private-assets/character/real/` 十张图和 `private-assets/voice/` 两段话按这个结构整理一次（Task 5 的第一步，原目录不动）。CMake 变量 `FUNMEDAL_ASSET_PACK` 指定目录，默认 `assets/default`，构建时跑 `gen_assets.py` 生成到 `build/` 下，生成物不进仓库（`build/` 已在 `.gitignore`）。`tests/test_release.py` 的隐私扫描加一条：仓库里任何文件都不和 `private-assets` 下的文件字节相同；本机没有 `private-assets` 时这条测试报 skipped 而不是 passed。这条扫描只能挡住原文件被误放进仓库，挡不住转换后的位图和 ADPCM（哈希已经变了）；真正的保障是生成物只落在 `build/`，加上 `tests/test_assets.py` 断言默认素材包构建出来的位图和私有包的不同。
 
 **删掉像素小人**：`pet_art.c/h`、`scene.c` 的 `render_pet`（`:393`、`:445`）、`scene.h` 的引用、`tools/gen_pet.py`。
 

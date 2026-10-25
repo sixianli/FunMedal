@@ -31,7 +31,9 @@
     "G27": "once",
     "G28": "once",
     "G29": "once",
-    "G30": "once"
+    "G30": "once",
+    "G31": "durable",
+    "G32": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -151,9 +153,17 @@
       "id": "SC-5",
       "title": "验收 3：会话进入“等你”3 秒内跳到最上、角色冒头说话、喇叭响；“出错”同样提醒，排在等你之后、在跑之前",
       "goal_ref": [
-        "G1"
+        "G1",
+        "G31",
+        "G32"
       ],
       "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules",
+          "quotes": "G31"
+        },
         {
           "type": "test",
           "tag": "SC-5"
@@ -161,6 +171,10 @@
         {
           "type": "review",
           "by": "claude"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
         },
         {
           "type": "user",
