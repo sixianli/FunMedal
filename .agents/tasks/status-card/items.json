@@ -11,7 +11,10 @@
     "G7": "once",
     "G8": "once",
     "G9": "once",
-    "G10": "once"
+    "G10": "once",
+    "G11": "once",
+    "G12": "once",
+    "G13": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
