@@ -6,7 +6,7 @@ import pytest
 
 from bridge_harness import (Bridge, artifacts, bridge, card, card_rows, card_states, event, hook_env,  # noqa: F401
                             real_session, require_bridge_app, run_dir, wait_session_ready, write_summary)
-from host_render import compare_screen, scene_of, screen_tools  # noqa: F401
+from host_render import compare_screen, scene_of, screen_tools, wait_quiet  # noqa: F401
 from test_rows import capture_hook_messages
 
 ARTIFACTS_PREFIX = "sc22"
@@ -72,7 +72,8 @@ def test_card_marks_project_thread(case, card, run_dir, screen_tools):
             mark = card.mark()
             assert card.request(f"theme {theme}") == f"OK theme {theme}"
             card.wait_for(lambda line, n=theme: line == f"THEME {n}", 5.0, mark)
-            screens.append(compare_screen(card, screen_tools, run_dir, f"theme-{theme}", *scene_of(card_rows(card))))
+            wait_quiet(card)
+            screens.append(compare_screen(card, screen_tools, run_dir, f"theme-{theme}", *scene_of(card_rows(card)), quiet=True))
         first.hook(submit("p", "and the signup page too"), project="alpha")
         first.hook(event("Stop", "p", stop_hook_active=False), project="alpha")
         later = first.settle_rows([("running", "beta"), ("done", "alpha")], total=2)

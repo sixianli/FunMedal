@@ -17,7 +17,7 @@ from bridge_harness import (Bridge, artifacts, bash, bridge, bridge_cli, card, c
 ARTIFACTS_PREFIX = "fm13"
 ARTIFACTS_SUBDIR = "bridge"
 HOOK_FIELDS = {"op", "event", "session", "tool_name", "tool_key", "tool_use_id", "source", "reason", "error",
-               "notification_type", "claude_pid", "project", "asks"}
+               "notification_type", "claude_pid", "project", "asks", "project_thread"}
 WRAP_UP = "mcp__ccd_turn__wrap_up"
 MIN_STACK_FREE_BYTES = 1024
 ALREADY_RUNNING_EXIT = 3
@@ -280,7 +280,9 @@ def test_hook_sends_only_listed_fields(case, artifacts):
     cases = [
         (event("PostToolUse", "c", tool_use_id="t1", tool_response={"output": secret}, **write),
          {"tool_name": "Write"}),
-        (event("UserPromptSubmit", "c", prompt=secret), {}),
+        (event("UserPromptSubmit", "c", prompt=secret), {"project_thread": None}),
+        (event("UserPromptSubmit", "c", prompt=f'<relay from="coordinator">{secret}</relay>'),
+         {"project_thread": True}),
         (event("SessionStart", "c", source="compact", model="haiku"), {"source": "compact"}),
         (event("StopFailure", "c", error="rate_limit", error_details=secret), {"error": "rate_limit"}),
         (event("Stop", "c", stop_hook_active=False, last_assistant_message=secret), {}),

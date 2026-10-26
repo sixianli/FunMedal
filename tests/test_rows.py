@@ -1,5 +1,6 @@
 import json
 import os
+import signal
 import socket
 import subprocess
 import tempfile
@@ -13,13 +14,15 @@ import pytest
 from bridge_harness import (HEARTBEAT_FLAG, HIDDEN_MINUTES, Bridge, artifacts, bash, bridge, bridge_cli,  # noqa: F401
                             card, card_rows, event, hook_env, info_fields, require_bridge_app, rows_writes, run_dir, wait_until,
                             write_summary)
-from host_render import H, compare_screen, scene_of, screen_tools  # noqa: F401
+from host_render import H, compare_screen, scene_of, screen_tools, wait_quiet  # noqa: F401
 
 ARTIFACTS_PREFIX = "sc"
 ARTIFACTS_SUBDIR = "rows"
 SHOW_WITHIN_S = 3.0
 PID_GONE_WITHIN_S = 15.0
 HEARTBEAT_EVERY_S = 30.0
+SILENCE_S = 90.0
+SILENCE_CHECK_S = 2.0
 FRAME_MAX = 226
 NAME_MAX = 32
 TICK_US = 100_000
@@ -113,8 +116,9 @@ def test_three_projects(case, card, bridge, run_dir, screen_tools):
     bridge.hook(event("Stop", "b", stop_hook_active=False), project="beta")
     status = bridge.settle_rows([("running", "alpha"), ("running", "gamma"), ("done", "beta")], total=3)
     shown_after = time.monotonic() - started
+    wait_quiet(card)
     on_card = card_rows(card)
-    screen = compare_screen(card, screen_tools, run_dir, "three", *scene_of(on_card))
+    screen = compare_screen(card, screen_tools, run_dir, "three", *scene_of(on_card), quiet=True)
     summary = {"hidden": hidden, "status": status, "shown_after_s": shown_after, "card": on_card,
                "card_writes": rows_writes(card, mark), "frames": bridge.frames(), "screen": screen}
     write_summary(run_dir, summary)
@@ -276,8 +280,9 @@ def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
                                                                                                     ("w2", "aa"))]
     status = bridge.settle_rows([("waiting", "aa"), ("waiting", "zz"), ("error", "eta"), ("running", "Beta"),
                                  ("running", "zeta"), ("done", "alpha")], total=7)
+    wait_quiet(card)
     on_card = card_rows(card)
-    screen = compare_screen(card, screen_tools, run_dir, "seven", *scene_of(on_card))
+    screen = compare_screen(card, screen_tools, run_dir, "seven", *scene_of(on_card), quiet=True)
     frame = bridge.frames()[-1]
     for run in runs:
         run.stop()
@@ -314,7 +319,8 @@ def test_theme_key_and_reboot(case, card, bridge, run_dir, screen_tools):
             _, changed_t, _ = card.wait_for(lambda line, n=expected: line == f"THEME {n}", 5.0, mark)
             _, saved_t, saved = card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
             turns.append({"theme": expected, "saved": saved, "save_after_s": saved_t - changed_t})
-            screens.append(compare_screen(card, screen_tools, run_dir, f"theme-{expected}", *scene_of(card_rows(card))))
+            wait_quiet(card)
+            screens.append(compare_screen(card, screen_tools, run_dir, f"theme-{expected}", *scene_of(card_rows(card)), quiet=True))
         mark = card.mark()
         press_middle_key(card)
         press_middle_key(card)
@@ -394,7 +400,8 @@ def test_grown_character_draw_speed(case, way, card, bridge, run_dir, screen_too
             prompt(bridge, session, project)
         bridge.settle_rows([("running", "alpha"), ("running", "beta")], total=2)
         time.sleep(max(0.0, hello_t + HELLO_SHOWS_S + 0.3 - time.time()))
-        screen = compare_screen(card, screen_tools, run_dir, f"grown-{theme}", *scene_of(card_rows(card)))
+        wait_quiet(card)
+        screen = compare_screen(card, screen_tools, run_dir, f"grown-{theme}", *scene_of(card_rows(card)), quiet=True)
         top = screen["character"][1]
         time.sleep(max(0.0, hello_t + HELLO_SHOWS_S + LYING_STILL_S + 0.1 - time.time()))
         before = info_fields(card.request("info"))
@@ -449,11 +456,12 @@ def test_empty_and_quit(case, card, bridge, run_dir, screen_tools):
     bridge.start()
     card.wait_for(lambda line: line.startswith("BLE rows "), 5.0, mark)
     frame = bridge.frames()[-1]
+    wait_quiet(card)
     linked = card_rows(card)
-    empty = compare_screen(card, screen_tools, run_dir, "empty", *scene_of(linked))
+    empty = compare_screen(card, screen_tools, run_dir, "empty", *scene_of(linked), quiet=True)
     bridge.quit()
     unlinked = wait_until(lambda: (r := card_rows(card)) and r["reply"]["linked"] == "0" and r, 10.0, "card unlinked")
-    gone = compare_screen(card, screen_tools, run_dir, "unlinked", *scene_of(unlinked))
+    gone = compare_screen(card, screen_tools, run_dir, "unlinked", *scene_of(unlinked), quiet=True)
     write_summary(run_dir, {"frame": frame, "linked": linked, "unlinked": unlinked, "writes": rows_writes(card, mark),
                             "screens": [empty, gone]})
     assert frame == {"bytes": 4, "format": 1, "total": 0, "shown": 0, "flags": 0, "rows": []}, frame
@@ -472,16 +480,44 @@ def test_only_changes_and_heartbeat(case, card, bridge, run_dir):
     mark = card.mark()
     bridge.hook(event("PreToolUse", "h", tool_use_id="t1", **bash("ls")), project="beat")
     bridge.hook(event("PostToolUse", "h", tool_use_id="t1", tool_response={}, **bash("ls")), project="beat")
-    _, _, line = card.wait_for(lambda line: line == "BLE heartbeat", HEARTBEAT_EVERY_S + 5.0, mark)
-    status = wait_until(lambda: (s := bridge.status()) and s["heartbeats"] >= 1 and s, 5.0, "heartbeat acknowledged")
+    _, first_t, _ = card.wait_for(lambda line: line == "BLE heartbeat", HEARTBEAT_EVERY_S + 5.0, mark)
+    second = card.mark()
+    _, second_t, _ = card.wait_for(lambda line: line == "BLE heartbeat", HEARTBEAT_EVERY_S + 5.0, second)
+    status = wait_until(lambda: (s := bridge.status()) and s["heartbeats"] >= 2 and s, 5.0, "heartbeats acknowledged")
     beats = bridge.frames("heartbeat")
     summary = {"tables_before": tables, "tables_after": len(bridge.frames()), "beats": beats,
-               "card": [l for _, l in card.since(mark)], "status": status}
+               "card": [l for _, l in card.since(mark)], "status": status, "beat_gap_s": second_t - first_t}
     write_summary(run_dir, summary)
     assert summary["tables_after"] == tables, summary
+    assert HEARTBEAT_EVERY_S - 5.0 <= summary["beat_gap_s"] <= HEARTBEAT_EVERY_S + 5.0, summary
     assert beats and beats[0] == {"bytes": 4, "format": 1, "total": 1, "shown": 0, "flags": HEARTBEAT_FLAG,
                                   "rows": []}, summary
-    assert summary["status"]["heartbeats"] >= 1, summary
+    assert summary["status"]["heartbeats"] >= 2, summary
+
+
+@pytest.mark.parametrize("case", ["[SC-10] a bridge that stops writing while the link stays up is dropped by the "
+                                  "card after 90 seconds of silence, and the card shows unlinked"])
+def test_silent_bridge_unlinks(case, card, bridge, run_dir):
+    started = bridge.start()
+    prompt(bridge, "q", "quiet")
+    bridge.settle_rows([("running", "quiet")])
+    mark = card.mark()
+    os.kill(started["pid"], signal.SIGSTOP)
+    stopped = time.time()
+    try:
+        _, silent_t, silent = card.wait_for(lambda line: line.startswith("BLE silent"),
+                                            SILENCE_S + SILENCE_CHECK_S + 5.0, mark)
+        after = card_rows(card)
+        shown = info_fields(card.request("info"))
+    finally:
+        os.kill(started["pid"], signal.SIGCONT)
+    summary = {"silent": silent, "silent_after_s": silent_t - stopped, "rows": after, "info": shown,
+               "card": [line for _, line in card.since(mark)]}
+    write_summary(run_dir, summary)
+    assert silent == "BLE silent rc=0", summary
+    assert SILENCE_S - HEARTBEAT_EVERY_S - 1.0 <= summary["silent_after_s"] <= SILENCE_S + SILENCE_CHECK_S + 1.0, summary
+    assert after["reply"]["linked"] == "0" and after["rows"] == [], summary
+    assert shown["mode"] == "unlinked", summary
 
 
 @pytest.mark.parametrize("case", ["[SC-4] a session whose Claude Code process is gone leaves the table within 15 "

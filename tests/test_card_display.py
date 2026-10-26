@@ -64,7 +64,7 @@ def at(pixels, x, y):
 def test_unlinked_screen_matches_host(case, card, artifacts, screen_tools):
     card.command("board")
     rows = info_fields(card.command("rows"))
-    result = compare_screen(card, screen_tools, artifacts, "unlinked", "unlinked")
+    result = compare_screen(card, screen_tools, artifacts, "unlinked", "unlinked", quiet=True)
     (artifacts / "unlinked.json").write_text(json.dumps({"rows": rows, **result}), encoding="utf-8")
     assert rows["linked"] == "0", f"a bridge is connected to the card: {rows}"
     assert result["meta"]["mode"] == "unlinked", result

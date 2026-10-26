@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,8 @@ SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
     "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows", "character", "character_art", "events")] + [
     HOST / "host_fonts.c", HOST / "host_character.c"]
 W, H = 240, 320
+QUIET_WITHIN_S = 10.0
+QUIET_POLL_S = 0.5
 
 
 def build(source, binary, sources):
@@ -84,8 +87,16 @@ def scene_of(on_card):
     return ("empty" if reply["total"] == "0" else "rows"), rows, int(reply["total"])
 
 
-def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0):
+def wait_quiet(card):
+    deadline = time.monotonic() + QUIET_WITHIN_S
+    while card.snapshot()[0]["event"] != "none":
+        assert time.monotonic() < deadline, "an event is still showing"
+        time.sleep(QUIET_POLL_S)
+
+
+def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0, quiet=False):
     meta, width, height, data = card.snapshot()
+    assert not quiet or meta["event"] == "none", meta
     assert (width, height) == (W, H)
     cardlink.write_png(out_dir / f"{name}-card.png", width, height, cardlink.rgb565_wire_to_rgb(data))
     event = None

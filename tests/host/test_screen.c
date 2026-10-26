@@ -429,12 +429,15 @@ static void check_character_step(const char *what, const scene_t *before, const 
 static void test_character_moves(void)
 {
     static const uint32_t steps[][2] = {{49, 50}, {52, 53}, {67, 68}, {97, 98}, {127, 128}, {132, 133}, {177, 178}};
+    static const uint8_t rows_counts[] = {5, 6, 0, 0, 1, 2, 4};
     for (uint8_t index = 0; index < SCREEN_THEME_COUNT; index++) {
-        for (int kind = 0; kind < 4; kind++) {
+        for (int kind = 0; kind < 7; kind++) {
             for (size_t s = 0; s < sizeof steps / sizeof steps[0]; s++) {
-                scene_t before = kind < 2 ? six_rows(steps[s][0]) : sessions(kind == 2 ? SCREEN_EMPTY : SCREEN_UNLINKED, 0, steps[s][0]);
-                if (kind == 0) {
-                    before.screen.shown = before.screen.total = 5;
+                bool message = kind == 2 || kind == 3;
+                scene_t before = message ? sessions(kind == 2 ? SCREEN_EMPTY : SCREEN_UNLINKED, 0, steps[s][0])
+                                         : six_rows(steps[s][0]);
+                if (!message) {
+                    before.screen.shown = before.screen.total = rows_counts[kind];
                 }
                 before.theme = index;
                 scene_t after = before;

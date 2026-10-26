@@ -251,6 +251,28 @@ def test_seventh_session_adds_plus_one(case, screen_tools, screen_artifacts):
     assert all(y < 24 and x >= W // 2 for x, y in changed), changed[:10]
 
 
+@pytest.mark.parametrize("case, theme, sent, total, like_sent, like_total", [
+    ("[SC-6] the board header counts only the sessions not shown: six shown of seven reads +1 like five of six",
+     0, 6, 7, 5, 6),
+    ("[SC-6] the arcade header counts only the sessions not shown: six shown of seven reads +1 like five of six",
+     1, 6, 7, 5, 6),
+    ("[SC-17] the comic header counts the sixth row it cannot show: six sent of seven reads +2 like four of six",
+     2, 6, 7, 4, 6),
+    ("[SC-17] the tower header counts the sixth row it cannot show: six sent of seven reads +2 like four of six",
+     3, 6, 7, 4, 6),
+])
+def test_header_counts_hidden_sessions(case, theme, sent, total, like_sent, like_total, screen_tools,
+                                       screen_artifacts):
+    drawn = render_screen(screen_tools, screen_artifacts, f"theme{theme}-{sent}of{total}", rows=SIX_ROWS[:sent],
+                          total=total, tick=70, theme=theme)
+    like = render_screen(screen_tools, screen_artifacts, f"theme{theme}-{like_sent}of{like_total}",
+                         rows=SIX_ROWS[:like_sent], total=like_total, tick=70, theme=theme)
+    one_more = render_screen(screen_tools, screen_artifacts, f"theme{theme}-{sent}of{total + 1}",
+                             rows=SIX_ROWS[:sent], total=total + 1, tick=70, theme=theme)
+    assert [p for p in changed_pixels(drawn["rgb"], like["rgb"]) if p[1] < 24] == []
+    assert [p for p in changed_pixels(drawn["rgb"], one_more["rgb"]) if p[1] < 24], "the header ignores the total"
+
+
 def ink_in(image, top, height, background):
     return sum(pixel(image, x, y) != background for y in range(top, top + height) for x in range(W))
 
@@ -400,28 +422,6 @@ def test_events_on_host(case, tmp_path):
     assert "ALL PASSED" in result.stdout
 
 
-THEMES = ("board", "arcade", "comic", "tower")
-
-
-@pytest.mark.parametrize("case, theme", [
-    (f"[SC-5] in the {name} theme the waiting and the error alert cover the table, differ from each other, and "
-     f"the character rises inside the alert area and then holds still", theme)
-    for theme, name in enumerate(THEMES)
-])
-def test_alert_on_host(case, theme, screen_tools, screen_artifacts):
-    def shot(label, event):
-        return render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-{label}", rows=SIX_ROWS[:3],
-                             theme=theme, tick=40, daily=0, event=event)
-    calm = render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-calm", rows=SIX_ROWS[:3],
-                         theme=theme, tick=40, daily=0)
-    rising = shot("rising", ("wait", 150, "FunMedal"))
-    risen = shot("wait", ("wait", 900, "FunMedal"))
-    later = shot("wait-later", ("wait", 5900, "FunMedal"))
-    error = shot("error", ("error", 900, "SiBlog"))
-    covered = changed_pixels(calm["rgb"], risen["rgb"])
-    assert len(covered) > W * H // 4, len(covered)
-
-
 @pytest.mark.parametrize("case", ["[SC-9] on battery the screen dims after five quiet minutes, a computer keeps "
                                   "it lit, alerts, keys and plugging in light it, a finished session does not, and "
                                   "minutes alone are no change"])
@@ -443,6 +443,28 @@ def test_dark_events_on_host(case, tmp_path):
     print(result.stdout)
     assert result.returncode == 0, result.stdout
     assert "ALL PASSED" in result.stdout
+
+
+THEMES = ("board", "arcade", "comic", "tower")
+
+
+@pytest.mark.parametrize("case, theme", [
+    (f"[SC-5] in the {name} theme the waiting and the error alert cover the table, differ from each other, and "
+     f"the character rises inside the alert area and then holds still", theme)
+    for theme, name in enumerate(THEMES)
+])
+def test_alert_on_host(case, theme, screen_tools, screen_artifacts):
+    def shot(label, event):
+        return render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-{label}", rows=SIX_ROWS[:3],
+                             theme=theme, tick=40, daily=0, event=event)
+    calm = render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-calm", rows=SIX_ROWS[:3],
+                         theme=theme, tick=40, daily=0)
+    rising = shot("rising", ("wait", 150, "FunMedal"))
+    risen = shot("wait", ("wait", 900, "FunMedal"))
+    later = shot("wait-later", ("wait", 5900, "FunMedal"))
+    error = shot("error", ("error", 900, "SiBlog"))
+    covered = changed_pixels(calm["rgb"], risen["rgb"])
+    assert len(covered) > W * H // 4, len(covered)
     assert changed_pixels(risen["rgb"], error["rgb"])
     moved = changed_pixels(rising["rgb"], risen["rgb"])
     assert moved and inside(moved, risen["alert"]), (risen["alert"], moved[:10])
