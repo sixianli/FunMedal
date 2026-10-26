@@ -25,6 +25,8 @@ NAME_MAX = 32
 TICK_US = 100_000
 BENCH_RUNS = 5
 ANIMATION_WATCH_S = 1.0
+HELLO_SHOWS_S = 3.0
+LYING_STILL_S = 5.0
 THEME_SAVE_DELAY_S = 1.0
 GROWN_H = 200
 GROWN_THEMES = ["board", "arcade"]
@@ -376,7 +378,8 @@ def test_draw_speed(case, card, bridge, run_dir):
 
 @pytest.mark.parametrize("case", ["[SC-18] with two sessions on the card the character is drawn at its biggest size "
                                   "byte for byte as on the host, and the band from her top to the screen bottom and "
-                                  "the whole screen each redraw within one 100 ms animation step"])
+                                  "the whole screen each redraw within one 100 ms animation step, counted while she taps after the hello "
+                                  "wave and the still lying pose"])
 @pytest.mark.parametrize("way", GROWN_THEMES)
 def test_grown_character_draw_speed(case, way, card, bridge, run_dir, screen_tools):
     theme = GROWN_THEMES.index(way)
@@ -384,12 +387,16 @@ def test_grown_character_draw_speed(case, way, card, bridge, run_dir, screen_too
     assert card.request(f"theme {theme}") == f"OK theme {theme}"
     card.wait_for(lambda line: line.startswith("THEME saved "), 5.0, mark)
     try:
+        linked = card.mark()
         bridge.start()
+        _, hello_t, _ = card.wait_for(lambda line: line.startswith("EVENT hello"), 5.0, linked)
         for session, project in (("a", "alpha"), ("b", "beta")):
             prompt(bridge, session, project)
         bridge.settle_rows([("running", "alpha"), ("running", "beta")], total=2)
+        time.sleep(max(0.0, hello_t + HELLO_SHOWS_S + 0.3 - time.time()))
         screen = compare_screen(card, screen_tools, run_dir, f"grown-{theme}", *scene_of(card_rows(card)))
         top = screen["character"][1]
+        time.sleep(max(0.0, hello_t + HELLO_SHOWS_S + LYING_STILL_S + 0.1 - time.time()))
         before = info_fields(card.request("info"))
         time.sleep(ANIMATION_WATCH_S)
         after = info_fields(card.request("info"))
