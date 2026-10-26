@@ -83,11 +83,11 @@ static void draw_header(const band_t *band, const screen_t *screen, rect_t area)
 {
     draw_fill(band, (rect_t){area.x, area.y, area.w, STRIP_H}, COMIC_INK);
     draw_text(band, &font_text, TITLE, area.x + MARGIN, area.y + TITLE_TOP, area.x + area.w - MARGIN, COMIC_WHITE);
-    if (screen->mode != SCREEN_ROWS || screen->total <= screen->shown) {
+    char text[SCREEN_MORE_MAX];
+    const char *more = screen_more(screen, text, sizeof text);
+    if (more == NULL) {
         return;
     }
-    char more[8];
-    snprintf(more, sizeof more, "+%u", (unsigned)(screen->total - screen->shown));
     int width = draw_text_width(&font_text, more, area.w);
     draw_text(band, &font_text, more, area.x + area.w - MARGIN - width, area.y + TITLE_TOP, area.x + area.w,
               COMIC_WHITE);
@@ -118,15 +118,16 @@ static void draw_inked(const band_t *band, const font_t *font, const char *text,
     draw_text(band, font, text, x, top, right, rgb);
 }
 
-static void draw_name(const band_t *band, const char *name, rect_t inner)
+static void draw_name(const band_t *band, const char *name, const char *suffix, rect_t inner)
 {
     int max_w = inner.w - 2 * NAME_INSET - 2 * NAME_BORDER - 2 * NAME_PAD;
-    int width = draw_text_width(&font_pixel, name, max_w);
+    int suffix_w = draw_text_width(&font_pixel, suffix, max_w);
+    int width = draw_text_width(&font_pixel, name, max_w - suffix_w) + suffix_w;
     rect_t box = {inner.x + NAME_INSET, inner.y + NAME_INSET, width + 2 * (NAME_BORDER + NAME_PAD),
                   font_pixel.line_height + 2 * NAME_BORDER};
     draw_panel(band, box, 0, NAME_BORDER, COMIC_INK, COMIC_PAPER);
     int x = box.x + NAME_BORDER + NAME_PAD;
-    draw_text(band, &font_pixel, name, x, box.y + NAME_BORDER, x + width, COMIC_INK);
+    screen_named(band, &font_pixel, name, suffix, x, box.y + NAME_BORDER, x + width, COMIC_INK);
 }
 
 static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_t phase)
@@ -145,7 +146,8 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
         room.x = name_x - NAME_INSET;
         room.w -= room.x - inner.x;
     }
-    draw_name(band, row->name, room);
+    char counted[SCREEN_COUNTED_MAX];
+    draw_name(band, row->name, screen_counted("", row->count, counted, sizeof counted), room);
     const char *sound = SOUNDS[row->state];
     int dx = 0;
     int top = area.y + SFX_TOP;

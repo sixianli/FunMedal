@@ -79,10 +79,10 @@ def test_card_shows_working_repository(case, card, bridge, run_dir, tmp_path):
     first = bridge.settle_rows([("running", "child-repo"), ("running", "rootrepo")], total=2)
     first_card = card_rows(card)
     bridge.hook(at("PreToolUse", "a", ws / "plain-folder", **bash("ls")), project=ws)
-    moved = bridge.settle_rows([("running", "rootrepo"), ("running", "workspace")], total=2)
+    moved = bridge.settle_rows([("running", "workspace"), ("running", "rootrepo")], total=2)
     moved_card = card_rows(card)
     write_summary(run_dir, {"first": first, "first_card": first_card, "moved": moved, "moved_card": moved_card})
     assert [(r["state"], r["name"]) for r in first_card["rows"]] == \
         [("running", "child-repo"), ("running", "rootrepo")]
     assert [(r["state"], r["name"]) for r in moved_card["rows"]] == \
-        [("running", "rootrepo"), ("running", "workspace")]
+        [("running", "workspace"), ("running", "rootrepo")]

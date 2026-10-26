@@ -88,7 +88,7 @@ static void test_shorter_idle(void)
 
 static row_t row(uint8_t id, row_state_t state, uint16_t minutes, const char *name)
 {
-    row_t r = {.id = id, .state = state, .minutes = minutes};
+    row_t r = {.id = id, .state = state, .minutes = minutes, .count = 1};
     snprintf(r.name, sizeof r.name, "%s", name);
     return r;
 }

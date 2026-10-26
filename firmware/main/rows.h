@@ -4,11 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ROWS_FORMAT 1
+#define ROWS_FORMAT 2
 #define ROWS_MAX 6
 #define ROWS_NAME_MAX 32
-#define ROWS_HEADER_SIZE 4
-#define ROWS_ROW_HEADER_SIZE 5
+#define ROWS_HEADER_SIZE 5
+#define ROWS_ROW_HEADER_SIZE 6
 #define ROWS_FRAME_MAX (ROWS_HEADER_SIZE + ROWS_MAX * (ROWS_ROW_HEADER_SIZE + ROWS_NAME_MAX))
 #define ROWS_HEARTBEAT_FLAG 0x01
 #define ROWS_FRESH_BIT 0x80
@@ -37,12 +37,14 @@ typedef struct {
     bool fresh;
     bool project;
     uint16_t minutes;
+    uint8_t count;
     char name[ROWS_NAME_MAX + 1];
 } row_t;
 
 typedef struct {
     uint8_t total;
     uint8_t shown;
+    uint8_t urgent;
     row_t rows[ROWS_MAX];
 } rows_frame_t;
 

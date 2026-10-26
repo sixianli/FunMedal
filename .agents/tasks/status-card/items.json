@@ -37,7 +37,14 @@
     "G33": "once",
     "G34": "once",
     "G35": "durable",
-    "G36": "durable"
+    "G36": "durable",
+    "G37": "once",
+    "G38": "once",
+    "G39": "once",
+    "G40": "once",
+    "G41": "once",
+    "G42": "once",
+    "G43": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -684,6 +691,48 @@
         "by": "claude",
         "on": "2026-10-25",
         "why": "负责人要在卡片上分出项目 thread 和普通本地 thread（G25），看样图选了橙色 P 贴纸（G26），同意方案（G27）"
+      }
+    },
+    {
+      "id": "SC-23",
+      "title": "会话按优先级排：等你和出错里等得最久的在上，在跑里开始得早的在上，答完了里刚答完的在上；等你加出错超过 5 个时同项目同状态合成一行写 ×N，合并后还放不下时顶栏写“还有 N 个等你”，被挤掉的新等你照样提醒",
+      "goal_ref": [
+        "G37",
+        "G38",
+        "G39",
+        "G40",
+        "G41",
+        "G42",
+        "G43"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/prd-v0.1.md",
+          "heading": "Business Rules"
+        },
+        {
+          "type": "test",
+          "tag": "SC-23"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        },
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "当着你演示了合并 ×N、顶栏“还有 N 个等你”和新的排序，认可吗？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "负责人要按优先级排（G37），放不下时要最好的处理（G38），看效果图后选了等得最久的在上、同项目同状态合成一行写 ×N、顶栏还有 N 个等你、卡片固件画 ×N（G39 到 G42），连着的提醒照样再响（G43）"
       }
     }
   ]

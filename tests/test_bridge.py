@@ -81,7 +81,7 @@ def test_connect_writes_current_state(case, card, bridge):
     after = card_rows(card)
     after_mode = info_fields(card.request("info"))["mode"]
     assert before["reply"]["linked"] == "0", before
-    assert after["reply"] == {"total": "0", "shown": "0", "linked": "1"}, after
+    assert after["reply"] == {"total": "0", "shown": "0", "urgent": "0", "linked": "1"}, after
     assert (before_mode, after_mode) == ("unlinked", "empty")
     assert rows_writes(card, start) == [EMPTY_TABLE]
 

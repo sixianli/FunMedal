@@ -367,12 +367,14 @@ static void print_rows(void)
         uint16_t minutes = rows_minutes(&table, i, now_us);
         char mark = row->project ? 'p' : '-';
         if (minutes == ROWS_HIDDEN_MINUTES) {
-            console_printf("ROW %u %s - %c %s\n", row->id, rows_state_name(row->state), mark, row->name);
+            console_printf("ROW %u %s - %c %u %s\n", row->id, rows_state_name(row->state), mark, row->count, row->name);
         } else {
-            console_printf("ROW %u %s %u %c %s\n", row->id, rows_state_name(row->state), minutes, mark, row->name);
+            console_printf("ROW %u %s %u %c %u %s\n", row->id, rows_state_name(row->state), minutes, mark, row->count,
+                           row->name);
         }
     }
-    console_printf("OK rows total=%u shown=%u linked=%d\n", table.frame.total, table.frame.shown, table.linked);
+    console_printf("OK rows total=%u shown=%u urgent=%u linked=%d\n", table.frame.total, table.frame.shown,
+                   table.frame.urgent, table.linked);
 }
 
 static void tone_command(char *args)

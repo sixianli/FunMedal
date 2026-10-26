@@ -67,7 +67,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let pidCheckSeconds = 5.0
     static let agentsCheckSeconds = 15.0
     static let quitDisconnectSeconds = 1.0
-    static let linkVersion = 4
+    static let linkVersion = 5
     static let pairingAttempts = 3
     static let linkVersions = 1...9999
     static let releasingEvents = ["UserPromptSubmit": "prompt", "Stop": "stop", "StopFailure": "stop_failure",
@@ -376,7 +376,7 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     private func status() -> [String: Any] {
         let now = Date().timeIntervalSince1970
-        let table = Rows.table(sessions)
+        let table = currentTable()
         return [
             "ok": true,
             "pid": Int(getpid()),
@@ -394,9 +394,10 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                  "visible": session.visible, "waiting": session.waiting.count, "pid": session.pid ?? NSNull()]
             },
             "total": table.total,
+            "urgent": table.urgent,
             "rows": table.lines.map { line -> [String: Any] in
                 ["row": line.row, "state": line.state.name, "minutes": line.minutes(at: now), "project": line.project,
-                 "project_thread": line.projectThread]
+                 "project_thread": line.projectThread, "count": line.count]
             },
             "synced": link == "connected" && ackedKey == table.key,
             "frame": Rows.hex(Rows.frame(table, fresh: [], nameLimit: nameLimit, now: now)),
@@ -412,18 +413,25 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         ]
     }
 
+    private func currentTable() -> RowTable {
+        Rows.table(sessions, fresh: Set(pendingFresh.keys))
+    }
+
     private func push() {
-        let table = Rows.table(sessions)
+        let alerting = Set(sessions.visible.filter { $0.session.shown.alerts }.map(\.id))
+        pendingFresh = pendingFresh.filter { alerting.contains($0.key) }
+        let table = currentTable()
         guard table.key != ackedKey else { return }
         let fresh = Set(pendingFresh.keys)
         let data = Rows.frame(table, fresh: fresh, nameLimit: nameLimit, now: Date().timeIntervalSince1970)
-        write(RowsWrite(what: "rows", data: data, key: table.key, fresh: pendingFresh))
+        let members = table.members
+        write(RowsWrite(what: "rows", data: data, key: table.key,
+                        fresh: pendingFresh.filter { members.contains($0.key) }))
     }
 
     private func heartbeat() {
         guard inFlight == nil else { return }
-        write(RowsWrite(what: "heartbeat", data: Rows.heartbeat(total: Rows.table(sessions).total), key: nil,
-                        fresh: [:]))
+        write(RowsWrite(what: "heartbeat", data: Rows.heartbeat(currentTable()), key: nil, fresh: [:]))
     }
 
     private func write(_ request: RowsWrite) {

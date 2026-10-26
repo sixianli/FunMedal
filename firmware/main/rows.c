@@ -77,12 +77,14 @@ static size_t parse_row(const uint8_t *data, size_t left, row_t *row)
     bool fresh = (state & ROWS_FRESH_BIT) != 0;
     bool project = (state & ROWS_PROJECT_BIT) != 0;
     uint16_t minutes = (uint16_t)(data[2] | data[3] << 8);
-    size_t name_len = data[4];
+    uint8_t count = data[4];
+    size_t name_len = data[5];
     if (data[0] == 0 || (state & ~(ROWS_STATE_MASK | ROWS_FRESH_BIT | ROWS_PROJECT_BIT)) != 0 || kind < ROW_WAITING ||
         kind > ROW_DONE) {
         return 0;
     }
-    if ((fresh && kind != ROW_WAITING && kind != ROW_ERROR) || !valid_minutes((row_state_t)kind, minutes)) {
+    bool urgent = kind == ROW_WAITING || kind == ROW_ERROR;
+    if ((fresh && !urgent) || count == 0 || (count > 1 && !urgent) || !valid_minutes((row_state_t)kind, minutes)) {
         return 0;
     }
     if (name_len > ROWS_NAME_MAX || left < ROWS_ROW_HEADER_SIZE + name_len ||
@@ -94,6 +96,7 @@ static size_t parse_row(const uint8_t *data, size_t left, row_t *row)
     row->fresh = fresh;
     row->project = project;
     row->minutes = minutes;
+    row->count = count;
     memcpy(row->name, data + ROWS_ROW_HEADER_SIZE, name_len);
     row->name[name_len] = '\0';
     return ROWS_ROW_HEADER_SIZE + name_len;
@@ -117,22 +120,33 @@ rows_kind_t rows_parse(const uint8_t *data, size_t len, rows_frame_t *out)
     }
     uint8_t total = data[1];
     uint8_t shown = data[2];
+    uint8_t urgent = data[4];
+    if (urgent > total) {
+        return ROWS_INVALID;
+    }
     if (data[3] & ROWS_HEARTBEAT_FLAG) {
         return len == ROWS_HEADER_SIZE && shown == 0 ? ROWS_HEARTBEAT : ROWS_INVALID;
     }
-    if (shown != (total < ROWS_MAX ? total : ROWS_MAX)) {
+    if (shown > ROWS_MAX || shown > total) {
         return ROWS_INVALID;
     }
-    rows_frame_t frame = {.total = total, .shown = shown};
+    rows_frame_t frame = {.total = total, .shown = shown, .urgent = urgent};
     size_t at = ROWS_HEADER_SIZE;
+    unsigned sessions = 0;
+    unsigned waiting = 0;
     for (int i = 0; i < shown; i++) {
+        const row_t *row = &frame.rows[i];
         size_t used = parse_row(data + at, len - at, &frame.rows[i]);
-        if (used == 0 || id_repeated(&frame, i, frame.rows[i].id)) {
+        if (used == 0 || id_repeated(&frame, i, row->id)) {
             return ROWS_INVALID;
         }
+        sessions += row->count;
+        waiting += row->state == ROW_WAITING || row->state == ROW_ERROR ? row->count : 0;
         at += used;
     }
-    if (at != len) {
+    bool all = shown < ROWS_MAX;
+    if (at != len || sessions > total || waiting > urgent || sessions - waiting > (unsigned)(total - urgent) ||
+        (all && (sessions != total || waiting != urgent))) {
         return ROWS_INVALID;
     }
     *out = frame;

@@ -46,6 +46,35 @@ const char *screen_age(uint16_t minutes, char *out, size_t size)
     return out;
 }
 
+const char *screen_more(const screen_t *screen, char *out, size_t size)
+{
+    unsigned sessions = 0;
+    unsigned waiting = 0;
+    for (int i = 0; i < screen->shown; i++) {
+        const row_t *row = &screen->rows[i];
+        sessions += row->count;
+        waiting += row->state == ROW_WAITING || row->state == ROW_ERROR ? row->count : 0;
+    }
+    if (screen->mode != SCREEN_ROWS || sessions >= screen->total) {
+        return NULL;
+    }
+    if (waiting < screen->urgent) {
+        snprintf(out, size, "还有%u个等你", screen->urgent - waiting);
+    } else {
+        snprintf(out, size, "+%u", screen->total - sessions);
+    }
+    return out;
+}
+
+const char *screen_counted(const char *word, uint8_t count, char *out, size_t size)
+{
+    if (count <= 1) {
+        return word;
+    }
+    snprintf(out, size, "%s ×%u", word, (unsigned)count);
+    return out;
+}
+
 const char *screen_alert_line(event_kind_t kind, int line)
 {
     return ALERT_LINES[kind == EVENT_ERROR][line != 0];
@@ -76,6 +105,7 @@ void screen_from_rows(screen_t *screen, const rows_table_t *table, int64_t now_u
     }
     screen->total = table->frame.total;
     screen->shown = table->frame.shown;
+    screen->urgent = table->frame.urgent;
     screen->mode = screen->total == 0 ? SCREEN_EMPTY : SCREEN_ROWS;
     for (int i = 0; i < screen->shown; i++) {
         screen->rows[i] = table->frame.rows[i];
@@ -284,6 +314,7 @@ static uint32_t slot_key(uint32_t base, const theme_t *theme, const screen_t *sc
     }
     key = hash_int(key, row->state);
     key = hash_int(key, row->project);
+    key = hash_int(key, row->count);
     key = dirty_hash_text(key, row->name);
     key = dirty_hash_text(key, age);
     return hash_int(key, theme->slot_phase(row->state, screen->tick));
@@ -297,7 +328,9 @@ int screen_regions(uint8_t theme_index, const screen_t *full, region_t *out)
     uint32_t base = hash_int(DIRTY_HASH_START, theme_index < SCREEN_THEME_COUNT ? theme_index : 0);
     int count = 0;
     uint32_t header = dirty_hash_text(base, "header");
-    header = hash_int(hash_int(hash_int(header, screen->mode), screen->total), screen->shown);
+    char more[SCREEN_MORE_MAX];
+    const char *shown_more = screen_more(screen, more, sizeof more);
+    header = dirty_hash_text(hash_int(header, screen->mode), shown_more != NULL ? shown_more : "");
     out[count++] = region(theme->header, header);
     if (screen->mode == SCREEN_ROWS && screen->event.kind != EVENT_HELLO) {
         int top = theme->header.y + theme->header.h;

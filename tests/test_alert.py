@@ -96,7 +96,7 @@ def test_bridge_events_on_card(case, card, bridge, run_dir):
     prompt(bridge, "w", "web")
     prompt(bridge, "e", "api")
     prompt(bridge, "d", "docs")
-    bridge.settle_rows([("running", "api"), ("running", "docs"), ("running", "web")])
+    bridge.settle_rows([("running", "web"), ("running", "api"), ("running", "docs")])
     frames_before = len(bridge.frames())
     time.sleep(CHEER_SHOWS_S)
     mark = card.mark()

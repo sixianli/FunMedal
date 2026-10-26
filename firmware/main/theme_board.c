@@ -78,11 +78,11 @@ static void draw_background(const band_t *band)
 static void draw_header(const band_t *band, const screen_t *screen, rect_t area)
 {
     draw_text(band, &font_text, TITLE, area.x + MARGIN, area.y, area.x + area.w - MARGIN, BOARD_WHITE);
-    if (screen->mode != SCREEN_ROWS || screen->total <= screen->shown) {
+    char text[SCREEN_MORE_MAX];
+    const char *more = screen_more(screen, text, sizeof text);
+    if (more == NULL) {
         return;
     }
-    char more[8];
-    snprintf(more, sizeof more, "+%u", (unsigned)(screen->total - screen->shown));
     int width = draw_text_width(&font_text, more, area.w);
     draw_text(band, &font_text, more, area.x + area.w - MARGIN - width, area.y, area.x + area.w, BOARD_WHITE);
 }
@@ -104,9 +104,10 @@ static uint32_t bar_fill(row_state_t state, uint32_t phase)
 static void draw_pill(const band_t *band, const row_t *row, rect_t bar, int *left)
 {
     char age[SCREEN_AGE_MAX];
+    char counted[SCREEN_COUNTED_MAX];
     const char *word = row->state == ROW_DONE && row->minutes != ROWS_HIDDEN_MINUTES
                            ? screen_age(row->minutes, age, sizeof age)
-                           : STATE_WORDS[row->state];
+                           : screen_counted(STATE_WORDS[row->state], row->count, counted, sizeof counted);
     bool dark = row->state == ROW_WAITING || row->state == ROW_ERROR;
     uint32_t text_rgb = row->state == ROW_WAITING ? BOARD_WAITING : row->state == ROW_ERROR ? BOARD_ERROR : BOARD_INK;
     int width = draw_text_width(&font_pixel, word, bar.w / 2) + 2 * PILL_PAD;

@@ -17,7 +17,7 @@ static void check(int ok, const char *what)
 
 static row_t row(uint8_t id, row_state_t state, bool fresh, const char *name)
 {
-    row_t r = {.id = id, .state = state, .fresh = fresh, .minutes = ROWS_HIDDEN_MINUTES};
+    row_t r = {.id = id, .state = state, .fresh = fresh, .minutes = ROWS_HIDDEN_MINUTES, .count = 1};
     snprintf(r.name, sizeof r.name, "%s", name);
     return r;
 }

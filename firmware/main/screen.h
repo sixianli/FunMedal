@@ -9,6 +9,8 @@
 
 #define SCREEN_THEME_COUNT 4
 #define SCREEN_AGE_MAX 24
+#define SCREEN_MORE_MAX 24
+#define SCREEN_COUNTED_MAX 24
 #define SCREEN_RISE_MS 50
 #define SCREEN_RISE_FRAMES 8
 
@@ -21,6 +23,8 @@ void screen_render(const theme_t *theme, const screen_t *screen, const band_t *b
 int screen_regions(uint8_t theme, const screen_t *screen, region_t *out);
 const char *screen_age(uint16_t minutes, char *out, size_t size);
 bool screen_rising(const screen_t *screen);
+const char *screen_more(const screen_t *screen, char *out, size_t size);
+const char *screen_counted(const char *word, uint8_t count, char *out, size_t size);
 const char *screen_alert_line(event_kind_t kind, int line);
 void screen_bold(const band_t *band, const font_t *font, const char *text, int x, int top, int max_x, uint32_t rgb);
 void screen_named(const band_t *band, const font_t *font, const char *name, const char *suffix, int x, int top,

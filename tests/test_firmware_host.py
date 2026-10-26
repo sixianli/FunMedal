@@ -62,7 +62,9 @@ def test_recorded_presses_replay(case, tmp_path):
 
 
 @pytest.mark.parametrize("case", ["[SC-3] the card accepts only well formed session tables and heartbeats, counts "
-                                  "the minutes of done rows itself and treats 90 silent seconds as a lost link"])
+                                  "the minutes of done rows itself and treats 90 silent seconds as a lost link",
+                                  "[SC-23] the card reads how many sessions each row holds and how many sessions wait, "
+                                  "and refuses counts that do not add up"])
 def test_rows_on_host(case, tmp_path):
     binary = tmp_path / "test_rows"
     build(ROOT / "tests" / "host" / "test_rows.c", binary, ROWS_SOURCES)
@@ -408,6 +410,40 @@ def test_project_badge_on_host(case, theme, blank_tools, screen_artifacts):
     assert gained >= 100, gained
     badge_x = min(x for x, y in changed if pixel(marked, x, y) == BADGE_ORANGE)
     assert badge_x < slot[0] + 30, badge_x
+
+
+@pytest.mark.parametrize("case, theme, label, project", [
+    (f"[SC-23] in the {name} theme a row that holds three sessions draws its count inside its own slot only, "
+     f"also when {what}", theme, label, project)
+    for theme, name in enumerate(("board", "arcade", "comic", "tower"))
+    for what, label, project in (("the name is short", "FunMedal", False),
+                                 ("a long name with the project sticker is cut short", SIX_ROWS[5][2], True))
+])
+def test_merged_count_on_host(case, theme, label, project, blank_tools, screen_artifacts):
+    single = [("waiting", "-", label, project, 1), ("error", "-", "hermes")]
+    merged = [("waiting", "-", label, project, 3), ("error", "-", "hermes")]
+    tag = f"{theme}-{'long' if project else 'short'}"
+    one = render_screen(blank_tools, screen_artifacts, f"count-{tag}-1", rows=single, theme=theme)["rgb"]
+    three = render_screen(blank_tools, screen_artifacts, f"count-{tag}-3", rows=merged, theme=theme)["rgb"]
+    slot = slot_of(theme, 0)
+    changed = changed_pixels(one, three)
+    assert changed and inside(changed, slot), (slot, changed[:10])
+
+
+@pytest.mark.parametrize("case, theme", [
+    (f"[SC-23] in the {name} theme the header says how many waiting or failed sessions are not shown in place of "
+     f"the plain +N, and draws nothing outside the header", theme)
+    for theme, name in enumerate(("board", "arcade", "comic", "tower"))
+])
+def test_header_counts_hidden_urgent_on_host(case, theme, blank_tools, screen_artifacts):
+    rows = SIX_ROWS[:3]
+    plain = render_screen(blank_tools, screen_artifacts, f"more-{theme}-plain", rows=rows, total=9, urgent=2,
+                          theme=theme)["rgb"]
+    urgent = render_screen(blank_tools, screen_artifacts, f"more-{theme}-urgent", rows=rows, total=9, urgent=5,
+                           theme=theme)["rgb"]
+    changed = changed_pixels(plain, urgent)
+    assert changed and all(y < 24 for _, y in changed), changed[:10]
+    assert min(x for x, _ in changed) < W - 60, min(x for x, _ in changed)
 
 
 @pytest.mark.parametrize("case", ["[SC-5] fresh rows start one alert per table, an error wins over waiting, a new "

@@ -36,6 +36,7 @@ static void add(scene_t *scene, row_state_t state, uint16_t minutes, const char 
 {
     row_t *row = &scene->screen.rows[scene->screen.shown++];
     row->id = (uint8_t)scene->screen.shown;
+    row->count = 1;
     row->state = state;
     row->minutes = state == ROW_DONE ? minutes : ROWS_HIDDEN_MINUTES;
     snprintf(row->name, sizeof(row->name), "%s", name);

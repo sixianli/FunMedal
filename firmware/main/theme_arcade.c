@@ -99,9 +99,9 @@ static void scanlines(const band_t *band, rect_t area)
 static void draw_header(const band_t *band, const screen_t *screen, rect_t area)
 {
     draw_text(band, &font_pixel, TITLE, area.x + MARGIN, area.y + TEXT_TOP, area.x + area.w - MARGIN, ARCADE_YELLOW);
-    if (screen->mode == SCREEN_ROWS && screen->total > screen->shown) {
-        char more[8];
-        snprintf(more, sizeof more, "+%u", (unsigned)(screen->total - screen->shown));
+    char text[SCREEN_MORE_MAX];
+    const char *more = screen_more(screen, text, sizeof text);
+    if (more != NULL) {
         int width = draw_text_width(&font_pixel, more, area.w);
         draw_text(band, &font_pixel, more, area.x + area.w - MARGIN - width, area.y + TEXT_TOP, area.x + area.w,
                   ARCADE_YELLOW);
@@ -160,7 +160,8 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     if (row->state == ROW_DONE && row->minutes != ROWS_HIDDEN_MINUTES) {
         snprintf(word, sizeof word, "%s %s", STATE_WORDS[ROW_DONE], screen_age(row->minutes, age, sizeof age));
     } else {
-        snprintf(word, sizeof word, "%s", STATE_WORDS[row->state]);
+        char counted[SCREEN_COUNTED_MAX];
+        snprintf(word, sizeof word, "%s", screen_counted(STATE_WORDS[row->state], row->count, counted, sizeof counted));
     }
     int top = area.y + (area.h - font_pixel.line_height) / 2;
     int right = (row->state == ROW_RUNNING ? RIGHT_EDGE - DOTS_W - DOTS_GAP : RIGHT_EDGE) + dx;

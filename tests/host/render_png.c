@@ -138,6 +138,7 @@ static bool read_scene(const char *path, scene_t *scene)
         unsigned value;
         char minutes[16];
         char mark[2];
+        unsigned count;
         int used = 0;
         if (line[0] == 0) {
             continue;
@@ -156,19 +157,22 @@ static bool read_scene(const char *path, scene_t *scene)
             ok = events_kind(word, &event->kind);
             event->ms = value;
             snprintf(event->name, sizeof event->name, "%s", line + used);
+        } else if (sscanf(line, "urgent %u", &value) == 1) {
+            scene->screen.urgent = (uint8_t)value;
         } else if (sscanf(line, "total %u", &value) == 1) {
             scene->screen.total = (uint8_t)value;
         } else if (sscanf(line, "mode %15s", word) == 1) {
             scene->screen.mode = strcmp(word, "rows") == 0    ? SCREEN_ROWS
                                  : strcmp(word, "empty") == 0 ? SCREEN_EMPTY
                                                               : SCREEN_UNLINKED;
-        } else if (sscanf(line, "row %15s %15s %1s %n", word, minutes, mark, &used) == 3 && used > 0 &&
+        } else if (sscanf(line, "row %15s %15s %1s %u %n", word, minutes, mark, &count, &used) == 4 && used > 0 &&
                    scene->screen.shown < ROWS_MAX) {
             row_t *row = &scene->screen.rows[scene->screen.shown];
             ok = state_from(word, &row->state) && (strcmp(mark, "p") == 0 || strcmp(mark, "-") == 0);
             row->id = (uint8_t)(scene->screen.shown + 1);
             row->minutes = strcmp(minutes, "-") == 0 ? ROWS_HIDDEN_MINUTES : (uint16_t)atoi(minutes);
             row->project = strcmp(mark, "p") == 0;
+            row->count = (uint8_t)count;
             snprintf(row->name, sizeof row->name, "%s", line + used);
             scene->screen.shown++;
         } else {

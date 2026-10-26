@@ -23,7 +23,7 @@ PID_GONE_WITHIN_S = 15.0
 HEARTBEAT_EVERY_S = 30.0
 SILENCE_S = 90.0
 SILENCE_CHECK_S = 2.0
-FRAME_MAX = 226
+FRAME_MAX = 233
 NAME_MAX = 32
 TICK_US = 100_000
 BENCH_RUNS = 5
@@ -166,7 +166,7 @@ def test_waiting_and_error(case, card, bridge, run_dir):
     bridge.start()
     for session, project in (("w", "web"), ("x", "api"), ("y", "app")):
         prompt(bridge, session, project)
-    bridge.settle_rows([("running", "api"), ("running", "app"), ("running", "web")])
+    bridge.settle_rows([("running", "web"), ("running", "api"), ("running", "app")])
     steps = {}
     bridge.hook(event("Notification", "w", notification_type="permission_prompt", message="needs network"),
                 project="web")
@@ -179,9 +179,9 @@ def test_waiting_and_error(case, card, bridge, run_dir):
     bridge.hook(event("PreToolUse", "x", tool_use_id="t2", **bash("ls")), project="api")
     steps["plan_still"] = bridge.settle_rows([("waiting", "api"), ("running", "app"), ("running", "web")])
     bridge.hook(event("PostToolUse", "x", tool_use_id="plan1", tool_response={}, **plan), project="api")
-    steps["plan_cleared"] = bridge.settle_rows([("running", "api"), ("running", "app"), ("running", "web")])
+    steps["plan_cleared"] = bridge.settle_rows([("running", "app"), ("running", "web"), ("running", "api")])
     bridge.hook(event("StopFailure", "y", error="rate_limit"), project="app")
-    steps["error"] = bridge.settle_rows([("error", "app"), ("running", "api"), ("running", "web")])
+    steps["error"] = bridge.settle_rows([("error", "app"), ("running", "web"), ("running", "api")])
     run = bridge.hook_async(event("PermissionRequest", "w", **bash("make deploy")), project="web")
     steps["permission"] = bridge.settle_rows([("waiting", "web"), ("error", "app"), ("running", "api")])
     bridge.hook(event("PreToolUse", "x", tool_use_id="t3", **bash("ls")), project="api")
@@ -266,8 +266,9 @@ def test_twenty_requests(case, card, bridge, run_dir):
     assert released["waits"] == [] and released["total"] == 20, released
 
 
-@pytest.mark.parametrize("case", ["[SC-6] seven sessions show six rows ordered waiting, error, running, done and by "
-                                  "project name, and the one left out is running or done"])
+@pytest.mark.parametrize("case", ["[SC-6][SC-23] seven sessions show six rows ordered waiting, error, running, done; "
+                                  "the longest waiting and the earliest running come first, the latest done comes "
+                                  "first, and the one left out is the done row that finished first"])
 def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
     bridge.start()
     for session in ("r1", "r2", "d1", "d2", "e1", "w1", "w2"):
@@ -276,10 +277,12 @@ def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
     bridge.hook(event("Stop", "d1", stop_hook_active=False), project="alpha")
     bridge.hook(event("Stop", "d2", stop_hook_active=False), project="omega")
     bridge.hook(event("StopFailure", "e1", error="server_error"), project="eta")
-    runs = [bridge.hook_async(event("PermissionRequest", s, **bash("x")), project=p) for s, p in (("w1", "zz"),
-                                                                                                    ("w2", "aa"))]
-    status = bridge.settle_rows([("waiting", "aa"), ("waiting", "zz"), ("error", "eta"), ("running", "Beta"),
-                                 ("running", "zeta"), ("done", "alpha")], total=7)
+    runs = [bridge.hook_async(event("PermissionRequest", "w1", **bash("x")), project="zz")]
+    bridge.settle_rows([("waiting", "zz"), ("error", "eta"), ("running", "zeta"), ("running", "Beta"),
+                        ("running", "aa"), ("done", "omega")], total=7)
+    runs.append(bridge.hook_async(event("PermissionRequest", "w2", **bash("x")), project="aa"))
+    status = bridge.settle_rows([("waiting", "zz"), ("waiting", "aa"), ("error", "eta"), ("running", "zeta"),
+                                 ("running", "Beta"), ("done", "omega")], total=7)
     wait_quiet(card)
     on_card = card_rows(card)
     screen = compare_screen(card, screen_tools, run_dir, "seven", *scene_of(on_card), quiet=True)
@@ -290,7 +293,99 @@ def test_seven_sessions(case, card, bridge, run_dir, screen_tools):
     assert screen["differing_pixels"] == 0, screen
     assert frame["total"] == 7 and frame["shown"] == 6, frame
     assert on_card["reply"]["total"] == "7" and len(on_card["rows"]) == 6, on_card
-    assert "omega" not in [r["name"] for r in on_card["rows"]], on_card
+    assert "alpha" not in [r["name"] for r in on_card["rows"]], on_card
+
+
+def wait_on(bridge, session, project):
+    run = bridge.hook_async(event("PermissionRequest", session, **bash("x")), project=project)
+    wait_until(lambda: (s := bridge.status()) and s["sessions"][session]["state"] == "waiting" and s, 5.0,
+               f"{session} waiting")
+    return run
+
+
+def screen_in(card, screen_tools, run_dir, theme, name):
+    mark = card.mark()
+    assert card.request(f"theme {theme}") == f"OK theme {theme}"
+    card.wait_for(lambda line, n=theme: line == f"THEME {n}", 5.0, mark)
+    wait_quiet(card)
+    return compare_screen(card, screen_tools, run_dir, f"{name}-theme-{theme}", *scene_of(card_rows(card)), quiet=True)
+
+
+@pytest.mark.parametrize("case", ["[SC-23] with more than five sessions waiting or failed the sessions of one project "
+                                  "in one state share a row with their count, the card draws the count byte for byte "
+                                  "as the host in the board and a grid theme, and every session is still counted"])
+def test_merged_rows(case, card, bridge, run_dir, screen_tools):
+    waiting = [("f1", "FunMedal"), ("f2", "FunMedal"), ("f3", "FunMedal"), ("s1", "SiBlog"), ("s2", "SiBlog"),
+               ("a1", "agent-skills"), ("a2", "agent-skills")]
+    bridge.start()
+    for session, project in waiting + [("h", "hermes"), ("r", "shop"), ("n", "notes")]:
+        prompt(bridge, session, project)
+    bridge.hook(event("Stop", "n", stop_hook_active=False), project="notes")
+    bridge.hook(event("StopFailure", "h", error="server_error"), project="hermes")
+    runs = []
+    screens = []
+    try:
+        for session, project in waiting:
+            runs.append(wait_on(bridge, session, project))
+        status = bridge.settle_rows([("waiting", "FunMedal"), ("waiting", "SiBlog"), ("waiting", "agent-skills"),
+                                     ("error", "hermes"), ("running", "shop"), ("done", "notes")], total=10)
+        frame = bridge.frames()[-1]
+        on_card = card_rows(card)
+        for theme in (0, 2):
+            screens.append(screen_in(card, screen_tools, run_dir, theme, "merged"))
+    finally:
+        for run in runs:
+            run.stop()
+        card.request("theme 0")
+    write_summary(run_dir, {"status": status, "frame": frame, "card": on_card, "screens": screens})
+    assert [s["differing_pixels"] for s in screens] == [0, 0], screens
+    assert (frame["total"], frame["urgent"], frame["shown"]) == (10, 8, 6), frame
+    assert [r["count"] for r in frame["rows"]] == [3, 2, 2, 1, 1, 1], frame
+    assert [r["count"] for r in status["rows"]] == [3, 2, 2, 1, 1, 1], status
+    assert [(r["state"], r["name"], r["count"]) for r in on_card["rows"]] == [
+        ("waiting", "FunMedal", 3), ("waiting", "SiBlog", 2), ("waiting", "agent-skills", 2), ("error", "hermes", 1),
+        ("running", "shop", 1), ("done", "notes", 1)], on_card
+    assert (on_card["reply"]["total"], on_card["reply"]["urgent"]) == ("10", "8"), on_card
+    assert status["rows"][0]["row"] == status["sessions"]["f1"]["row"], status
+
+
+@pytest.mark.parametrize("case", ["[SC-23] when seven different projects wait one after another the seventh, which "
+                                  "does not fit, is still sent flagged and alerts on the card, and afterwards the six "
+                                  "longest waiting stay on screen while the header counts the one left out"])
+def test_squeezed_waiting_alerts(case, card, bridge, run_dir, screen_tools):
+    projects = [f"p{i}" for i in range(1, 8)]
+    bridge.start()
+    for project in projects:
+        prompt(bridge, project, project)
+    runs = []
+    screens = []
+    try:
+        for project in projects[:6]:
+            runs.append(wait_on(bridge, project, project))
+        bridge.settle_rows([("waiting", p) for p in projects[:6]], total=7)
+        frames_before = len(bridge.frames())
+        wait_quiet(card)
+        mark = card.mark()
+        runs.append(wait_on(bridge, "p7", "p7"))
+        _, _, alert = card.wait_for(lambda line: line.startswith("EVENT "), SHOW_WITHIN_S + 2.0, mark)
+        status = bridge.settle_rows([("waiting", p) for p in projects[:6]], total=7)
+        frames = bridge.frames()[frames_before:]
+        on_card = card_rows(card)
+        for theme in (0, 2):
+            screens.append(screen_in(card, screen_tools, run_dir, theme, "squeezed"))
+    finally:
+        for run in runs:
+            run.stop()
+        card.request("theme 0")
+    flagged = [r["name"] for f in frames for r in f["rows"] if r["fresh"]]
+    write_summary(run_dir, {"alert": alert, "frames": frames, "flagged": flagged, "status": status, "card": on_card,
+                            "screens": screens})
+    assert alert == "EVENT wait p7", alert
+    assert flagged == ["p7"], flagged
+    assert [r["name"] for r in on_card["rows"]] == projects[:6], on_card
+    assert (on_card["reply"]["total"], on_card["reply"]["urgent"]) == ("7", "7"), on_card
+    assert (status["total"], status["urgent"]) == (7, 7), status
+    assert [s["differing_pixels"] for s in screens] == [0, 0], screens
 
 
 def press_middle_key(card):
@@ -362,9 +457,9 @@ def test_draw_speed(case, card, bridge, run_dir):
     bridge.hook(event("StopFailure", "e", error="server_error"), project="eta")
     run = bridge.hook_async(event("PermissionRequest", "w", **bash("x")), project="waiting-project")
     try:
-        bridge.settle_rows([("waiting", "waiting-project"), ("error", "eta"), ("running", "Beta"),
-                            ("running", "zeta-a-rather-long-project-nm"), ("done", "alpha"),
-                            ("done", "omega")], total=6)
+        bridge.settle_rows([("waiting", "waiting-project"), ("error", "eta"),
+                            ("running", "zeta-a-rather-long-project-nm"), ("running", "Beta"), ("done", "omega"),
+                            ("done", "alpha")], total=6)
         on_card = card_rows(card)
         before = info_fields(card.request("info"))
         time.sleep(ANIMATION_WATCH_S)
@@ -443,7 +538,7 @@ def test_done_minutes_and_bytes(case, card, run_dir):
         bridge.forget()
     cut = "项目" * 5
     write_summary(run_dir, {"status": status, "frame": frame, "raw": raw, "card": on_card})
-    assert raw == ("01020200" + "0803ffff03" + b"run".hex() + "07043d00" + f"{len(cut.encode()):02x}"
+    assert raw == ("0202020000" + "0803ffff0103" + b"run".hex() + "07043d0001" + f"{len(cut.encode()):02x}"
                    + cut.encode().hex()), raw
     assert frame["rows"][1]["minutes"] == 61 and frame["rows"][0]["minutes"] == HIDDEN_MINUTES, frame
     assert [(r["row"], r["minutes"], r["name"]) for r in on_card["rows"]] == [(8, None, "run"), (7, 61, cut)], on_card
@@ -464,13 +559,13 @@ def test_empty_and_quit(case, card, bridge, run_dir, screen_tools):
     gone = compare_screen(card, screen_tools, run_dir, "unlinked", *scene_of(unlinked), quiet=True)
     write_summary(run_dir, {"frame": frame, "linked": linked, "unlinked": unlinked, "writes": rows_writes(card, mark),
                             "screens": [empty, gone]})
-    assert frame == {"bytes": 4, "format": 1, "total": 0, "shown": 0, "flags": 0, "rows": []}, frame
-    assert linked["reply"] == {"total": "0", "shown": "0", "linked": "1"}, linked
+    assert frame == {"bytes": 5, "format": 2, "total": 0, "shown": 0, "flags": 0, "urgent": 0, "rows": []}, frame
+    assert linked["reply"] == {"total": "0", "shown": "0", "urgent": "0", "linked": "1"}, linked
     assert (empty["meta"]["mode"], empty["differing_pixels"]) == ("empty", 0), empty
     assert (gone["meta"]["mode"], gone["differing_pixels"]) == ("unlinked", 0), gone
 
 
-@pytest.mark.parametrize("case", ["[SC-10] the bridge writes the table only when it changes and a four byte heartbeat "
+@pytest.mark.parametrize("case", ["[SC-10] the bridge writes the table only when it changes and a five byte heartbeat "
                                   "every 30 seconds"])
 def test_only_changes_and_heartbeat(case, card, bridge, run_dir):
     bridge.start()
@@ -490,8 +585,8 @@ def test_only_changes_and_heartbeat(case, card, bridge, run_dir):
     write_summary(run_dir, summary)
     assert summary["tables_after"] == tables, summary
     assert HEARTBEAT_EVERY_S - 5.0 <= summary["beat_gap_s"] <= HEARTBEAT_EVERY_S + 5.0, summary
-    assert beats and beats[0] == {"bytes": 4, "format": 1, "total": 1, "shown": 0, "flags": HEARTBEAT_FLAG,
-                                  "rows": []}, summary
+    assert beats and beats[0] == {"bytes": 5, "format": 2, "total": 1, "shown": 0, "flags": HEARTBEAT_FLAG,
+                                  "urgent": 0, "rows": []}, summary
     assert summary["status"]["heartbeats"] >= 2, summary
 
 

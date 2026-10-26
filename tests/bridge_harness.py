@@ -240,16 +240,17 @@ def shown_rows(status):
 
 def decode_frame(text):
     data = bytes.fromhex(text)
-    frame = {"bytes": len(data), "format": data[0], "total": data[1], "shown": data[2], "flags": data[3], "rows": []}
-    at = 4
+    frame = {"bytes": len(data), "format": data[0], "total": data[1], "shown": data[2], "flags": data[3],
+             "urgent": data[4], "rows": []}
+    at = 5
     for _ in range(data[2]):
-        size = data[at + 4]
+        size = data[at + 5]
         state = data[at + 1]
         frame["rows"].append({"row": data[at], "state": ROW_STATES[state & 0x0f], "fresh": bool(state & FRESH_BIT),
                               "project_thread": bool(state & PROJECT_BIT),
                               "minutes": int.from_bytes(data[at + 2:at + 4], "little"),
-                              "name": data[at + 5:at + 5 + size].decode("utf-8")})
-        at += 5 + size
+                              "count": data[at + 4], "name": data[at + 6:at + 6 + size].decode("utf-8")})
+        at += 6 + size
     assert at == len(data), (text, at)
     return frame
 
@@ -260,9 +261,9 @@ def card_rows(card):
     rows = []
     for _, line in card.since(start):
         if line.startswith("ROW "):
-            _, row, state, minutes, mark, name = line.split(" ", 5)
+            _, row, state, minutes, mark, count, name = line.split(" ", 6)
             rows.append({"row": int(row), "state": state, "minutes": None if minutes == "-" else int(minutes),
-                         "project_thread": mark == "p", "name": name})
+                         "project_thread": mark == "p", "count": int(count), "name": name})
     return {"reply": info_fields(reply), "rows": rows}
 
 

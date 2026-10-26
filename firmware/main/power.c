@@ -54,13 +54,14 @@ power_change_t power_check(power_t *power, bool usb, bool busy, int64_t now_us)
 
 bool power_rows_differ(const rows_frame_t *before, const rows_frame_t *after)
 {
-    if (before->total != after->total || before->shown != after->shown) {
+    if (before->total != after->total || before->shown != after->shown || before->urgent != after->urgent) {
         return true;
     }
     for (int i = 0; i < after->shown; i++) {
         const row_t *a = &before->rows[i];
         const row_t *b = &after->rows[i];
-        if (a->id != b->id || a->state != b->state || a->project != b->project || strcmp(a->name, b->name) != 0) {
+        if (a->id != b->id || a->state != b->state || a->project != b->project || a->count != b->count ||
+            strcmp(a->name, b->name) != 0) {
             return true;
         }
     }

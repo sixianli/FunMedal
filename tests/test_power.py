@@ -41,7 +41,7 @@ def test_dark_and_wake_on_card(case, card, bridge, run_dir):
         card.wait_for(lambda line: line.startswith("EVENT hello"), 5.0, mark)
         prompt(bridge, "w", "web")
         prompt(bridge, "d", "docs")
-        bridge.settle_rows([("running", "docs"), ("running", "web")])
+        bridge.settle_rows([("running", "web"), ("running", "docs")])
         time.sleep(HELLO_SHOWS_S)
         assert power(card)["screen"] == "on"
         assert card.request("power battery on") == "OK power battery on"

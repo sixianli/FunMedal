@@ -52,15 +52,22 @@ def screen_tools(tmp_path_factory):
     return tools
 
 
-def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0, daily=None, event=None):
-    lines = [f"theme {theme}", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
+def row_count(row):
+    return row[4] if len(row) > 4 else 1
+
+
+def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0, daily=None, event=None,
+           urgent=None):
+    if urgent is None:
+        urgent = sum(row_count(r) for r in rows if r[0] in ("waiting", "error"))
+    lines = [f"theme {theme}", f"tick {tick}", f"mode {mode}",
+             f"total {sum(row_count(r) for r in rows) if total is None else total}", f"urgent {urgent}"]
     if daily is not None:
         lines.append(f"daily {daily}")
     if event is not None:
         kind, ms, title = event
         lines.append(f"event {kind} {ms} {title}")
-    lines += [f"row {state} {minutes} {'p' if any(project) else '-'} {title}"
-              for state, minutes, title, *project in rows]
+    lines += [f"row {r[0]} {r[1]} {'p' if len(r) > 3 and r[3] else '-'} {row_count(r)} {r[2]}" for r in rows]
     scene = tools / f"{name}.txt"
     scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
     png, rgb, wire = out_dir / f"{name}.png", tools / f"{name}.rgb", tools / f"{name}.wire"
@@ -82,9 +89,9 @@ def scene_of(on_card):
     reply = on_card["reply"]
     if reply["linked"] == "0":
         return "unlinked", [], 0
-    rows = [(r["state"], "-" if r["minutes"] is None else str(r["minutes"]), r["name"], r["project_thread"])
+    rows = [(r["state"], "-" if r["minutes"] is None else str(r["minutes"]), r["name"], r["project_thread"], r["count"])
             for r in on_card["rows"]]
-    return ("empty" if reply["total"] == "0" else "rows"), rows, int(reply["total"])
+    return ("empty" if reply["total"] == "0" else "rows"), rows, int(reply["total"]), int(reply["urgent"])
 
 
 def wait_quiet(card):
@@ -94,7 +101,7 @@ def wait_quiet(card):
         time.sleep(QUIET_POLL_S)
 
 
-def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0, quiet=False):
+def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0, urgent=0, quiet=False):
     meta, width, height, data = card.snapshot()
     assert not quiet or meta["event"] == "none", meta
     assert (width, height) == (W, H)
@@ -103,7 +110,7 @@ def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0, quiet=Fal
     if meta["event"] != "none":
         event = (meta["event"], int(meta["event_ms"]), bytes.fromhex(meta["event_name"]).decode("utf-8"))
     host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]),
-                  int(meta["daily"]), event)
+                  int(meta["daily"]), event, urgent)
     assert meta["assets"] == host["assets"], (meta["assets"], host["assets"])
     differing = sum(1 for i in range(0, len(data), 2) if data[i:i + 2] != host["wire"][i:i + 2])
     return {"meta": meta, "theme": int(meta["theme"]), "assets": meta["assets"], "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing,

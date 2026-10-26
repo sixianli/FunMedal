@@ -95,11 +95,11 @@ static void draw_header(const band_t *band, const screen_t *screen, rect_t area)
 {
     draw_text(band, &font_pixel, TITLE, area.x + MARGIN, area.y + TEXT_TOP, area.x + area.w - MARGIN, TOWER_TITLE);
     draw_fill(band, (rect_t){area.x, area.y + RULE_Y, area.w, 1}, TOWER_LINE);
-    if (screen->mode != SCREEN_ROWS || screen->total <= screen->shown) {
+    char text[SCREEN_MORE_MAX];
+    const char *more = screen_more(screen, text, sizeof text);
+    if (more == NULL) {
         return;
     }
-    char more[8];
-    snprintf(more, sizeof more, "+%u", (unsigned)(screen->total - screen->shown));
     int width = draw_text_width(&font_pixel, more, area.w);
     draw_text(band, &font_pixel, more, area.x + area.w - MARGIN - width, area.y + TEXT_TOP, area.x + area.w,
               TOWER_TITLE);
@@ -184,9 +184,10 @@ static void draw_slot(const band_t *band, const row_t *row, rect_t area, uint32_
     rect_t lamp = {area.x + (area.w - LAMP) / 2, area.y + LAMP_TOP, LAMP, LAMP};
     draw_lamp(band, row->state, lamp, phase);
     char age[SCREEN_AGE_MAX];
+    char counted[SCREEN_COUNTED_MAX];
     const char *word = row->state == ROW_DONE && row->minutes != ROWS_HIDDEN_MINUTES
                            ? screen_age(row->minutes, age, sizeof age)
-                           : STATE_WORDS[row->state];
+                           : screen_counted(STATE_WORDS[row->state], row->count, counted, sizeof counted);
     uint32_t text_rgb = row->state == ROW_ERROR ? TOWER_RED_TEXT : lamp_colour(row->state);
     draw_centered(band, &font_pixel, word, area, area.y + STATE_TOP, text_rgb);
 }

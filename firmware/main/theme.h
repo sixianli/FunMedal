@@ -32,6 +32,7 @@ typedef struct {
     screen_mode_t mode;
     uint8_t total;
     uint8_t shown;
+    uint8_t urgent;
     row_t rows[ROWS_MAX];
     uint32_t tick;
     uint32_t daily;
