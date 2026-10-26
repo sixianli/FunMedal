@@ -4,6 +4,7 @@
 
 #include "character.h"
 #include "draw.h"
+#include "events.h"
 #include "rows.h"
 
 #define THEME_SLOTS ROWS_MAX
@@ -33,7 +34,14 @@ typedef struct {
     uint8_t shown;
     row_t rows[ROWS_MAX];
     uint32_t tick;
+    uint32_t daily;
+    event_view_t event;
 } screen_t;
+
+typedef struct {
+    rect_t area;
+    character_stage_t stage;
+} theme_event_t;
 
 typedef struct {
     rect_t header;
@@ -45,6 +53,9 @@ typedef struct {
     const font_t *hint_font;
     int hint_top;
     character_colors_t character;
+    theme_event_t alert;
+    rect_t cheer;
+    character_stage_t hello;
     void (*draw_background)(const band_t *band);
     void (*draw_header)(const band_t *band, const screen_t *screen, rect_t area);
     void (*draw_slot)(const band_t *band, const row_t *row, rect_t area, uint32_t phase);
@@ -52,6 +63,9 @@ typedef struct {
     void (*draw_home)(const band_t *band, rect_t area);
     void (*draw_message)(const band_t *band, screen_mode_t mode, rect_t area);
     void (*draw_footer)(const band_t *band, const screen_t *screen, rect_t area);
+    void (*draw_alert)(const band_t *band, event_kind_t kind, const char *name, rect_t area);
+    void (*draw_cheer)(const band_t *band, const char *name, rect_t area);
+    void (*draw_hello)(const band_t *band, rect_t area);
     uint32_t (*slot_phase)(row_state_t state, uint32_t tick);
     uint32_t (*footer_phase)(uint32_t tick);
 } theme_t;

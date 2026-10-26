@@ -8,6 +8,11 @@
 #define ROWS_ROOM_GAP 3
 #define HINT_ROOM_GAP 6
 
+static const char *const ALERT_LINES[2][2] = {
+    {"爸爸快看一下，", "需要你去做决定"},
+    {"爸爸快看一下，", "出问题了"},
+};
+
 static const character_size_t GROWING[] = {CHARACTER_HOME_200, CHARACTER_HOME_145, CHARACTER_HOME_112};
 
 static const theme_t *const THEMES[SCREEN_THEME_COUNT] = {&theme_board, &theme_arcade, &theme_comic, &theme_tower};
@@ -41,10 +46,30 @@ const char *screen_age(uint16_t minutes, char *out, size_t size)
     return out;
 }
 
+const char *screen_alert_line(event_kind_t kind, int line)
+{
+    return ALERT_LINES[kind == EVENT_ERROR][line != 0];
+}
+
+void screen_bold(const band_t *band, const font_t *font, const char *text, int x, int top, int max_x, uint32_t rgb)
+{
+    draw_text(band, font, text, x, top, max_x, rgb);
+    draw_text(band, font, text, x + 1, top, max_x + 1, rgb);
+}
+
+void screen_named(const band_t *band, const font_t *font, const char *name, const char *suffix, int x, int top,
+                  int max_x, uint32_t rgb)
+{
+    int suffix_w = draw_text_width(font, suffix, max_x - x);
+    int end = draw_text(band, font, name, x, top, max_x - suffix_w, rgb);
+    draw_text(band, font, suffix, end, top, max_x, rgb);
+}
+
 void screen_from_rows(screen_t *screen, const rows_table_t *table, int64_t now_us, uint32_t tick)
 {
     memset(screen, 0, sizeof *screen);
     screen->tick = tick;
+    screen->daily = tick;
     if (!table->linked || !table->has_table) {
         screen->mode = SCREEN_UNLINKED;
         return;
@@ -149,13 +174,54 @@ character_stage_t screen_character_stage(const theme_t *theme, const screen_t *f
     return stage;
 }
 
+static bool alerting(const screen_t *screen)
+{
+    return screen->event.kind == EVENT_WAIT || screen->event.kind == EVENT_ERROR;
+}
+
+static uint32_t rise_frame(const screen_t *screen)
+{
+    uint32_t frame = screen->event.ms / SCREEN_RISE_MS;
+    return frame < SCREEN_RISE_FRAMES ? frame : SCREEN_RISE_FRAMES;
+}
+
+bool screen_rising(const screen_t *screen)
+{
+    return alerting(screen) && rise_frame(screen) < SCREEN_RISE_FRAMES;
+}
+
+static character_stage_t alert_stage(const theme_t *theme, const screen_t *screen)
+{
+    character_stage_t stage = theme->alert.stage;
+    stage.box.y += (int)(SCREEN_RISE_FRAMES - rise_frame(screen)) * stage.box.h / SCREEN_RISE_FRAMES;
+    return stage;
+}
+
+static character_frame_t pose(uint8_t which)
+{
+    return (character_frame_t){which, CHARACTER_EXTRA_NONE, 0};
+}
+
+static character_frame_t home_frame(const screen_t *screen)
+{
+    return screen->event.kind == EVENT_CHEER ? pose(CHARACTER_CHEER) : character_frame(screen->daily);
+}
+
+static character_frame_t alert_frame(const screen_t *screen)
+{
+    return pose(screen->event.kind == EVENT_ERROR ? CHARACTER_WORRY : CHARACTER_CALL);
+}
+
 void screen_render(const theme_t *theme, const screen_t *full, const band_t *band)
 {
     screen_t fitted = fit(theme, full);
     const screen_t *screen = &fitted;
+    const event_view_t *event = &screen->event;
     theme->draw_background(band);
     theme->draw_header(band, screen, theme->header);
-    if (screen->mode == SCREEN_ROWS) {
+    if (event->kind == EVENT_HELLO) {
+        theme->draw_hello(band, theme->body);
+    } else if (screen->mode == SCREEN_ROWS) {
         int home = grid_theme(theme) ? home_first_slot(screen) : THEME_SLOTS;
         for (int i = 0; i < THEME_SLOTS; i++) {
             const row_t *row = &screen->rows[i];
@@ -171,8 +237,20 @@ void screen_render(const theme_t *theme, const screen_t *full, const band_t *ban
         theme->draw_message(band, screen->mode, theme->body);
     }
     theme->draw_footer(band, screen, theme->footer);
+    if (event->kind == EVENT_CHEER) {
+        theme->draw_cheer(band, event->name, theme->cheer);
+    }
+    if (event->kind == EVENT_HELLO) {
+        character_draw(band, &theme->hello, pose(CHARACTER_WAVE), theme->character);
+        return;
+    }
     character_stage_t stage = screen_character_stage(theme, screen);
-    character_draw(band, &stage, character_frame(screen->tick), theme->character);
+    character_draw(band, &stage, home_frame(screen), theme->character);
+    if (alerting(screen)) {
+        theme->draw_alert(band, event->kind, event->name, theme->alert.area);
+        character_stage_t rising = alert_stage(theme, screen);
+        character_draw(band, &rising, alert_frame(screen), theme->character);
+    }
 }
 
 static uint32_t hash_int(uint32_t hash, uint32_t value)
@@ -221,7 +299,7 @@ int screen_regions(uint8_t theme_index, const screen_t *full, region_t *out)
     uint32_t header = dirty_hash_text(base, "header");
     header = hash_int(hash_int(hash_int(header, screen->mode), screen->total), screen->shown);
     out[count++] = region(theme->header, header);
-    if (screen->mode == SCREEN_ROWS) {
+    if (screen->mode == SCREEN_ROWS && screen->event.kind != EVENT_HELLO) {
         int top = theme->header.y + theme->header.h;
         for (int i = 0; i < THEME_SLOTS;) {
             int y = theme->slots[i].y;
@@ -243,12 +321,20 @@ int screen_regions(uint8_t theme_index, const screen_t *full, region_t *out)
     out[count++] = region(theme->footer, footer);
     character_stage_t stage = screen_character_stage(theme, screen);
     rect_t bounds = character_bounds(&stage);
-    uint32_t character = hash_int(hash_int(character_frame_key(character_frame(screen->tick)), (uint32_t)bounds.x),
+    uint32_t character = hash_int(hash_int(character_frame_key(home_frame(screen)), (uint32_t)bounds.x),
                                   (uint32_t)bounds.y);
     character = hash_int(character, stage.size);
+    rect_t rise = theme->alert.stage.clip;
+    uint32_t event = dirty_hash_text(hash_int(dirty_hash_text(base, "event"), screen->event.kind), screen->event.name);
     for (int i = 0; i < count; i++) {
         if (out[i].y < bounds.y + bounds.h && bounds.y < out[i].y + out[i].h) {
             out[i].key = hash_int(out[i].key, character);
+        }
+        if (screen->event.kind != EVENT_NONE) {
+            out[i].key = hash_int(out[i].key, event);
+        }
+        if (alerting(screen) && out[i].y < rise.y + rise.h && rise.y < out[i].y + out[i].h) {
+            out[i].key = hash_int(out[i].key, rise_frame(screen));
         }
     }
     return count;

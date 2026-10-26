@@ -16,7 +16,7 @@ GEN_ASSETS = ROOT / "tools" / "gen_assets.py"
 DEFAULT_PACK = ROOT / "assets" / "default"
 SCREEN_SOURCES = [FIRMWARE_MAIN / f"{name}.c" for name in (
     "scene", "font", "link_version", "draw", "dirty", "screen",
-    "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows", "character", "character_art")] + [
+    "theme_board", "theme_arcade", "theme_comic", "theme_tower", "rows", "character", "character_art", "events")] + [
     HOST / "host_fonts.c", HOST / "host_character.c"]
 W, H = 240, 320
 
@@ -49,8 +49,13 @@ def screen_tools(tmp_path_factory):
     return tools
 
 
-def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0):
+def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme=0, daily=None, event=None):
     lines = [f"theme {theme}", f"tick {tick}", f"mode {mode}", f"total {len(rows) if total is None else total}"]
+    if daily is not None:
+        lines.append(f"daily {daily}")
+    if event is not None:
+        kind, ms, title = event
+        lines.append(f"event {kind} {ms} {title}")
     lines += [f"row {state} {minutes} {'p' if any(project) else '-'} {title}"
               for state, minutes, title, *project in rows]
     scene = tools / f"{name}.txt"
@@ -64,8 +69,10 @@ def render(tools, out_dir, name, mode="rows", rows=(), total=None, tick=0, theme
     assets = [line.split()[1] for line in done.stdout.splitlines() if line.startswith("ASSETS ")]
     character = [tuple(int(v) for v in line.split()[1:5]) for line in done.stdout.splitlines()
                  if line.startswith("CHARACTER ")]
+    boxes = {line.split()[0]: tuple(int(v) for v in line.split()[1:5]) for line in done.stdout.splitlines()
+             if line.startswith(("ALERT ", "CHEER "))}
     return {"rgb": rgb.read_bytes(), "wire": wire.read_bytes(), "regions": regions, "assets": assets[0],
-            "character": character[0] if character else None}
+            "character": character[0] if character else None, "alert": boxes["ALERT"], "cheer": boxes["CHEER"]}
 
 
 def scene_of(on_card):
@@ -81,7 +88,11 @@ def compare_screen(card, tools, out_dir, name, mode, rows=(), total=0):
     meta, width, height, data = card.snapshot()
     assert (width, height) == (W, H)
     cardlink.write_png(out_dir / f"{name}-card.png", width, height, cardlink.rgb565_wire_to_rgb(data))
-    host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]))
+    event = None
+    if meta["event"] != "none":
+        event = (meta["event"], int(meta["event_ms"]), bytes.fromhex(meta["event_name"]).decode("utf-8"))
+    host = render(tools, out_dir, f"{name}-host", mode, rows, total, int(meta["tick"]), int(meta["theme"]),
+                  int(meta["daily"]), event)
     assert meta["assets"] == host["assets"], (meta["assets"], host["assets"])
     differing = sum(1 for i in range(0, len(data), 2) if data[i:i + 2] != host["wire"][i:i + 2])
     return {"meta": meta, "theme": int(meta["theme"]), "assets": meta["assets"], "mode": mode, "rows": list(rows), "total": total, "differing_pixels": differing,

@@ -34,6 +34,14 @@
 #define HINT_FONT font_text
 #define MESSAGE_HINT_TOP 128
 #define BADGE_SIZE 22
+#define ALERT_FADE 8
+#define ALERT_LINE_TOP 152
+#define ALERT_NAME_TOP 202
+#define TAG_TOP 222
+#define TAG_H 20
+#define TAG_PAD 8
+#define CHEER_TEXT_TOP 7
+#define HELLO_TOP 206
 
 static const char *const TITLE = "Claude 日常";
 static const char *const FOOTER = "未完待续";
@@ -178,13 +186,18 @@ static void draw_centered(const band_t *band, const font_t *font, const char *te
     draw_text(band, font, text, x, top, x + width, COMIC_INK);
 }
 
-static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
+static void draw_frame(const band_t *band, rect_t area)
 {
     rect_t frame = {THEME_GRID_LEFT, area.y, DRAW_W - 2 * THEME_GRID_LEFT, area.h - THEME_GRID_GAP};
     rect_t inner = {frame.x + BORDER, frame.y + BORDER, frame.w - 2 * BORDER, frame.h - 2 * BORDER};
     draw_fill(band, frame, COMIC_INK);
     draw_fill(band, inner, COMIC_PAPER);
     draw_dots(band, inner, DOT_PERIOD, COMIC_INK, DOT_ALPHA);
+}
+
+static void draw_message(const band_t *band, screen_mode_t mode, rect_t area)
+{
+    draw_frame(band, area);
     bool empty = mode == SCREEN_EMPTY;
     draw_centered(band, &font_large, empty ? "没有会话" : "未连接", area, area.y + MESSAGE_TITLE_TOP);
     draw_centered(band, &HINT_FONT, empty ? "开一个会话就会出现在这里" : "等 Mac 上的桥接程序连上", area,
@@ -197,6 +210,61 @@ static void draw_footer(const band_t *band, const screen_t *screen, rect_t area)
     int width = draw_text_width(&font_text, FOOTER, area.w);
     int x = area.x + area.w - MARGIN - width;
     draw_text(band, &font_text, FOOTER, x, area.y + FOOTER_TOP, x + width, COMIC_INK);
+}
+
+static const point_t STAR_INK[] = {
+    {120, 20}, {140, 70}, {184, 31}, {174, 94}, {219, 92}, {194, 134}, {252, 158}, {194, 182},
+    {223, 226}, {174, 222}, {183, 283}, {140, 246}, {120, 291}, {100, 246}, {55, 287}, {66, 222},
+    {16, 227}, {46, 182}, {-4, 158}, {46, 134}, {21, 92}, {66, 94}, {56, 31}, {100, 70},
+};
+static const point_t STAR[] = {
+    {120, 26}, {139, 76}, {182, 36}, {171, 98}, {215, 95}, {190, 136}, {247, 158}, {190, 180},
+    {218, 223}, {171, 218}, {181, 278}, {139, 240}, {120, 286}, {101, 240}, {57, 282}, {69, 218},
+    {20, 224}, {50, 180}, {0, 158}, {50, 136}, {25, 95}, {69, 98}, {58, 36}, {101, 76},
+};
+
+
+static int centre_x(const font_t *font, const char *text, rect_t area)
+{
+    return area.x + (area.w - draw_text_width(font, text, area.w)) / 2;
+}
+
+static void draw_alert(const band_t *band, event_kind_t kind, const char *name, rect_t area)
+{
+    bool error = kind == EVENT_ERROR;
+    draw_tint(band, (rect_t){0, band->y0, DRAW_W, band->rows}, 0, COMIC_PAPER, ALERT_FADE);
+    draw_polygon(band, STAR_INK, (int)(sizeof STAR_INK / sizeof STAR_INK[0]), COMIC_INK);
+    draw_polygon(band, STAR, (int)(sizeof STAR / sizeof STAR[0]), error ? COMIC_ERROR : COMIC_WAITING);
+    for (int line = 0; line < 2; line++) {
+        const char *text = screen_alert_line(kind, line);
+        draw_inked(band, &font_text, text, centre_x(&font_text, text, area), ALERT_LINE_TOP + line * font_text.line_height,
+                   error ? COMIC_WHITE : COMIC_SHOUT);
+    }
+    const char *status = error ? " 出错了" : " 在等你";
+    int width = draw_text_width(&font_pixel, name, area.w / 2) + draw_text_width(&font_pixel, status, area.w);
+    int x = area.x + (area.w - width) / 2;
+    screen_named(band, &font_pixel, name, status, x, ALERT_NAME_TOP, x + width, COMIC_INK);
+    const char *tag = "喇叭";
+    int tag_w = draw_text_width(&font_pixel, tag, area.w) + 2 * TAG_PAD;
+    rect_t pill = {area.x + (area.w - tag_w) / 2, TAG_TOP, tag_w, TAG_H};
+    draw_panel(band, pill, TAG_H / 2, NAME_BORDER, COMIC_INK, COMIC_PAPER);
+    draw_text(band, &font_pixel, tag, pill.x + TAG_PAD, pill.y + (TAG_H - font_pixel.line_height) / 2,
+              pill.x + pill.w, COMIC_INK);
+}
+
+static void draw_cheer(const band_t *band, const char *name, rect_t area)
+{
+    draw_fill(band, area, COMIC_INK);
+    rect_t inner = {area.x + BORDER, area.y + BORDER, area.w - 2 * BORDER, area.h - 2 * BORDER};
+    draw_fill(band, inner, COMIC_DONE);
+    screen_named(band, &font_text, name, " 答完了！", inner.x + MARGIN, area.y + CHEER_TEXT_TOP,
+                 inner.x + inner.w - MARGIN, COMIC_INK);
+}
+
+static void draw_hello(const band_t *band, rect_t area)
+{
+    draw_frame(band, area);
+    draw_centered(band, &font_large, "连上了", area, HELLO_TOP);
 }
 
 const theme_t theme_comic = {
@@ -219,4 +287,10 @@ const theme_t theme_comic = {
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,
     .footer_phase = footer_phase,
+    .alert = {{0, 20, 240, 272}, {{78, 42, 84, 108}, {30, 36, 180, 114}, {0, 0, 0, 0}, CHARACTER_LARGE}},
+    .cheer = {3, 278, 234, 38},
+    .hello = {{57, 50, 125, 145}, {6, 27, 228, 243}, {0, 0, 0, 0}, CHARACTER_HOME_145},
+    .draw_alert = draw_alert,
+    .draw_cheer = draw_cheer,
+    .draw_hello = draw_hello,
 };

@@ -100,9 +100,9 @@ Task 2 动手时和上面不同的几处：新测试放进 `tests/test_rows.py`�
 
 ### Task 6: 提醒和声音（SC-5、SC-11）
 
-- [ ] `gen_assets.py` 加声音：转 16 kHz PCM（第一版不放笑声）、Python 编 IMA ADPCM；`audio.c` 解码和 I2S 放音；`tests/host/test_audio.c` 解码和 Python 编码器对拍。
+- [ ] 卡片现算提示音“叮咚”（2026-10-26 负责人改需求，不放真人说话声）：`chime.c` 合成、`audio.c` 经 I2S 放音；`tests/host/test_chime.c` 和样音算法逐个采样对照。串口 `mute on|off`，卡片测试一连上就静音。
 - [ ] 提醒由“新进入”位触发、提醒卡片动画、“连上了”挥手、“答完了”欢呼；串口 `alert` 命令。
-- [ ] `tests/test_bridge.py` 加真实会话：权限请求 3 秒内变等你、终端答掉后恢复（`[SC-5]`）；真机听到声音、看到角色冒头。
+- [ ] `tests/test_alert.py` 加真实会话：权限请求 3 秒内变等你、终端答掉后恢复（`[SC-5]`）；真机看到角色冒头，`AUDIO` 行证明提示音放完（测试时静音）。
 - [ ] `[SC-11]`：按卡片所有键，终端权限弹窗仍在等；宿主测试断言固件源码里没有从按键到蓝牙写 allow/deny 的路径。
 - [ ] 重新生成预编译固件（`[OB-15]`）。
 
@@ -122,7 +122,7 @@ Task 2 动手时和上面不同的几处：新测试放进 `tests/test_rows.py`�
 ## Verification
 
 - `FM_ARTIFACTS=artifacts/run-$(date +%Y%m%d-%H%M%S) .venv/bin/python -m pytest tests -v`（真机接着 USB、桥接程序已编译安装、常驻桥接程序已退出）
-- `.venv/bin/python -m pytest tests/test_firmware_host.py -v`（不接卡片，宿主渲染器、ROWS 解析、角色时间线、ADPCM 解码、字库覆盖）
+- `.venv/bin/python -m pytest tests/test_firmware_host.py -v`（不接卡片，宿主渲染器、ROWS 解析、角色时间线、提示音合成、字库覆盖）
 - `python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict`
 - 每条验收的证据用 `python3 ~/.claude/skills/long-task-planning/scripts/longtask.py record` 记录
 

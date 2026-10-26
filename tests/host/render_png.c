@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "character_art.h"
+#include "events.h"
 #include "host_character.h"
 #include "host_fonts.h"
 #include "scene.h"
@@ -130,6 +131,7 @@ static bool read_scene(const char *path, scene_t *scene)
     }
     char line[256];
     bool ok = true;
+    bool daily_set = false;
     while (ok && fgets(line, sizeof line, in) != NULL) {
         line[strcspn(line, "\n")] = 0;
         char word[16];
@@ -143,6 +145,17 @@ static bool read_scene(const char *path, scene_t *scene)
             scene->theme = (uint8_t)value;
         } else if (sscanf(line, "tick %u", &value) == 1) {
             scene->screen.tick = value;
+            if (!daily_set) {
+                scene->screen.daily = value;
+            }
+        } else if (sscanf(line, "daily %u", &value) == 1) {
+            scene->screen.daily = value;
+            daily_set = true;
+        } else if (sscanf(line, "event %15s %u %n", word, &value, &used) == 2 && used > 0) {
+            event_view_t *event = &scene->screen.event;
+            ok = events_kind(word, &event->kind);
+            event->ms = value;
+            snprintf(event->name, sizeof event->name, "%s", line + used);
         } else if (sscanf(line, "total %u", &value) == 1) {
             scene->screen.total = (uint8_t)value;
         } else if (sscanf(line, "mode %15s", word) == 1) {
@@ -180,6 +193,10 @@ int main(int argc, char **argv)
     printf("ASSETS %08x\n", (unsigned)character_art_fingerprint());
     character_stage_t stage = screen_character_stage(screen_theme(scene.theme), &scene.screen);
     printf("CHARACTER %d %d %d %d\n", stage.box.x, stage.box.y, stage.box.w, stage.box.h);
+    const theme_t *theme = screen_theme(scene.theme);
+    rect_t rise = theme->alert.stage.clip;
+    printf("ALERT %d %d %d %d\n", rise.x, rise.y, rise.w, rise.h);
+    printf("CHEER %d %d %d %d\n", theme->cheer.x, theme->cheer.y, theme->cheer.w, theme->cheer.h);
     scene_render_rows(&scene, 0, SCENE_H, pixels);
     for (int y = 0; y < SCENE_H; y++) {
         uint8_t *row = raw + y * ROW_BYTES;

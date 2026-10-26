@@ -32,8 +32,12 @@
     "G28": "once",
     "G29": "once",
     "G30": "once",
-    "G31": "durable",
-    "G32": "once"
+    "G31": "once",
+    "G32": "once",
+    "G33": "once",
+    "G34": "once",
+    "G35": "durable",
+    "G36": "durable"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -155,14 +159,19 @@
       "goal_ref": [
         "G1",
         "G31",
-        "G32"
+        "G32",
+        "G35",
+        "G36"
       ],
       "done_when": [
         {
           "type": "doc",
           "path": "docs/prd-v0.1.md",
           "heading": "Business Rules",
-          "quotes": "G31"
+          "quotes": [
+            "G35",
+            "G36"
+          ]
         },
         {
           "type": "test",
@@ -412,7 +421,7 @@
     },
     {
       "id": "SC-15",
-      "title": "角色图和两段声音做成可以换的素材包：负责人的素材在 private-assets/，仓库里只有默认素材",
+      "title": "角色图做成可以换的素材包：负责人的素材在 private-assets/，仓库里只有默认素材",
       "goal_ref": [
         "G1"
       ],

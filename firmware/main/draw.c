@@ -5,6 +5,8 @@
 
 #define TEXT_GLYPHS_MAX 40
 #define SUBSAMPLES 4
+#define POLYGON_MAX 32
+#define POLYGON_FIX 256
 
 typedef struct {
     int y0;
@@ -424,4 +426,43 @@ int draw_badge(const band_t *band, int x, int cy, int size)
     draw_round(band, (rect_t){box.x + 3, box.y + 3, size - 6, size - 6}, 1, BADGE_CORE);
     badge_letter(band, box.x + size / 2, box.y + size / 2, BADGE_RING);
     return x + size + BADGE_GAP;
+}
+
+void draw_polygon(const band_t *band, const point_t *points, int count, uint32_t rgb)
+{
+    if (count < 3 || count > POLYGON_MAX) {
+        return;
+    }
+    int top = points[0].y;
+    int bottom = points[0].y;
+    for (int i = 1; i < count; i++) {
+        top = min_int(top, points[i].y);
+        bottom = max_int(bottom, points[i].y);
+    }
+    clip_t c = clip(band, (rect_t){0, top, DRAW_W, bottom - top});
+    uint16_t wire = draw_wire(rgb);
+    for (int y = c.y0; y < c.y1; y++) {
+        int crossings[POLYGON_MAX];
+        int found = 0;
+        int sample = 2 * y + 1;
+        for (int i = 0; i < count; i++) {
+            point_t a = points[i];
+            point_t b = points[(i + 1) % count];
+            if (a.y == b.y || sample < 2 * min_int(a.y, b.y) || sample >= 2 * max_int(a.y, b.y)) {
+                continue;
+            }
+            int x = a.x * POLYGON_FIX + (sample - 2 * a.y) * (b.x - a.x) * POLYGON_FIX / (2 * (b.y - a.y));
+            int at = found++;
+            for (; at > 0 && crossings[at - 1] > x; at--) {
+                crossings[at] = crossings[at - 1];
+            }
+            crossings[at] = x;
+        }
+        uint16_t *row = pixel(band, 0, y);
+        for (int i = 0; i + 1 < found; i += 2) {
+            int x0 = (crossings[i] + POLYGON_FIX / 2) / POLYGON_FIX;
+            int x1 = (crossings[i + 1] + POLYGON_FIX / 2) / POLYGON_FIX;
+            fill_run(row, max_int(x0, c.x0), min_int(x1, c.x1), wire);
+        }
+    }
 }

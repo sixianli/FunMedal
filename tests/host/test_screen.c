@@ -28,6 +28,7 @@ static scene_t sessions(screen_mode_t mode, uint8_t total, uint32_t tick)
     scene.screen.mode = mode;
     scene.screen.total = total;
     scene.screen.tick = tick;
+    scene.screen.daily = tick;
     return scene;
 }
 
@@ -438,6 +439,7 @@ static void test_character_moves(void)
                 before.theme = index;
                 scene_t after = before;
                 after.screen.tick = steps[s][1];
+                after.screen.daily = steps[s][1];
                 char what[80];
                 snprintf(what, sizeof(what), "theme %u scene %d tick %u to %u", index, kind, (unsigned)steps[s][0],
                          (unsigned)steps[s][1]);
@@ -491,6 +493,14 @@ static void test_arcade_error_shakes(void)
     check(memcmp(first, second, sizeof(first)) != 0, "arcade error row moves between ticks");
 }
 
+static scene_t with_event(scene_t scene, event_kind_t kind, uint32_t ms, const char *name)
+{
+    scene.screen.event.kind = kind;
+    scene.screen.event.ms = ms;
+    snprintf(scene.screen.event.name, sizeof scene.screen.event.name, "%s", name);
+    return scene;
+}
+
 static void random_sequence(uint8_t theme)
 {
     static const char *const names[] = {"FunMedal", "SiBlog", "绘本工坊", "a", "一个名字特别特别长的项目会被截短"};
@@ -499,9 +509,12 @@ static void random_sequence(uint8_t theme)
     before.theme = theme;
     for (int step = 0; step < 300; step++) {
         scene_t after = before;
-        uint32_t pick = next_random(&seed) % 6;
+        uint32_t pick = next_random(&seed) % 7;
         if (pick == 0) {
-            after.screen.tick += 1 + next_random(&seed) % 4;
+            uint32_t ticks = 1 + next_random(&seed) % 4;
+            after.screen.tick += ticks;
+            after.screen.daily += ticks;
+            after.screen.event.ms += ticks * THEME_TICK_MS;
         } else if (pick == 1) {
             after.screen.mode = (screen_mode_t)(next_random(&seed) % 3);
         } else if (pick == 2 && after.screen.shown > 0) {
@@ -515,14 +528,83 @@ static void random_sequence(uint8_t theme)
             row->state = (row_state_t)(ROW_WAITING + next_random(&seed) % 4);
             row->minutes = row->state == ROW_DONE ? (uint16_t)(next_random(&seed) % 3000) : ROWS_HIDDEN_MINUTES;
             row->project = next_random(&seed) % 2 == 0;
-        } else {
+        } else if (pick == 5) {
             after.screen.total = (uint8_t)(after.screen.shown + next_random(&seed) % 4);
+        } else {
+            event_kind_t kind = (event_kind_t)(next_random(&seed) % EVENT_KINDS);
+            after = with_event(after, kind, next_random(&seed) % 7000, names[next_random(&seed) % 5]);
+            after.screen.daily = next_random(&seed) % 400;
         }
         span_t spans[DIRTY_MAX_REGIONS];
         char what[48];
         snprintf(what, sizeof(what), "theme %u random step %d", theme, step);
         check_pair(what, &before, &after, spans);
         before = after;
+    }
+}
+
+static void check_inside(const char *what, const scene_t *before, const scene_t *after, rect_t area)
+{
+    span_t spans[DIRTY_MAX_REGIONS];
+    int count = check_pair(what, before, after, spans);
+    check(count > 0, what);
+    for (int i = 0; i < count; i++) {
+        if (spans[i].y + spans[i].h <= area.y || spans[i].y >= area.y + area.h) {
+            printf("FAIL %s: span %d+%d lies outside %d+%d\n", what, spans[i].y, spans[i].h, area.y, area.h);
+            failures++;
+        }
+    }
+}
+
+static void test_events(void)
+{
+    for (uint8_t theme = 0; theme < SCREEN_THEME_COUNT; theme++) {
+        char what[96];
+        scene_t calm = six_rows(40);
+        calm.theme = theme;
+        calm.screen.daily = 17;
+        rect_t rise = screen_theme(theme)->alert.stage.clip;
+        scene_t before = calm;
+        for (uint32_t ms = 0; ms <= SCREEN_RISE_FRAMES * SCREEN_RISE_MS; ms += SCREEN_RISE_MS) {
+            scene_t after = with_event(calm, EVENT_WAIT, ms, "FunMedal");
+            after.screen.daily = 0;
+            snprintf(what, sizeof what, "theme %u alert at %u ms", theme, (unsigned)ms);
+            if (ms == 0) {
+                check_pair(what, &before, &after, (span_t[DIRTY_MAX_REGIONS]){0});
+            } else {
+                check_inside(what, &before, &after, rise);
+            }
+            before = after;
+        }
+        scene_t risen = with_event(calm, EVENT_WAIT, 5900, "FunMedal");
+        risen.screen.daily = 0;
+        risen.screen.tick = before.screen.tick;
+        snprintf(what, sizeof what, "theme %u alert holds still once risen", theme);
+        check_nothing(what, &before, &risen);
+        scene_t error = with_event(risen, EVENT_ERROR, 900, "SiBlog");
+        snprintf(what, sizeof what, "theme %u error alert replaces the waiting one", theme);
+        check_pair(what, &risen, &error, (span_t[DIRTY_MAX_REGIONS]){0});
+        scene_render_rows(&risen, 0, SCENE_H, first);
+        scene_render_rows(&error, 0, SCENE_H, second);
+        snprintf(what, sizeof what, "theme %u error alert looks different from the waiting one", theme);
+        check(memcmp(first, second, sizeof first) != 0, what);
+        scene_t closed = calm;
+        snprintf(what, sizeof what, "theme %u screen comes back when the alert closes", theme);
+        check_pair(what, &error, &closed, (span_t[DIRTY_MAX_REGIONS]){0});
+        scene_t cheer = with_event(calm, EVENT_CHEER, 100, "agent-skills");
+        snprintf(what, sizeof what, "theme %u cheer", theme);
+        check_pair(what, &calm, &cheer, (span_t[DIRTY_MAX_REGIONS]){0});
+        scene_t hello = with_event(calm, EVENT_HELLO, 100, "");
+        snprintf(what, sizeof what, "theme %u hello", theme);
+        check_pair(what, &cheer, &hello, (span_t[DIRTY_MAX_REGIONS]){0});
+        snprintf(what, sizeof what, "theme %u hello back to the table", theme);
+        check_pair(what, &hello, &calm, (span_t[DIRTY_MAX_REGIONS]){0});
+        scene_t later = hello;
+        later.screen.tick += 12;
+        later.screen.daily += 12;
+        later.screen.event.ms += 1200;
+        snprintf(what, sizeof what, "theme %u hello holds still while it shows", theme);
+        check_nothing(what, &hello, &later);
     }
 }
 
@@ -727,6 +809,7 @@ int main(int argc, char **argv)
     test_theme_slots();
     test_arcade_error_shakes();
     test_theme_order();
+    test_events();
     test_random_sequence();
     test_age();
     test_from_rows();

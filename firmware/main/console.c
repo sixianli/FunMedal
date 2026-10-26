@@ -54,7 +54,7 @@ static void print_info(void)
     console_printf("OK info fw=%s state=%s pattern=%d mode=%s theme=%u assets=%08lx tick=%lu shown_tick=%lu invert=%d bgr=%d mirror=%d,%d "
                    "gap=%d,%d "
                    "draws=%lu draw_errors=%lu key_gap_ms=%d events_dropped=%lu replies_dropped=%lu adc_errors=%lu "
-                   "ble=%s ble_writes=%lu sec=%s gatt_changed=%u audio=%s link=%s uptime_s=%lld\n",
+                   "ble=%s ble_writes=%lu sec=%s gatt_changed=%u audio=%s mute=%s link=%s uptime_s=%lld\n",
                    FIRMWARE_VERSION, app_top_state(), scene.test_pattern, SCREEN_MODES[scene.screen.mode],
                    (unsigned)scene.theme, (unsigned long)character_art_fingerprint(), (unsigned long)scene.screen.tick,
                    (unsigned long)shown_tick, config.invert, config.bgr,
@@ -63,7 +63,7 @@ static void print_info(void)
                    (unsigned long)atomic_load(&events_dropped), (unsigned long)replies_dropped,
                    (unsigned long)key_input_adc_errors(), ble_link_connected() ? "connected" : "advertising",
                    (unsigned long)ble_link_writes(), security, (unsigned)ble_link_changed_handle(),
-                   audio_ready() ? "ready" : "off", scene_link_name(scene.link),
+                   audio_ready() ? "ready" : "off", audio_muted() ? "on" : "off", scene_link_name(scene.link),
                    (long long)(esp_timer_get_time() / 1000000));
 }
 
@@ -133,10 +133,20 @@ static void snap(void)
     int64_t waited_us = 0;
     int64_t max_wait_us = 0;
     int timeouts = 0;
-    int len = snprintf(line, sizeof(line), "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d theme=%u assets=%08lx\n",
+    char event_name[2 * ROWS_NAME_MAX + 1] = "";
+    for (size_t i = 0; scene.screen.event.name[i] != '\0'; i++) {
+        uint8_t byte = (uint8_t)scene.screen.event.name[i];
+        event_name[2 * i] = digits[byte >> 4];
+        event_name[2 * i + 1] = digits[byte & 0x0f];
+        event_name[2 * i + 2] = '\0';
+    }
+    int len = snprintf(line, sizeof(line),
+                       "SNAP BEGIN %d %d state=%s tick=%lu mode=%s pattern=%d theme=%u assets=%08lx daily=%lu "
+                       "event=%s event_ms=%lu event_name=%s\n",
                        SCENE_W, SCENE_H, app_top_state(), (unsigned long)scene.screen.tick,
                        SCREEN_MODES[scene.screen.mode], scene.test_pattern, (unsigned)scene.theme,
-                       (unsigned long)character_art_fingerprint());
+                       (unsigned long)character_art_fingerprint(), (unsigned long)scene.screen.daily,
+                       events_name(scene.screen.event.kind), (unsigned long)scene.screen.event.ms, event_name);
     bool ok = write_all(line, (size_t)len, &waited_us, &timeouts);
     max_wait_us = waited_us;
     for (int y = 0; ok && y < SCENE_H; y++) {
@@ -162,7 +172,7 @@ static void snap(void)
 
 static void print_stacks(void)
 {
-    static const char *const names[] = {"keys", "display", "console", "nimble_host"};
+    static const char *const names[] = {"keys", "display", "console", "nimble_host", "chime"};
     char line[LINE_OUT_MAX];
     int len = snprintf(line, sizeof(line), "OK stacks");
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -381,6 +391,16 @@ static void tone_command(char *args)
     console_printf("OK tone %d %d %d\n", hz, ms, volume);
 }
 
+static void mute_command(const char *args)
+{
+    if (strcmp(args, "on") != 0 && strcmp(args, "off") != 0) {
+        console_printf("ERR mute usage: mute <on|off>\n");
+        return;
+    }
+    audio_mute(strcmp(args, "on") == 0);
+    console_printf("OK mute %s\n", args);
+}
+
 static void bench_command(const char *args)
 {
     int y0 = 0;
@@ -423,6 +443,25 @@ static void theme_command(const char *args)
     }
     app_set_theme((uint8_t)theme);
     console_printf("OK theme %lu\n", theme);
+}
+
+static void alert_command(char *args)
+{
+    char *space = strchr(args, ' ');
+    const char *name = space != NULL ? space + 1 : "FunMedal";
+    if (space != NULL) {
+        *space = '\0';
+    }
+    event_kind_t kind;
+    if (!events_kind(args, &kind) || name[0] == '\0' || strlen(name) > ROWS_NAME_MAX) {
+        console_printf("ERR alert usage: alert wait|error|cheer|hello [name up to %d bytes]\n", ROWS_NAME_MAX);
+        return;
+    }
+    if (!app_start_event(kind, name)) {
+        console_printf("ERR alert a more important event is showing\n");
+        return;
+    }
+    console_printf("OK alert %s %s\n", events_name(kind), name);
 }
 
 static void handle(char *line)
@@ -486,8 +525,12 @@ static void handle(char *line)
         console_printf("OK timing render_us=%lld total_us=%lld\n", (long long)render_us, (long long)total_us);
     } else if (strcmp(line, "bench") == 0) {
         bench_command(args);
+    } else if (strcmp(line, "alert") == 0) {
+        alert_command(args);
     } else if (strcmp(line, "tone") == 0) {
         tone_command(args);
+    } else if (strcmp(line, "mute") == 0) {
+        mute_command(args);
     } else if (strcmp(line, "backlight") == 0) {
         display_backlight(atoi(args));
         console_printf("OK backlight %d\n", atoi(args));
@@ -524,6 +567,6 @@ esp_err_t console_start(void)
     ESP_RETURN_ON_ERROR(usb_serial_jtag_driver_install(&config), TAG, "usb serial driver");
     usb_serial_jtag_vfs_use_driver();
     setvbuf(stdout, NULL, _IOLBF, 0);
-    BaseType_t ok = xTaskCreate(console_task, "console", 4096, NULL, 4, NULL);
+    BaseType_t ok = xTaskCreate(console_task, "console", 5120, NULL, 4, NULL);
     return ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }

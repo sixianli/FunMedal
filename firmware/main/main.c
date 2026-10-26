@@ -6,6 +6,7 @@
 #include "ble_link.h"
 #include "console.h"
 #include "display.h"
+#include "events.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "font.h"
@@ -32,6 +33,7 @@ static uint32_t draw_errors;
 static uint32_t shown_tick;
 static const char *top_state = "idle";
 static rows_table_t rows_table;
+static events_t events;
 static esp_timer_handle_t theme_save_timer;
 
 static const display_config_t DEFAULT_DISPLAY = {
@@ -48,6 +50,9 @@ static int64_t locked_scene(scene_t *out)
     int64_t now = esp_timer_get_time();
     *out = scene;
     screen_from_rows(&out->screen, &rows_table, now, (uint32_t)(now / TICK_US));
+    int64_t daily_us;
+    events_view(&events, now, &out->screen.event, &daily_us);
+    out->screen.daily = (uint32_t)((now - daily_us) / TICK_US);
     return now;
 }
 
@@ -154,15 +159,33 @@ void app_set_pattern(void)
 void app_rows_link(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    rows_link(&rows_table, esp_timer_get_time());
+    int64_t now = esp_timer_get_time();
+    rows_link(&rows_table, now);
+    events_link(&events, now);
     xSemaphoreGive(lock);
+}
+
+static void announce(event_kind_t kind, const char *name)
+{
+    console_event("EVENT %s %s\n", events_name(kind), name);
+    if (kind != EVENT_WAIT && kind != EVENT_ERROR) {
+        return;
+    }
+    esp_err_t err = audio_play(kind == EVENT_ERROR ? CHIME_ERROR : CHIME_WAIT);
+    if (err != ESP_OK) {
+        console_event("AUDIO skipped %s rc=%s\n", events_name(kind), esp_err_to_name(err));
+    }
 }
 
 void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
 {
     const char *top = kind == ROWS_TABLE ? rows_top_name(frame) : NULL;
     xSemaphoreTake(lock, portMAX_DELAY);
-    rows_heard(&rows_table, kind, frame, esp_timer_get_time());
+    int64_t now = esp_timer_get_time();
+    rows_heard(&rows_table, kind, frame, now);
+    event_kind_t started = kind == ROWS_TABLE ? events_heard(&events, frame, now) : EVENT_NONE;
+    char name[ROWS_NAME_MAX + 1];
+    memcpy(name, events.name, sizeof name);
     bool changed = top != NULL && strcmp(top, top_state) != 0;
     if (changed) {
         top_state = top;
@@ -176,12 +199,33 @@ void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
     if (changed) {
         console_event("STATE %s\n", top);
     }
+    if (started != EVENT_NONE) {
+        announce(started, name);
+    }
+}
+
+bool app_start_event(event_kind_t kind, const char *name)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool started = events_start(&events, kind, name, esp_timer_get_time());
+    xSemaphoreGive(lock);
+    if (started) {
+        xTaskNotifyGive(display_task_handle);
+        announce(kind, name);
+    }
+    return started;
+}
+
+static void lose_rows(int64_t now)
+{
+    rows_lose(&rows_table);
+    events_lose(&events, now);
 }
 
 void app_rows_lose(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    rows_lose(&rows_table);
+    lose_rows(esp_timer_get_time());
     xSemaphoreGive(lock);
 }
 
@@ -196,9 +240,10 @@ void app_get_rows(rows_table_t *table, int64_t *now_us)
 static void drop_silent_link(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool silent = rows_silent(&rows_table, esp_timer_get_time());
+    int64_t now = esp_timer_get_time();
+    bool silent = rows_silent(&rows_table, now);
     if (silent) {
-        rows_lose(&rows_table);
+        lose_rows(now);
     }
     xSemaphoreGive(lock);
     if (silent) {
@@ -211,7 +256,12 @@ static uint32_t take_snapshot(scene_t *snapshot)
     xSemaphoreTake(lock, portMAX_DELAY);
     int64_t now = locked_scene(snapshot);
     xSemaphoreGive(lock);
-    return (uint32_t)((TICK_US - now % TICK_US + 999) / 1000);
+    uint32_t wait_ms = (uint32_t)((TICK_US - now % TICK_US + 999) / 1000);
+    if (screen_rising(&snapshot->screen)) {
+        uint32_t rise_ms = SCREEN_RISE_MS - snapshot->screen.event.ms % SCREEN_RISE_MS;
+        wait_ms = rise_ms < wait_ms ? rise_ms : wait_ms;
+    }
+    return wait_ms;
 }
 
 static void display_task(void *arg)
@@ -253,6 +303,8 @@ static void display_task(void *arg)
         if (!valid) {
             ESP_LOGE(TAG, "draw failed: %s", esp_err_to_name(err));
         }
+        static scene_t after_draw;
+        wait_ms = take_snapshot(&after_draw);
     }
 }
 
@@ -316,6 +368,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
     lock = xSemaphoreCreateMutex();
+    events_init(&events, esp_timer_get_time());
     scene.theme = load_theme();
     const esp_timer_create_args_t save_args = {.callback = save_theme, .name = "theme_save"};
     ESP_ERROR_CHECK(esp_timer_create(&save_args, &theme_save_timer));

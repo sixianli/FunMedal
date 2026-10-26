@@ -41,6 +41,21 @@
 #define HINT_FONT font_pixel
 #define MESSAGE_HINT_TOP 116
 #define BADGE_SIZE 24
+#define ARCADE_WHITE 0xffffff
+#define ALERT_DIM 9
+#define FRAME_OUTER 2
+#define FRAME_GAP 2
+#define FRAME_INNER 1
+#define ALERT_TEXT_X 98
+#define ALERT_NAME_TOP 30
+#define ALERT_LINE_TOP 50
+#define TAG_PAD 4
+#define TAG_LIFT 8
+#define TAG_RIGHT 10
+#define CHEER_NAME_TOP 10
+#define CHEER_LINE_TOP 28
+#define CHEER_TEXT_RIGHT 160
+#define HELLO_TOP 196
 
 static const char *const TITLE = "CLAUDE CODE";
 static const char *const COIN = "INSERT COIN";
@@ -195,6 +210,59 @@ static void draw_footer(const band_t *band, const screen_t *screen, rect_t area)
     scanlines(band, area);
 }
 
+static rect_t inset(rect_t area, int by)
+{
+    return (rect_t){area.x + by, area.y + by, area.w - 2 * by, area.h - 2 * by};
+}
+
+static void draw_frame(const band_t *band, rect_t area, uint32_t rgb)
+{
+    draw_fill(band, area, rgb);
+    draw_fill(band, inset(area, FRAME_OUTER), ARCADE_BACKGROUND);
+    draw_fill(band, inset(area, FRAME_OUTER + FRAME_GAP), rgb);
+    draw_fill(band, inset(area, FRAME_OUTER + FRAME_GAP + FRAME_INNER), ARCADE_BACKGROUND);
+}
+
+static void draw_alert(const band_t *band, event_kind_t kind, const char *name, rect_t area)
+{
+    uint32_t rgb = kind == EVENT_ERROR ? ARCADE_RED : ARCADE_YELLOW;
+    draw_tint(band, (rect_t){0, band->y0, DRAW_W, band->rows}, 0, ARCADE_BACKGROUND, ALERT_DIM);
+    draw_frame(band, area, rgb);
+    const char *tag = "SPEAKER";
+    int width = draw_text_width(&font_pixel, tag, area.w) + 2 * TAG_PAD;
+    rect_t pill = {area.x + area.w - TAG_RIGHT - width, area.y - TAG_LIFT, width, font_pixel.line_height};
+    draw_fill(band, pill, rgb);
+    draw_text(band, &font_pixel, tag, pill.x + TAG_PAD, pill.y, pill.x + pill.w, ARCADE_BACKGROUND);
+    char upper[ROWS_NAME_MAX + 1];
+    upper_name(name, upper, sizeof upper);
+    int x = area.x + ALERT_TEXT_X;
+    int right = area.x + area.w - MARGIN;
+    screen_named(band, &font_pixel, upper, kind == EVENT_ERROR ? " > ERROR" : " > WAITING", x,
+                 area.y + ALERT_NAME_TOP, right, rgb);
+    for (int line = 0; line < 2; line++) {
+        screen_bold(band, &font_text, screen_alert_line(kind, line), x,
+                    area.y + ALERT_LINE_TOP + line * font_text.line_height, right, ARCADE_WHITE);
+    }
+    scanlines(band, area);
+}
+
+static void draw_cheer(const band_t *band, const char *name, rect_t area)
+{
+    draw_frame(band, area, ARCADE_GREEN);
+    char upper[ROWS_NAME_MAX + 1];
+    upper_name(name, upper, sizeof upper);
+    int x = area.x + MARGIN + 4;
+    draw_text(band, &font_pixel, upper, x, area.y + CHEER_NAME_TOP, CHEER_TEXT_RIGHT, ARCADE_GREEN);
+    screen_bold(band, &font_text, "答完了！", x, area.y + CHEER_LINE_TOP, CHEER_TEXT_RIGHT, ARCADE_WHITE);
+    scanlines(band, area);
+}
+
+static void draw_hello(const band_t *band, rect_t area)
+{
+    draw_centered(band, &font_large, "连上了", area, HELLO_TOP, ARCADE_YELLOW);
+    scanlines(band, area);
+}
+
 const theme_t theme_arcade = {
     .header = {0, 0, DRAW_W, HEADER_H},
     .slots = {
@@ -220,4 +288,10 @@ const theme_t theme_arcade = {
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,
     .footer_phase = footer_phase,
+    .alert = {{6, 96, 228, 128}, {{14, 112, 84, 108}, {12, 102, 216, 116}, {0, 0, 0, 0}, CHARACTER_LARGE}},
+    .cheer = {6, 248, 228, 64},
+    .hello = {{57, 40, 125, 145}, {0, 24, 240, 216}, {0, 0, 0, 0}, CHARACTER_HOME_145},
+    .draw_alert = draw_alert,
+    .draw_cheer = draw_cheer,
+    .draw_hello = draw_hello,
 };

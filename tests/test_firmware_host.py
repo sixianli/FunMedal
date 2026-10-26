@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import shutil
@@ -81,6 +82,42 @@ def test_character_timeline_on_host(case, tmp_path):
     print(result.stdout)
     assert result.returncode == 0, result.stdout
     assert "ALL PASSED" in result.stdout
+
+
+CHIME_RATE = 16000
+CHIME_PEAK = 0.25 * 32767
+CHIMES = {"wait": [(784.0, 0.22, 0.10), (1046.5, 0.6, 0.18)], "error": [(1046.5, 0.22, 0.10), (784.0, 0.6, 0.18)]}
+
+
+def chime_reference(notes):
+    samples = []
+    for hz, seconds, decay in notes:
+        for i in range(int(CHIME_RATE * seconds)):
+            t = i / CHIME_RATE
+            envelope = min(1.0, t / 0.005) * math.exp(-t / decay)
+            wave = math.sin(2 * math.pi * hz * t) + 0.3 * math.sin(4 * math.pi * hz * t)
+            samples.append(round(envelope * wave / 1.3 * CHIME_PEAK))
+    return samples
+
+
+@pytest.mark.parametrize("case", ["[SC-5] the card synthesizes the ding-dong the owner picked: waiting goes G5 up to "
+                                  "C6, error goes C6 down to G5, sample for sample within 2 steps of the sample "
+                                  "they heard"])
+def test_chime_on_host(case, tmp_path):
+    binary = tmp_path / "test_chime"
+    build(HOST / "test_chime.c", binary, [FIRMWARE_MAIN / "chime.c"])
+    result = subprocess.run([str(binary), str(tmp_path)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+    for name, notes in CHIMES.items():
+        data = (tmp_path / f"{name}.pcm").read_bytes()
+        card = struct.unpack(f"<{len(data) // 2}h", data)
+        reference = chime_reference(notes)
+        assert len(card) == len(reference), name
+        worst = max(abs(a - b) for a, b in zip(card, reference))
+        assert worst <= 2, f"{name}: worst difference {worst}"
+        assert max(abs(v) for v in card) <= CHIME_PEAK + 1, name
 
 
 def level_one():
@@ -349,3 +386,67 @@ def test_project_badge_on_host(case, theme, blank_tools, screen_artifacts):
     assert gained >= 100, gained
     badge_x = min(x for x, y in changed if pixel(marked, x, y) == BADGE_ORANGE)
     assert badge_x < slot[0] + 30, badge_x
+
+
+@pytest.mark.parametrize("case", ["[SC-5] fresh rows start one alert per table, an error wins over waiting, a new "
+                                  "alert restarts the old one, running to done cheers, a link waves hello, and an "
+                                  "alert outranks a cheer, which outranks hello"])
+def test_events_on_host(case, tmp_path):
+    binary = tmp_path / "test_events"
+    build(HOST / "test_events.c", binary, [FIRMWARE_MAIN / "events.c"])
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+THEMES = ("board", "arcade", "comic", "tower")
+
+
+@pytest.mark.parametrize("case, theme", [
+    (f"[SC-5] in the {name} theme the waiting and the error alert cover the table, differ from each other, and "
+     f"the character rises inside the alert area and then holds still", theme)
+    for theme, name in enumerate(THEMES)
+])
+def test_alert_on_host(case, theme, screen_tools, screen_artifacts):
+    def shot(label, event):
+        return render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-{label}", rows=SIX_ROWS[:3],
+                             theme=theme, tick=40, daily=0, event=event)
+    calm = render_screen(screen_tools, screen_artifacts, f"alert-{THEMES[theme]}-calm", rows=SIX_ROWS[:3],
+                         theme=theme, tick=40, daily=0)
+    rising = shot("rising", ("wait", 150, "FunMedal"))
+    risen = shot("wait", ("wait", 900, "FunMedal"))
+    later = shot("wait-later", ("wait", 5900, "FunMedal"))
+    error = shot("error", ("error", 900, "SiBlog"))
+    covered = changed_pixels(calm["rgb"], risen["rgb"])
+    assert len(covered) > W * H // 4, len(covered)
+    assert changed_pixels(risen["rgb"], error["rgb"])
+    moved = changed_pixels(rising["rgb"], risen["rgb"])
+    assert moved and inside(moved, risen["alert"]), (risen["alert"], moved[:10])
+    assert risen["rgb"] == later["rgb"]
+
+
+@pytest.mark.parametrize("case, theme", [
+    (f"[SC-5] in the {name} theme a cheer shows the finished session's name in its strip and the character "
+     f"cheers, and the hello screen replaces the table", theme)
+    for theme, name in enumerate(THEMES)
+])
+def test_cheer_and_hello_on_host(case, theme, screen_tools, screen_artifacts):
+    rows = SIX_ROWS[:3]
+    calm = render_screen(screen_tools, screen_artifacts, f"cheer-{THEMES[theme]}-calm", rows=rows, theme=theme,
+                         tick=40, daily=0)
+    cheer = render_screen(screen_tools, screen_artifacts, f"cheer-{THEMES[theme]}", rows=rows, theme=theme,
+                          tick=40, daily=0, event=("cheer", 300, "agent-skills"))
+    other = render_screen(screen_tools, screen_artifacts, f"cheer-{THEMES[theme]}-other", rows=rows, theme=theme,
+                          tick=40, daily=0, event=("cheer", 300, "SiBlog"))
+    hello = render_screen(screen_tools, screen_artifacts, f"hello-{THEMES[theme]}", rows=rows, theme=theme,
+                          tick=40, daily=0, event=("hello", 300, ""))
+    strip = cheer["cheer"]
+    named = changed_pixels(cheer["rgb"], other["rgb"])
+    assert named and inside(named, strip), (strip, named[:10])
+    changed = changed_pixels(calm["rgb"], cheer["rgb"])
+    assert any(inside([p], cheer["character"]) and not inside([p], strip) for p in changed), "the character does not cheer"
+    slots = [slot_of(theme, i) for i in range(len(rows))]
+    assert not any(inside([p], slot) for p in changed for slot in slots), "the cheer covers a session row"
+    waved = changed_pixels(calm["rgb"], hello["rgb"])
+    assert all(any(inside([p], slot) for p in waved) for slot in slots), "the hello screen keeps a session row"

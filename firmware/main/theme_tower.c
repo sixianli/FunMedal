@@ -38,6 +38,19 @@
 #define MESSAGE_HINT_TOP 128
 #define BADGE_SIZE 22
 #define BADGE_CENTRE_Y 13
+#define ALERT_WASH 3
+#define CARD_RADIUS 8
+#define CARD_BORDER 2
+#define GLOW_RINGS 3
+#define GLOW_STEP 3
+#define ALERT_TEXT_X 98
+#define ALERT_NAME_TOP 26
+#define ALERT_LINE_TOP 46
+#define TAG_PAD 4
+#define TAG_LIFT 8
+#define TAG_RIGHT 12
+#define CHEER_TEXT_TOP 7
+#define HELLO_TOP 206
 
 static const char *const TITLE = "CLAUDE · CONTROL";
 static const char *const FOOTER = "CONTROL · ONLINE";
@@ -210,6 +223,45 @@ static void draw_footer(const band_t *band, const screen_t *screen, rect_t area)
               TOWER_FAINT);
 }
 
+static void draw_alert(const band_t *band, event_kind_t kind, const char *name, rect_t area)
+{
+    uint32_t rgb = kind == EVENT_ERROR ? TOWER_RED : TOWER_AMBER;
+    draw_tint(band, (rect_t){0, band->y0, DRAW_W, band->rows}, 0, rgb, ALERT_WASH);
+    for (int ring = GLOW_RINGS; ring > 0; ring--) {
+        int by = ring * GLOW_STEP;
+        rect_t glow = {area.x - by, area.y - by, area.w + 2 * by, area.h + 2 * by};
+        draw_tint(band, glow, CARD_RADIUS + by, rgb, (uint8_t)(2 * (GLOW_RINGS + 1 - ring)));
+    }
+    draw_panel(band, area, CARD_RADIUS, CARD_BORDER, rgb, TOWER_MODULE);
+    const char *tag = "SPEAKER";
+    int width = draw_text_width(&font_pixel, tag, area.w) + 2 * TAG_PAD;
+    rect_t pill = {area.x + area.w - TAG_RIGHT - width, area.y - TAG_LIFT, width, font_pixel.line_height};
+    draw_round(band, pill, font_pixel.line_height / 2, rgb);
+    draw_text(band, &font_pixel, tag, pill.x + TAG_PAD, pill.y, pill.x + pill.w, TOWER_BACKGROUND);
+    int x = area.x + ALERT_TEXT_X;
+    int right = area.x + area.w - MARGIN;
+    screen_named(band, &font_pixel, name, kind == EVENT_ERROR ? " · 出错" : " · 等你", x, area.y + ALERT_NAME_TOP,
+                 right, kind == EVENT_ERROR ? TOWER_RED_TEXT : TOWER_AMBER);
+    for (int line = 0; line < 2; line++) {
+        screen_bold(band, &font_text, screen_alert_line(kind, line), x,
+                    area.y + ALERT_LINE_TOP + line * font_text.line_height, right, TOWER_NAME);
+    }
+}
+
+static void draw_cheer(const band_t *band, const char *name, rect_t area)
+{
+    draw_panel(band, area, MODULE_RADIUS, 1, TOWER_GREEN, TOWER_MODULE);
+    screen_named(band, &font_text, name, " 答完了！", area.x + MARGIN, area.y + CHEER_TEXT_TOP,
+                 area.x + area.w - MARGIN, TOWER_NAME);
+}
+
+static void draw_hello(const band_t *band, rect_t area)
+{
+    rect_t frame = {THEME_GRID_LEFT, area.y, DRAW_W - 2 * THEME_GRID_LEFT, area.h - THEME_GRID_GAP};
+    draw_panel(band, frame, MODULE_RADIUS, 1, TOWER_GREEN, TOWER_MODULE);
+    draw_centered(band, &font_large, "连上了", area, HELLO_TOP, TOWER_GREEN);
+}
+
 const theme_t theme_tower = {
     .header = {0, 0, DRAW_W, THEME_HEADER_H},
     .slots = {THEME_GRID_SLOT(0), THEME_GRID_SLOT(1), THEME_GRID_SLOT(2), THEME_GRID_SLOT(3), THEME_GRID_SLOT(4),
@@ -230,4 +282,10 @@ const theme_t theme_tower = {
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,
     .footer_phase = footer_phase,
+    .alert = {{6, 100, 228, 120}, {{14, 108, 84, 108}, {8, 102, 224, 116}, {0, 0, 0, 0}, CHARACTER_LARGE}},
+    .cheer = {3, 278, 234, 38},
+    .hello = {{57, 50, 125, 145}, {4, 25, 232, 244}, {0, 0, 0, 0}, CHARACTER_HOME_145},
+    .draw_alert = draw_alert,
+    .draw_cheer = draw_cheer,
+    .draw_hello = draw_hello,
 };

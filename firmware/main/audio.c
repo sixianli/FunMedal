@@ -4,6 +4,8 @@
 #include <stdatomic.h>
 
 #include "board.h"
+#include "chime.h"
+#include "console.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
 #include "esp_check.h"
@@ -14,7 +16,7 @@
 #define CODEC_I2C_HZ 100000
 #define CODEC_TIMEOUT_MS 50
 #define CODEC_RESET_MS 20
-#define SAMPLE_RATE 16000
+#define SAMPLE_RATE CHIME_RATE
 #define DMA_DESCRIPTORS 8
 #define DMA_FRAMES 320
 #define TONE_BLOCK_FRAMES 256
@@ -23,6 +25,11 @@
 #define TONE_TABLE_BITS 8
 #define TONE_TABLE_SIZE (1 << TONE_TABLE_BITS)
 #define DAC_VOLUME_REG 0x32
+#define CHIME_VOLUME 0xbf
+#define CHIME_STACK 4096
+#define CHIME_PRIORITY 6
+#define CHIME_KIND_BITS 4
+#define CHIME_KIND_MASK ((1u << CHIME_KIND_BITS) - 1)
 
 static const char *TAG = "audio";
 static i2c_master_dev_handle_t codec;
@@ -30,6 +37,10 @@ static i2s_chan_handle_t tx;
 static SemaphoreHandle_t speaker_lock;
 static atomic_bool ready;
 static int16_t tone_table[TONE_TABLE_SIZE];
+static atomic_bool muted;
+static TaskHandle_t chime_task_handle;
+static _Atomic uint32_t chime_request;
+static uint32_t chime_played;
 
 static esp_err_t codec_write(uint8_t reg, uint8_t value)
 {
@@ -99,6 +110,73 @@ static void fill_tone_table(void)
     }
 }
 
+static uint8_t speaker_volume(int volume)
+{
+    return atomic_load(&muted) ? 0 : (uint8_t)volume;
+}
+
+static esp_err_t play_chime(chime_kind_t kind, uint32_t request, bool quiet)
+{
+    static int16_t mono[TONE_BLOCK_FRAMES];
+    static int16_t block[TONE_BLOCK_FRAMES * 2];
+    chime_player_t player;
+    chime_begin(&player, kind);
+    esp_err_t err = ESP_OK;
+    uint32_t got;
+    while (err == ESP_OK && atomic_load(&chime_request) == request &&
+           (got = chime_render(&player, mono, TONE_BLOCK_FRAMES)) > 0) {
+        if (!quiet && atomic_load(&muted)) {
+            quiet = true;
+            err = codec_write(DAC_VOLUME_REG, 0x00);
+            if (err != ESP_OK) {
+                break;
+            }
+        }
+        for (uint32_t i = 0; i < got; i++) {
+            block[2 * i] = mono[i];
+            block[2 * i + 1] = mono[i];
+        }
+        size_t written = 0;
+        err = i2s_channel_write(tx, block, got * 2 * sizeof(block[0]), &written, TONE_WRITE_TIMEOUT_MS);
+    }
+    return err;
+}
+
+static void chime_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (atomic_load(&chime_request) == chime_played) {
+            continue;
+        }
+        xSemaphoreTake(speaker_lock, portMAX_DELAY);
+        esp_err_t err = ESP_OK;
+        for (uint32_t request = atomic_load(&chime_request); err == ESP_OK && request != chime_played;
+             request = atomic_load(&chime_request)) {
+            chime_played = request;
+            chime_kind_t kind = (chime_kind_t)(request & CHIME_KIND_MASK);
+            bool quiet = atomic_load(&muted);
+            err = codec_write(DAC_VOLUME_REG, quiet ? 0x00 : CHIME_VOLUME);
+            if (err != ESP_OK) {
+                console_event("AUDIO failed %s rc=%s\n", chime_name(kind), esp_err_to_name(err));
+                break;
+            }
+            console_event("AUDIO play %s%s\n", chime_name(kind), quiet ? " muted" : "");
+            err = play_chime(kind, request, quiet);
+            if (err != ESP_OK) {
+                console_event("AUDIO failed %s rc=%s\n", chime_name(kind), esp_err_to_name(err));
+            } else {
+                console_event("AUDIO %s %s\n", atomic_load(&chime_request) == request ? "done" : "cut",
+                              chime_name(kind));
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(TONE_WRITE_TIMEOUT_MS));
+        codec_write(DAC_VOLUME_REG, 0x00);
+        xSemaphoreGive(speaker_lock);
+    }
+}
+
 esp_err_t audio_start(void)
 {
     speaker_lock = xSemaphoreCreateMutex();
@@ -122,6 +200,9 @@ esp_err_t audio_start(void)
     ESP_RETURN_ON_ERROR(i2s_init(), TAG, "i2s");
     ESP_RETURN_ON_ERROR(codec_init(), TAG, "codec");
     fill_tone_table();
+    chime_init();
+    ESP_RETURN_ON_FALSE(xTaskCreate(chime_task, "chime", CHIME_STACK, NULL, CHIME_PRIORITY, &chime_task_handle) == pdPASS,
+                        ESP_ERR_NO_MEM, TAG, "chime task");
     atomic_store(&ready, true);
     return ESP_OK;
 }
@@ -139,7 +220,7 @@ esp_err_t audio_tone(int hz, int ms, int volume)
     uint32_t step = (uint32_t)(((uint64_t)hz << 32) / SAMPLE_RATE);
     uint32_t phase = 0;
     xSemaphoreTake(speaker_lock, portMAX_DELAY);
-    esp_err_t err = codec_write(DAC_VOLUME_REG, (uint8_t)volume);
+    esp_err_t err = codec_write(DAC_VOLUME_REG, speaker_volume(volume));
     for (int done = 0; err == ESP_OK && done < total; done += TONE_BLOCK_FRAMES) {
         for (int i = 0; i < TONE_BLOCK_FRAMES; i++) {
             int16_t value = done + i < total ? tone_table[phase >> (32 - TONE_TABLE_BITS)] : 0;
@@ -154,4 +235,27 @@ esp_err_t audio_tone(int hz, int ms, int volume)
     codec_write(DAC_VOLUME_REG, 0x00);
     xSemaphoreGive(speaker_lock);
     return err;
+}
+
+esp_err_t audio_play(chime_kind_t kind)
+{
+    ESP_RETURN_ON_FALSE(atomic_load(&ready), ESP_ERR_INVALID_STATE, TAG, "codec not ready");
+    ESP_RETURN_ON_FALSE(kind >= 0 && kind < CHIME_KINDS, ESP_ERR_INVALID_ARG, TAG, "no chime %d", kind);
+    uint32_t request = atomic_load(&chime_request);
+    uint32_t next;
+    do {
+        next = ((request >> CHIME_KIND_BITS) + 1) << CHIME_KIND_BITS | (uint32_t)kind;
+    } while (!atomic_compare_exchange_weak(&chime_request, &request, next));
+    xTaskNotifyGive(chime_task_handle);
+    return ESP_OK;
+}
+
+void audio_mute(bool on)
+{
+    atomic_store(&muted, on);
+}
+
+bool audio_muted(void)
+{
+    return atomic_load(&muted);
 }

@@ -8,8 +8,9 @@ from cardlink import is_reply, parse_snapshot
 
 
 class CardWatcher:
-    def __init__(self, port_glob: str = "/dev/cu.usbmodem*"):
+    def __init__(self, port_glob: str = "/dev/cu.usbmodem*", mute: bool = False):
         self.port_glob = port_glob
+        self.mute = mute
         self.lines: list[tuple[float, str]] = []
         self._cond = threading.Condition()
         self._link: serial.Serial | None = None
@@ -45,10 +46,20 @@ class CardWatcher:
         except (serial.SerialException, OSError):
             time.sleep(0.1)
             return
+        self._keep_quiet(link)
         with self._cond:
             self._link = link
             self._pending = b""
             self._cond.notify_all()
+
+    def _keep_quiet(self, link: serial.Serial) -> None:
+        if not self.mute:
+            return
+        try:
+            link.write(b"mute on\n")
+            link.flush()
+        except (serial.SerialException, OSError):
+            pass
 
     def _run(self) -> None:
         while not self._stop:
@@ -70,11 +81,16 @@ class CardWatcher:
                 continue
             now = time.time()
             self._pending += chunk
+            rebooted = False
             with self._cond:
                 while b"\n" in self._pending:
                     line, self._pending = self._pending.split(b"\n", 1)
-                    self.lines.append((now, line.decode("utf-8", "replace").rstrip("\r")))
+                    text = line.decode("utf-8", "replace").rstrip("\r")
+                    rebooted = rebooted or text.startswith("READY ")
+                    self.lines.append((now, text))
                 self._cond.notify_all()
+            if rebooted:
+                self._keep_quiet(link)
 
     def mark(self) -> int:
         with self._cond:

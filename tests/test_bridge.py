@@ -397,11 +397,14 @@ def test_stale_socket_and_second_instance(case, card, bridge, run_dir):
 
 @pytest.mark.parametrize("case", ["[FM-13] card tasks keep stack headroom after the bluetooth tests"])
 def test_card_stack_headroom(case, card, artifacts):
+    mark = card.mark()
+    assert card.request("alert error SiBlog") == "OK alert error SiBlog"
+    card.wait_for(lambda line: line == "AUDIO done error", 8.0, mark)
     line = card.request("stacks")
     info = card.request("info")
     (artifacts / "card-stacks.txt").write_text(line + "\n" + info + "\n", encoding="utf-8")
     free = {name: int(value) for name, value in (p.split("=", 1) for p in line.split()[2:])}
-    assert set(free) == {"keys", "display", "console", "nimble_host"}, line
+    assert set(free) == {"keys", "display", "console", "nimble_host", "chime"}, line
     assert all(value >= MIN_STACK_FREE_BYTES for value in free.values()), free
 
 

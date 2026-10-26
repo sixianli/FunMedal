@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "events.h"
 #include "rows.h"
 #include "scene.h"
 
@@ -19,4 +20,5 @@ void app_link_in_use(void);
 void app_rows_link(void);
 void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame);
 void app_rows_lose(void);
+bool app_start_event(event_kind_t kind, const char *name);
 void app_get_rows(rows_table_t *table, int64_t *now_us);

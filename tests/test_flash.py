@@ -225,7 +225,7 @@ def test_real_card(case, run_dir):
     (run_dir / "flash-output.txt").write_text(done.stdout + done.stderr, encoding="utf-8")
     summary["exit"] = done.returncode
     summary["verified"] = done.stdout.count("Hash of data verified")
-    watcher = CardWatcher()
+    watcher = CardWatcher(mute=True)
     watcher.start()
     try:
         booted = info_fields(wait_until(lambda: _try_info(watcher), 20.0, "card answering after the flash"))

@@ -32,6 +32,19 @@
 #define HINT_FONT font_text
 #define MESSAGE_HINT_TOP 116
 #define BADGE_SIZE 24
+#define DIM_ALPHA 7
+#define CARD_RADIUS 12
+#define ALERT_TEXT_X 98
+#define ALERT_NAME_TOP 30
+#define ALERT_LINE_TOP 50
+#define TAG_H 20
+#define TAG_LIFT 10
+#define TAG_RIGHT 14
+#define CHEER_NAME_TOP 8
+#define CHEER_LINE_TOP 28
+#define CHEER_TEXT_RIGHT 160
+#define HELLO_TOP 196
+#define BOARD_QUIET 0x6b6b6b
 
 static const char *const TITLE = "今天的任务";
 static const char *const STATE_WORDS[] = {
@@ -161,6 +174,45 @@ static uint32_t footer_phase(uint32_t tick)
     return 0;
 }
 
+static void draw_card(const band_t *band, rect_t area)
+{
+    draw_round(band, (rect_t){area.x, area.y + SHADOW, area.w, area.h}, CARD_RADIUS, BOARD_INK);
+    draw_panel(band, area, CARD_RADIUS, BAR_BORDER, BOARD_INK, BOARD_WHITE);
+}
+
+static void draw_alert(const band_t *band, event_kind_t kind, const char *name, rect_t area)
+{
+    draw_tint(band, (rect_t){0, band->y0, DRAW_W, band->rows}, 0, BOARD_INK, DIM_ALPHA);
+    draw_card(band, area);
+    const char *tag = "喇叭";
+    int width = draw_text_width(&font_pixel, tag, area.w) + 2 * PILL_PAD;
+    rect_t pill = {area.x + area.w - TAG_RIGHT - width, area.y - TAG_LIFT, width, TAG_H};
+    draw_panel(band, pill, TAG_H / 2, BAR_BORDER, BOARD_INK, kind == EVENT_ERROR ? BOARD_ERROR : BOARD_WAITING);
+    draw_text(band, &font_pixel, tag, pill.x + PILL_PAD, pill.y + (TAG_H - font_pixel.line_height) / 2,
+              pill.x + pill.w, BOARD_INK);
+    int x = area.x + ALERT_TEXT_X;
+    int right = area.x + area.w - MARGIN;
+    screen_named(band, &font_pixel, name, kind == EVENT_ERROR ? " 出错了" : " 在等你", x, area.y + ALERT_NAME_TOP,
+                 right, BOARD_QUIET);
+    for (int line = 0; line < 2; line++) {
+        screen_bold(band, &font_text, screen_alert_line(kind, line), x,
+                    area.y + ALERT_LINE_TOP + line * font_text.line_height, right, BOARD_INK);
+    }
+}
+
+static void draw_cheer(const band_t *band, const char *name, rect_t area)
+{
+    draw_card(band, area);
+    int x = area.x + MARGIN + 4;
+    draw_text(band, &font_pixel, name, x, area.y + CHEER_NAME_TOP, CHEER_TEXT_RIGHT, BOARD_QUIET);
+    screen_bold(band, &font_text, "答完了！", x, area.y + CHEER_LINE_TOP, CHEER_TEXT_RIGHT, BOARD_INK);
+}
+
+static void draw_hello(const band_t *band, rect_t area)
+{
+    draw_centered(band, &font_large, "连上了", area, HELLO_TOP);
+}
+
 const theme_t theme_board = {
     .header = {0, 0, DRAW_W, HEADER_H},
     .slots = {
@@ -186,4 +238,10 @@ const theme_t theme_board = {
     .draw_footer = draw_footer,
     .slot_phase = slot_phase,
     .footer_phase = footer_phase,
+    .alert = {{6, 96, 228, 128}, {{14, 112, 84, 108}, {8, 98, 224, 124}, {0, 0, 0, 0}, CHARACTER_LARGE}},
+    .cheer = {6, 248, 228, 64},
+    .hello = {{57, 40, 125, 145}, {0, 24, 240, 216}, {0, 0, 0, 0}, CHARACTER_HOME_145},
+    .draw_alert = draw_alert,
+    .draw_cheer = draw_cheer,
+    .draw_hello = draw_hello,
 };

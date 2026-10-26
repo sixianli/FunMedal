@@ -349,12 +349,15 @@ def card(artifacts):
                     f"stop it with `{BRIDGE} quit` first")
     require_resident_locked_out()
     stop_leftover_bridges()
-    watcher = CardWatcher()
+    watcher = CardWatcher(mute=True)
     watcher.start()
     try:
         info = wait_until(lambda: _try_info(watcher), 10.0, "card info")
         (artifacts / "card-info.txt").write_text(info + "\n", encoding="utf-8")
         assert " ble=" in info, info
+        assert watcher.request("mute on") == "OK mute on"
+        info = watcher.request("info")
+        assert info_fields(info).get("mute") == "on", f"card tests must keep the speaker quiet: {info}"
         watcher.request("board")
         yield watcher
     finally:
