@@ -38,6 +38,7 @@ static SemaphoreHandle_t speaker_lock;
 static atomic_bool ready;
 static int16_t tone_table[TONE_TABLE_SIZE];
 static atomic_bool muted;
+static atomic_bool playing;
 static TaskHandle_t chime_task_handle;
 static _Atomic uint32_t chime_request;
 static uint32_t chime_played;
@@ -151,6 +152,7 @@ static void chime_task(void *arg)
             continue;
         }
         xSemaphoreTake(speaker_lock, portMAX_DELAY);
+        atomic_store(&playing, true);
         esp_err_t err = ESP_OK;
         for (uint32_t request = atomic_load(&chime_request); err == ESP_OK && request != chime_played;
              request = atomic_load(&chime_request)) {
@@ -173,6 +175,7 @@ static void chime_task(void *arg)
         }
         vTaskDelay(pdMS_TO_TICKS(TONE_WRITE_TIMEOUT_MS));
         codec_write(DAC_VOLUME_REG, 0x00);
+        atomic_store(&playing, false);
         xSemaphoreGive(speaker_lock);
     }
 }
@@ -258,4 +261,9 @@ void audio_mute(bool on)
 bool audio_muted(void)
 {
     return atomic_load(&muted);
+}
+
+bool audio_playing(void)
+{
+    return atomic_load(&playing);
 }

@@ -61,19 +61,19 @@ static void test_fresh_alerts(void)
     events_init(&e, 0);
     row_t calm[] = {row(1, ROW_RUNNING, false, "alpha"), row(2, ROW_WAITING, false, "beta")};
     rows_frame_t f = frame(2, calm);
-    check(events_heard(&e, &f, 100 * MS) == EVENT_NONE, "a waiting row without the fresh bit does not alert");
+    check(events_heard(&e, &f, true, 100 * MS) == EVENT_NONE, "a waiting row without the fresh bit does not alert");
     row_t fresh_wait[] = {row(1, ROW_WAITING, true, "alpha"), row(2, ROW_WAITING, true, "beta")};
     f = frame(2, fresh_wait);
-    check(events_heard(&e, &f, 200 * MS) == EVENT_WAIT, "fresh waiting rows alert once");
+    check(events_heard(&e, &f, true, 200 * MS) == EVENT_WAIT, "fresh waiting rows alert once");
     expect_view(&e, 250 * MS, EVENT_WAIT, "alpha", 50, "two fresh waiting rows give one alert with the first name");
     row_t mixed[] = {row(1, ROW_WAITING, true, "alpha"), row(2, ROW_ERROR, true, "beta"),
                      row(3, ROW_ERROR, true, "gamma")};
     f = frame(3, mixed);
-    check(events_heard(&e, &f, 1000 * MS) == EVENT_ERROR, "an error among fresh rows uses the error alert");
+    check(events_heard(&e, &f, true, 1000 * MS) == EVENT_ERROR, "an error among fresh rows uses the error alert");
     expect_view(&e, 1000 * MS, EVENT_ERROR, "beta", 0, "a new alert restarts the shown one with the first error");
     row_t again[] = {row(1, ROW_WAITING, true, "alpha")};
     f = frame(1, again);
-    check(events_heard(&e, &f, 3000 * MS) == EVENT_WAIT, "a waiting alert may replace an error alert");
+    check(events_heard(&e, &f, true, 3000 * MS) == EVENT_WAIT, "a waiting alert may replace an error alert");
     expect_view(&e, 3000 * MS + 5999 * MS, EVENT_WAIT, "alpha", 5999, "an alert lasts six seconds");
     expect_view(&e, 3000 * MS + 6000 * MS, EVENT_NONE, "", 0, "an alert closes after six seconds");
     check(daily_start(&e, 9500 * MS) == 9000 * MS, "the daily loop starts again when the alert closes");
@@ -86,22 +86,22 @@ static void test_cheer_and_hello(void)
     events_link(&e, 10 * MS);
     row_t running[] = {row(4, ROW_RUNNING, false, "alpha"), row(5, ROW_RUNNING, false, "beta")};
     rows_frame_t f = frame(2, running);
-    check(events_heard(&e, &f, 100 * MS) == EVENT_HELLO, "the first table after linking waves hello");
+    check(events_heard(&e, &f, true, 100 * MS) == EVENT_HELLO, "the first table after linking waves hello");
     expect_view(&e, 2999 * MS + 100 * MS, EVENT_HELLO, "", 2999, "hello lasts three seconds");
-    check(events_heard(&e, &f, 200 * MS) == EVENT_NONE, "hello waves only once per link");
+    check(events_heard(&e, &f, true, 200 * MS) == EVENT_NONE, "hello waves only once per link");
     row_t done[] = {row(5, ROW_DONE, false, "beta"), row(4, ROW_RUNNING, false, "alpha")};
     f = frame(2, done);
-    check(events_heard(&e, &f, 500 * MS) == EVENT_CHEER, "a row going from running to done cheers");
+    check(events_heard(&e, &f, true, 500 * MS) == EVENT_CHEER, "a row going from running to done cheers");
     expect_view(&e, 500 * MS, EVENT_CHEER, "beta", 0, "cheer replaces hello and names the finished row");
     expect_view(&e, 3500 * MS, EVENT_NONE, "", 0, "cheer closes after three seconds");
-    check(events_heard(&e, &f, 4000 * MS) == EVENT_NONE, "a row already done does not cheer again");
+    check(events_heard(&e, &f, true, 4000 * MS) == EVENT_NONE, "a row already done does not cheer again");
     row_t done_new[] = {row(6, ROW_DONE, false, "delta")};
     f = frame(1, done_new);
-    check(events_heard(&e, &f, 5000 * MS) == EVENT_NONE, "a row first seen as done does not cheer");
+    check(events_heard(&e, &f, true, 5000 * MS) == EVENT_NONE, "a row first seen as done does not cheer");
     events_link(&e, 6000 * MS);
     row_t waiting[] = {row(7, ROW_WAITING, true, "gamma")};
     f = frame(1, waiting);
-    check(events_heard(&e, &f, 6100 * MS) == EVENT_WAIT, "an alert in the first table wins over hello");
+    check(events_heard(&e, &f, true, 6100 * MS) == EVENT_WAIT, "an alert in the first table wins over hello");
     expect_view(&e, 6100 * MS, EVENT_WAIT, "gamma", 0, "the alert shows instead of hello");
 }
 
@@ -114,10 +114,10 @@ static void test_priority(void)
     check(!events_start(&e, EVENT_HELLO, "", 1000 * MS), "hello is dropped while an alert shows");
     row_t running[] = {row(1, ROW_RUNNING, false, "beta")};
     rows_frame_t f = frame(1, running);
-    events_heard(&e, &f, 1100 * MS);
+    events_heard(&e, &f, true, 1100 * MS);
     row_t done[] = {row(1, ROW_DONE, false, "beta")};
     f = frame(1, done);
-    check(events_heard(&e, &f, 1200 * MS) == EVENT_NONE, "a cheer from the table is dropped during an alert");
+    check(events_heard(&e, &f, true, 1200 * MS) == EVENT_NONE, "a cheer from the table is dropped during an alert");
     expect_view(&e, 1200 * MS, EVENT_WAIT, "alpha", 1200, "the alert keeps showing");
     check(events_start(&e, EVENT_CHEER, "beta", 6000 * MS), "cheer starts once the alert closed");
     check(events_start(&e, EVENT_CHEER, "gamma", 7000 * MS), "an equal event replaces the shown one");
@@ -133,11 +133,37 @@ static void test_priority(void)
     check(!events_kind("none", &kind) && !events_kind("", &kind), "none and empty are not event names");
 }
 
-int main(void)
+static void test_dark_screen(void)
 {
-    test_fresh_alerts();
-    test_cheer_and_hello();
-    test_priority();
+    events_t e;
+    events_init(&e, 0);
+    events_link(&e, 0);
+    row_t running[] = {row(1, ROW_RUNNING, false, "alpha")};
+    rows_frame_t f = frame(1, running);
+    check(events_heard(&e, &f, false, 100 * MS) == EVENT_NONE, "a dark screen does not wave hello");
+    expect_view(&e, 100 * MS, EVENT_NONE, "", 0, "no hello is queued for later");
+    row_t done[] = {row(1, ROW_DONE, false, "alpha")};
+    f = frame(1, done);
+    check(events_heard(&e, &f, false, 200 * MS) == EVENT_NONE, "a dark screen does not cheer");
+    expect_view(&e, 200 * MS, EVENT_NONE, "", 0, "no cheer is queued for later");
+    row_t waiting[] = {row(1, ROW_WAITING, true, "alpha")};
+    f = frame(1, waiting);
+    check(events_heard(&e, &f, false, 300 * MS) == EVENT_WAIT, "a dark screen still alerts on a fresh waiting row");
+    events_init(&e, 400 * MS);
+    row_t failed[] = {row(2, ROW_ERROR, true, "beta")};
+    f = frame(1, failed);
+    check(events_heard(&e, &f, false, 500 * MS) == EVENT_ERROR, "a dark screen still alerts on a fresh error row");
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "dark") == 0) {
+        test_dark_screen();
+    } else {
+        test_fresh_alerts();
+        test_cheer_and_hello();
+        test_priority();
+    }
     if (failures == 0) {
         printf("ALL PASSED\n");
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "events.h"
@@ -22,3 +23,15 @@ void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame);
 void app_rows_lose(void);
 bool app_start_event(event_kind_t kind, const char *name);
 void app_get_rows(rows_table_t *table, int64_t *now_us);
+
+typedef struct {
+    bool usb;
+    bool pretend_battery;
+    bool dark;
+    int64_t idle_us;
+    int64_t quiet_us;
+} app_power_t;
+
+void app_get_power(app_power_t *out);
+void app_set_idle(int64_t idle_us);
+void app_pretend_battery(bool on);

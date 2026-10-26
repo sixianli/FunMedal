@@ -420,6 +420,29 @@ def test_alert_on_host(case, theme, screen_tools, screen_artifacts):
     error = shot("error", ("error", 900, "SiBlog"))
     covered = changed_pixels(calm["rgb"], risen["rgb"])
     assert len(covered) > W * H // 4, len(covered)
+
+
+@pytest.mark.parametrize("case", ["[SC-9] on battery the screen dims after five quiet minutes, a computer keeps "
+                                  "it lit, alerts, keys and plugging in light it, a finished session does not, and "
+                                  "minutes alone are no change"])
+def test_power_on_host(case, tmp_path):
+    binary = tmp_path / "test_power"
+    build(HOST / "test_power.c", binary, [FIRMWARE_MAIN / "power.c"])
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("case", ["[SC-9] a dark screen still alerts on fresh waiting and error rows but neither "
+                                  "cheers nor waves hello"])
+def test_dark_events_on_host(case, tmp_path):
+    binary = tmp_path / "test_events"
+    build(HOST / "test_events.c", binary, [FIRMWARE_MAIN / "events.c"])
+    result = subprocess.run([str(binary), "dark"], capture_output=True, text=True)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout
+    assert "ALL PASSED" in result.stdout
     assert changed_pixels(risen["rgb"], error["rgb"])
     moved = changed_pixels(rising["rgb"], risen["rgb"])
     assert moved and inside(moved, risen["alert"]), (risen["alert"], moved[:10])

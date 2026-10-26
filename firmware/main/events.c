@@ -117,7 +117,7 @@ static const row_t *pick(const rows_frame_t *frame, const events_t *events, even
     return cheer;
 }
 
-event_kind_t events_heard(events_t *events, const rows_frame_t *frame, int64_t now_us)
+event_kind_t events_heard(events_t *events, const rows_frame_t *frame, bool lit, int64_t now_us)
 {
     event_kind_t kind;
     const row_t *row = pick(frame, events, &kind);
@@ -127,6 +127,9 @@ event_kind_t events_heard(events_t *events, const rows_frame_t *frame, int64_t n
     for (int i = 0; i < frame->shown; i++) {
         events->ids[i] = frame->rows[i].id;
         events->states[i] = (uint8_t)frame->rows[i].state;
+    }
+    if (!lit && kind != EVENT_WAIT && kind != EVENT_ERROR) {
+        return EVENT_NONE;
     }
     if (kind == EVENT_NONE && hello) {
         return events_start(events, EVENT_HELLO, "", now_us) ? EVENT_HELLO : EVENT_NONE;

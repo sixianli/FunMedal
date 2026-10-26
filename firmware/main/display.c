@@ -1,5 +1,7 @@
 #include "display.h"
 
+#include <stdatomic.h>
+
 #include "board.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
@@ -25,6 +27,7 @@ static SemaphoreHandle_t free_strips;
 static SemaphoreHandle_t lock;
 static display_config_t current;
 static uint32_t generation;
+static atomic_int backlight_percent;
 
 static bool on_color_done(esp_lcd_panel_io_handle_t handle, esp_lcd_panel_io_event_data_t *data, void *ctx)
 {
@@ -75,6 +78,12 @@ void display_backlight(int percent)
     }
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (uint32_t)(1023 * percent / 100));
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    atomic_store(&backlight_percent, percent);
+}
+
+int display_backlight_percent(void)
+{
+    return atomic_load(&backlight_percent);
 }
 
 esp_err_t display_init(const display_config_t *config)

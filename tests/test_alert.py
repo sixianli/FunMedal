@@ -16,7 +16,9 @@ CHEER_SHOWS_S = 3.0
 THEMES = (0, 1, 2, 3)
 FIRMWARE_MAIN = ROOT / "firmware" / "main"
 KEY_PRESSES = [f"key {key} {how}" for key in ("ok", "up", "down") for how in ("press", "long")]
-ON_KEY_CALLS = {"app_get_scene", "on_pairing_key", "app_set_theme", "screen_next_theme"}
+ON_KEY_CALLS = {"wake", "app_get_scene", "on_pairing_key", "app_set_theme", "screen_next_theme"}
+WAKE_CALLS = {"xSemaphoreTake", "locked_touch", "esp_timer_get_time", "xSemaphoreGive", "xTaskNotifyGive"}
+TOUCH_CALLS = {"power_touch"}
 
 
 def card_events(card, start):
@@ -187,6 +189,8 @@ def test_no_key_decides(case, run_dir):
     ble = (FIRMWARE_MAIN / "ble_link.c").read_text(encoding="utf-8")
     on_key = function_body(main, "on_key")
     pairing = function_body(main, "on_pairing_key")
+    wake_calls = set(re.findall(r"\b(\w+)\s*\(", function_body(main, "wake"))) - {"if"}
+    touch_calls = set(re.findall(r"\b(\w+)\s*\(", function_body(main, "locked_touch"))) - {"if"}
     calls = set(re.findall(r"\b(\w+)\s*\(", on_key)) - {"if"}
     pairing_calls = set(re.findall(r"\b(\w+)\s*\(", pairing)) - {"if"}
     table = ble[ble.index("static const struct ble_gatt_svc_def services[]"):]
@@ -199,11 +203,13 @@ def test_no_key_decides(case, run_dir):
                      if re.search(r"ble_gatts_notify|ble_gatts_indicate|ble_gatts_chr_updated|ble_gattc_\w+", text))
     words = sorted(name for name, text in sources.items() if re.search(r"\b(approve|deny|DECISION|PROMPT)\b", text))
     summary = {"entries": entries, "on_key_calls": sorted(calls), "pairing_calls": sorted(pairing_calls),
+               "wake_calls": sorted(wake_calls), "touch_calls": sorted(touch_calls),
                "characteristics": characteristics, "senders": senders, "decision_words": words,
                "version_reads": re.findall(r"os_mbuf_append\([^;]*;", version)}
     write_summary(run_dir, summary)
     assert calls == ON_KEY_CALLS, summary
     assert pairing_calls == {"ble_link_confirm_pairing"}, summary
+    assert wake_calls == WAKE_CALLS and touch_calls == TOUCH_CALLS, summary
     assert entries == 2, summary
     assert [(uuid, cb) for uuid, cb, _ in characteristics] == [("version_uuid", "version_access"),
                                                                ("rows_uuid", "rows_access")], summary

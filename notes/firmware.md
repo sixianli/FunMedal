@@ -19,11 +19,12 @@
 
 - **显示**：2026-10-25（状态卡片实施计划 Task 3d）起屏幕上是任务板（第一套主题“游戏任务板”）：顶栏，下面一行一个会话，最多 6 行，每行写项目名和状态（等你、出错、在跑、答完了），会话超过 6 个时顶栏右边写“+N”；没连上 Mac 时写“未连接”，连着但没有会话时写“没有会话”。2026-10-25（Task 5）起屏幕上一直有一个角色在动，见“角色”一节。同日（Task 4）起有四套主题：任务板、街机厅、漫画分格、控制塔，按一下中间的键（`up`）换下一套，换到控制塔后再按回到任务板。换主题 1 秒后把主题号写进 NVS（芯片里掉电不丢的小存储区，命名空间 `funmedal`、键 `theme`），所以断电重开还是上次的主题；读不到时是任务板。连按几下只在最后一下的 1 秒后写一次。显示任务每 100 ms 看一次画面，只重画和上次不一样的横条，见“只重画变了的部分”。以前的单个小人画面和它的生成脚本同日删了。
 - **提醒**：2026-10-26（Task 6）起，会话新进入“等你”或“出错”时，卡片上弹提醒卡片、角色冒头，喇叭“叮咚”两声；会话从“在跑”变成“答完了”时底部弹小条、角色欢呼；刚连上 Mac 时角色挥手说“连上了”。见“提醒”一节。
+- **熄屏**：2026-10-26（Task 7）起，只用电池时 5 分钟没有变化就关掉背光、停止画屏；有会话新进入“等你”或“出错”、按任意键、插回电脑时亮屏。见“熄屏”一节。
 - **按键**：每 10 ms 读一次 GPIO0 的电压，按电压认出是哪个键；连续 3 次读到同一个键才算数，用来滤掉抖动（按键接触瞬间电压来回跳）。按下、按住 0.7 秒、松开各报一次。
 - **USB 串口命令**：Mac 上的测试程序通过 USB 串口（卡片用 USB 线连 Mac 时出现的文字通道）读卡片手上的会话表、截取画面、读按键电压，见“USB 串口命令”。
 - **蓝牙收状态**：卡片是 BLE（低功耗蓝牙）外设，Mac 上的桥接程序连上后写入会话表，卡片照着表画任务板。服务编号、怎么连和桥接程序见 [bridge.md](bridge.md)（FM-13）。
 
-还不能做的：睡眠省电；读电池电量；原厂的电子名片功能。FM-14 的按键批准、拒绝和 FM-15 的录音做过，2026-10-24 起拿掉了，见 [approval.md](approval.md) 和 [voice.md](voice.md) 开头。
+还不能做的：睡眠省电（只用电池时只关屏，CPU 不睡，见“熄屏”一节）；读电池电量；原厂的电子名片功能。FM-14 的按键批准、拒绝和 FM-15 的录音做过，2026-10-24 起拿掉了，见 [approval.md](approval.md) 和 [voice.md](voice.md) 开头。
 
 ## 怎么编译和烧录
 
@@ -72,7 +73,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | 任务 | 优先级 | 做什么 | 代码 |
 | --- | --- | --- | --- |
 | 按键 | 6 | 每 10 ms 读一次电压，认出按键，报按键事件；配对画面里的按键也在这里处理（见 [approval.md](approval.md)），其他时候按键只从串口报出来；串口 `key` 命令注入的按键同样在这个任务里处理。栈 4096 字节（FM-14 从 3072 加大，见 approval.md 的“实测结果”第 5 条） | [key_input.c](../firmware/main/key_input.c)、[keys.c](../firmware/main/keys.c)、[key_levels.c](../firmware/main/key_levels.c) |
-| 显示 | 5 | 每 100 ms 一步，提醒里角色冒头时每 50 ms 一步（有人改了画面时立刻多走一步）：算出这一步要显示的画面，只重画和上次不一样的横条；连着 Mac 但 90 秒没收到 ROWS 时主动断开（报 `BLE silent rc=<码>`） | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c)、[dirty.c](../firmware/main/dirty.c) |
+| 显示 | 5 | 每 100 ms 一步，提醒里角色冒头时每 50 ms 一步（有人改了画面时立刻多走一步）：算出这一步要显示的画面，只重画和上次不一样的横条；连着 Mac 但 90 秒没收到 ROWS 时主动断开（报 `BLE silent rc=<码>`）；只用电池时管熄屏和亮屏，熄屏期间不画，每 1 秒醒来看一次要不要亮屏、要不要断开 | [main.c](../firmware/main/main.c)、[scene.c](../firmware/main/scene.c)、[display.c](../firmware/main/display.c)、[dirty.c](../firmware/main/dirty.c) |
 | 放声音 | 6 | 平时等着；有提醒时现算“叮咚”两声、经 I2S（主控和音频芯片之间的数字音频线）送给喇叭，见“提醒”一节。任务名 `chime`，栈 4096 字节（3072 字节时实测只剩 1188 字节） | [audio.c](../firmware/main/audio.c)、[chime.c](../firmware/main/chime.c) |
 | 串口命令 | 4 | 读 USB 串口上的命令并回复。栈 5120 字节：`snap` 在这个任务里把提醒画面也画一遍，2026-10-26 实测 4096 字节时只剩 928 字节，低于测试要求的 1024 | [console.c](../firmware/main/console.c) |
 | 蓝牙（`nimble_host`） | 21 | ESP-IDF 自带的 NimBLE 蓝牙协议栈建的任务，优先级由它定（`configMAX_PRIORITIES - 4`）；收到 ROWS 写入和配对过程的消息时，都在这个任务里处理并报一行；ROWS 的检查和会话表在 [rows.c](../firmware/main/rows.c) | [ble_link.c](../firmware/main/ble_link.c)、[rows.c](../firmware/main/rows.c) |
@@ -100,7 +101,7 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 
 每条命令一行。卡片对每条命令回一行，开头是 `OK <命令名>` 表示成功，`ERR <命令名>` 表示失败并说明原因；不认识的命令回 `ERR unknown command <命令名>`。Mac 端按命令名对回复，不会把上一条命令迟到的回复当成这一条的。
 
-另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，收到的会话表第一行的状态变了时 `STATE <状态>`（`waiting`、`error`、`working`、`done`，空表是 `idle`），按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE rows total=<总数> shown=<行数> fresh=<0 或 1>`（收到一张会话表）、`BLE heartbeat`（收到心跳）、`BLE reject rows`、`BLE reject rows length`（会话表不合规矩或超过 226 字节，被拒绝，规矩见 [bridge.md](bridge.md) 的“卡片怎么收状态”）、`BLE silent rc=<码>`（90 秒没收到会话表或心跳，卡片主动断开）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。配对相关的行（`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”；同一处写的 `PROMPT`、`DECISION` 两种行 2026-10-24 随批准一起删了。开机时音频芯片初始化失败会报 `AUDIO unavailable <错误名>`，这时 `tone` 用不了，其他照常。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。提醒开始时报 `EVENT <wait|error|cheer|hello> <项目名>`（连上 Mac 后的挥手没有项目名，`alert hello` 不写项目名时是 `FunMedal`）；放提示音时先报 `AUDIO play <wait|error>`（静音时后面多一个 `muted`），放完报 `AUDIO done <wait|error>`，被新的提醒打断时报 `AUDIO cut <wait|error>`，送 I2S 出错时报 `AUDIO failed <wait|error> rc=<错误名>`，喇叭用不了时报 `AUDIO skipped <wait|error> rc=<错误名>`，这时提醒照常画、不出声。换主题时报 `THEME <主题号>`（0 任务板，1 街机厅，2 漫画分格，3 控制塔），1 秒后写完 NVS 报 `THEME saved <主题号> rc=<结果>`，`rc=ESP_OK` 表示写成功了。
+另外卡片会主动报这些行：开机时 `READY funmedal-0.1`，收到的会话表第一行的状态变了时 `STATE <状态>`（`waiting`、`error`、`working`、`done`，空表是 `idle`），按键时 `KEY <press|long|release> <ok|up|down>`，`adc` 命令期间的 `ADC …`，以及蓝牙的 `BLE rows total=<总数> shown=<行数> fresh=<0 或 1>`（收到一张会话表）、`BLE heartbeat`（收到心跳）、`BLE reject rows`、`BLE reject rows length`（会话表不合规矩或超过 226 字节，被拒绝，规矩见 [bridge.md](bridge.md) 的“卡片怎么收状态”）、`BLE silent rc=<码>`（90 秒没收到会话表或心跳，卡片主动断开）、`BLE connected`、`BLE disconnected reason=<原因码>`、`BLE connect failed status=<码>`，以及 Mac 写来连接协议版本时的 `LINK peer=<Mac 的版本> own=<卡片的版本> match=<1 或 0>`（版本格式不对时是 `BLE reject version`，见 [bridge.md](bridge.md) 的“先核对版本”）。配对相关的行（`BLE sec`、`BLE subscribe`、`PAIR`）见 [approval.md](approval.md) 的“蓝牙协议”；同一处写的 `PROMPT`、`DECISION` 两种行 2026-10-24 随批准一起删了。开机时音频芯片初始化失败会报 `AUDIO unavailable <错误名>`，这时 `tone` 用不了，其他照常。开机时还会报 `GATT layout same` 或 `GATT layout changed subscribers=<数>`，给 Mac 发“功能表变了”的通知时报 `GATT changed sent range=<起>-<止>`，Mac 确认收到时报 `GATT changed acked`，新功能表记好时报 `GATT layout saved`（失败时是 `GATT layout unsaved err=<错误码>`），见下文“换固件后 Mac 还用旧的功能表”。提醒开始时报 `EVENT <wait|error|cheer|hello> <项目名>`（连上 Mac 后的挥手没有项目名，`alert hello` 不写项目名时是 `FunMedal`）；放提示音时先报 `AUDIO play <wait|error>`（静音时后面多一个 `muted`），放完报 `AUDIO done <wait|error>`，被新的提醒打断时报 `AUDIO cut <wait|error>`，送 I2S 出错时报 `AUDIO failed <wait|error> rc=<错误名>`，喇叭用不了时报 `AUDIO skipped <wait|error> rc=<错误名>`，这时提醒照常画、不出声。熄屏时报 `POWER dark`，亮屏时报 `POWER lit <原因>`（`alert` 来了等你或出错，`key` 按了键，`usb` 插回电脑，`pairing` 要确认配对或要看配对码，`idle` 用 `idle` 命令改了熄屏时间）。换主题时报 `THEME <主题号>`（0 任务板，1 街机厅，2 漫画分格，3 控制塔），1 秒后写完 NVS 报 `THEME saved <主题号> rc=<结果>`，`rc=ESP_OK` 表示写成功了。
 
 两类输出的发送规则不同：
 
@@ -130,6 +131,9 @@ esptool.py --chip esp32c3 -p /dev/cu.usbmodem11301 write_flash 0x0 firmware-back
 | `alert <wait|error|cheer|hello> [项目名]` | 不等真会话，直接来一次提醒，演示和测试用。项目名不写时是 `FunMedal`，最长 32 字节。先报 `EVENT …`，再回 `OK alert <种类> <项目名>`；正在显示更重要的提醒时（比如出错提醒时来 `cheer`）回 `ERR alert a more important event is showing`；参数不对回 `ERR alert usage: …` |
 | `tone <50-7000 赫兹> <10-5000 毫秒> [DAC 音量 0-255]` | 让喇叭放一段正弦波测试音，放完回 `OK tone <赫兹> <毫秒> <音量>`。音量写进 ES8311（卡片上的音频芯片）的 0x32 号寄存器，0xBF 是不放大也不衰减，不写时用 0xBF；放完改回 0，也就是静音。参数不对时回 `ERR tone usage: …`。Task 0 用它确认喇叭这条路通不通 |
 | `mute <on|off>` | 测试时让喇叭不出声：`on` 以后提示音和 `tone` 照常走一遍，但音量寄存器一直是 0。回 `OK mute <on|off>`，参数不对回 `ERR mute usage: mute <on|off>`。只记在内存里，重启后是 `off` |
+| `idle <5-3600 秒>` | 把熄屏前等的时间从 5 分钟改短或改长，演示和测试用；熄着屏时顺便亮屏。回 `OK idle <秒>`，参数不对回 `ERR idle usage: …`。只记在内存里，重启后回到 300 秒 |
+| `power` | 回 `OK power usb=<yes|no> battery=<real|pretend> screen=<on|off> backlight=<百分比> idle_s=<秒> quiet_ms=<毫秒>`：`usb` 是现在有没有接着电脑，`battery=pretend` 表示用了下面的 `power battery on`，`screen` 是屏幕亮没亮，`backlight` 是最近一次设给背光的亮度，`quiet_ms` 是离上次“变化”过了多久 |
+| `power battery <on|off>` | `on` 以后就算接着电脑也按只用电池处理，好在 USB 线连着时测熄屏；`off` 恢复按 USB 判断，熄着屏时会因为“插回电脑”亮屏。回 `OK power battery <on|off>`。只记在内存里，重启后是 `off` |
 | `reboot` | 回 `OK reboot`，0.1 秒后重启卡片。重启时 USB 串口不断开，Mac 上打开着的串口会接着收到开机日志和 `READY` |
 
 Mac 端用 [tools/cardlink.py](../tools/cardlink.py) 收发，例如 `.venv/bin/python tools/cardlink.py info`。
@@ -163,6 +167,17 @@ PRD 验收第 3 条：会话要你做决定或出错时，卡片要让人注意�
 - **怎么重画**：提醒开始和收起时整屏重画一次；冒头的 8 帧里只重画和冒头范围（各主题 `.alert` 里的裁剪框）重叠的横条；冒完以后画面不动，一次也不重画。显示任务冒头期间每 50 ms 走一步，其他时候还是 100 ms。
 - **声音**：不放真人说话声，只放两声提示音“叮咚”，免得突然吓到人（负责人 2026-10-26 改的需求，见 PRD Business Rules）。声音由 [chime.c](../firmware/main/chime.c) 在卡片上现算，固件里不嵌声音文件：等你是 G5（784 Hz）0.22 秒接 C6（1046.5 Hz）0.6 秒，往上走；出错是 C6 0.22 秒接 G5 0.6 秒，往下走。每个音前 5 毫秒从无到有，之后按指数变轻（短音 0.10 秒、长音 0.18 秒变成原来的 1/e，约 37%），音色是基音加 0.3 倍的高八度，最响处是 16 位采样满幅的 1/4。算法和负责人听过、选定的样音一样，宿主测试逐个采样对照，误差不超过 2。开机时算一张 1024 点的正弦表，放的时候每个采样只做查表插值和整数乘除，不调用软件浮点函数（原因见下文“测试音为什么一开始放得很慢”）。[audio.c](../firmware/main/audio.c) 的放声音任务每次算 256 个采样、复制成左右两声道送给 I2S；音量寄存器放之前设成 0xBF（不放大也不衰减），放完等 0.2 秒改回 0。新的提醒来了，正在放的那段从下一块 256 个采样起不再往下算，已经送进 I2S 缓冲区的最多 0.16 秒旧音会放完，接着放新的。`tone` 和提示音共用喇叭，同一时间只有一个在放。
 - **测试时静音**：`mute on` 以后，放提示音和 `tone` 时音量寄存器一直是 0，别的照常走一遍，`AUDIO play` 行末尾多一个 `muted`，有这个词的那一段从头到尾都没出声。正在放的时候才来 `mute on`，从下一块 256 个采样起变成 0。只记在内存里，重启后回到 `off`。测试用的串口读取工具（[tools/cardwatch.py](../tools/cardwatch.py)，`CardWatcher(mute=True)`）每次打开串口和每次看到 `READY` 行都发一次 `mute on`，卡片测试开头检查 `info` 里是 `mute=on`，所以跑测试时喇叭不出声（负责人 2026-10-26：“你可以不要放声音吗？吵到人了。”）。
+
+## 熄屏（2026-10-26 起，实施计划 Task 7）
+
+PRD 验收第 7 条：只用电池放 5 分钟，屏幕熄灭；这时来一个“等你”，屏幕亮起、角色冒头、有声音。
+
+- **接着电脑还是只用电池**：只看 ESP-IDF 的 `usb_serial_jtag_is_connected()`。它看的是 USB 总线上每毫秒一次的“帧开始”信号（SOF，电脑的 USB 口在工作时一直发）最近有没有收到，不管有没有程序打开串口。只接充电器时收不到，按只用电池处理（负责人 2026-10-24 定）。接着电脑时屏幕一直亮；电脑睡着、USB 口停发这个信号时，也按只用电池处理，5 分钟后熄屏。
+- **什么算“变化”**：会话表的内容变了（多一行、少一行、状态、名字、项目 thread 标记、总数变了；心跳、分钟数变大、“新进入”位不算），按了键，正在显示提醒、欢呼或挥手，正在放提示音。拔掉 USB 那一刻重新开始计时。代码在 [power.c](../firmware/main/power.c)。
+- **熄屏**：只用电池时连续 5 分钟没有变化，背光调到 0，显示任务不再画屏。蓝牙照常连着，CPU 不睡，会话表照常收。
+- **亮屏**：有会话新进入“等你”或“出错”（`alert wait|error` 命令也算）、按任意键、插回电脑、要确认配对或要看配对码时亮屏。亮屏时先把整屏按现在的画面重画一遍，再开背光，免得先闪出熄屏前的旧画面；来的是提醒时照常提醒、放提示音。亮屏后重新计 5 分钟。
+- **熄着屏时不做的事**：会话“答完了”不亮屏，也不留到亮屏时再欢呼；连上 Mac 不挥手。熄着屏时按的那一下键只用来亮屏，不换主题、不确认配对。最后这两条和要确认配对时亮屏，是设计规格第 7 节没写、实现时加的：熄着屏看不见画面，按下去换了主题或确认了配对人也不知道。
+- **为什么不睡眠**：蓝牙连着时能不能进 light sleep（一种 CPU 空闲时浅睡、醒来很快的省电模式），ESP-IDF v5.5 的文档说法互相矛盾，要实机验证；第一版只关背光，估算能撑 10 小时以上。记在 [docs/backlog/BL-20261026-001-light-sleep-on-battery.md](../docs/backlog/BL-20261026-001-light-sleep-on-battery.md)。
 
 ## 画一整屏要多久（2026-10-24 实测）
 
@@ -345,6 +360,9 @@ GATT 是蓝牙设备对外公布的功能表：卡片有哪些可以读写的项
 | 同一文件的经桥接程序提醒（SC-5） | 经 Mac 桥接程序：连上后挥手；权限请求后 3 秒内报 `EVENT wait`；每张带新进入位的表正好一次提醒，有出错时用出错那句；在跑变答完了报 `EVENT cheer` | 要，还要先退出常驻桥接程序 |
 | 同一文件的真实会话（SC-5、SC-11） | 真实 Claude Code 会话要权限时，3 秒内提醒并放完提示音；然后用串口把三个键各按一下、各长按一下，权限请求仍在等，终端里的确认框还在 | 要，还要先退出常驻桥接程序 |
 | 同一文件的源码检查（SC-11） | 固件源码里，按键只用来确认配对和换主题；卡片的蓝牙服务只有“版本”（可读可写）和“会话表”（只写）两项，没有通知，可读的只有连接协议版本；固件里没有发通知、写给 Mac 的调用，也没有 approve、deny、`DECISION`、`PROMPT` 这些词 | 不要 |
+| 同一文件的熄屏（SC-9） | 在 Mac 上编译 [power.c](../firmware/main/power.c)，跑 [tests/host/test_power.c](../tests/host/test_power.c)：接着电脑一直亮；只用电池 5 分钟没变化熄屏，差 1 微秒都不熄；变化、提醒和放声音重新计时；熄着屏时“答完了”不亮屏，提醒、按键、插回电脑亮屏；拔掉 USB 时重新计时；`idle` 改时间；分钟数和“新进入”位不算变化。另跑 `test_events.c dark`：熄着屏时等你和出错照常提醒，欢呼和挥手不来 | 不要 |
+| [test_power.py](../tests/test_power.py) 的熄屏和亮屏（SC-9） | 经 Mac 桥接程序开 2 个会话，`power battery on`、`idle 5` 后 5–7 秒报 `POWER dark`、背光是 0；熄着屏时一个会话答完了，不亮屏、不欢呼，`draws` 一次没加；权限请求后 3 秒内报 `POWER lit alert`、背光回到 100、`draws` 加了，并且照常 `EVENT wait`、放完（静音的）提示音；再熄屏后串口按一下中间键，只报 `POWER lit key`，主题不变；再熄屏后 `power battery off`，报 `POWER lit usb` | 要，还要先编好桥接程序 |
+| 同一文件的接着电脑（SC-9） | 接着电脑、`idle 5` 后等 7 秒，屏幕一直亮，没有 `POWER dark` | 要 |
 | [test_rows.py](../tests/test_rows.py) 的画屏速度（SC-6） | 经 Mac 桥接程序开 6 个会话（等你、出错、两个在跑、两个答完了，其中一个名字长到要截短），卡片上 6 行都在之后，用 `bench` 各画 5 次一格 36 px、一条 80 px、6 格合成的一段，每次都要不超过 100 ms，用时存进结果目录；画之前先看 1 秒，显示任务要画 5 到 12 次（动画每 100 ms 走一步），画失败次数不变 | 要，还要先退出常驻桥接程序 |
 | 同一文件的换主题和断电保持（SC-8） | 经 Mac 桥接程序开 4 个会话（等你、出错、在跑、答完了），用 `key up press` 模拟按 4 下中间键：每下都报下一个主题号，0.8–1.5 秒后报一次存好，截图和宿主渲染器画的同一主题逐像素相同；再快速按两下只存一次；重启卡片后 `info` 里还是最后的主题；测完换回任务板 | 要，还要先退出常驻桥接程序 |
 | [test_card_display.py](../tests/test_card_display.py) 的“未连接”画面（SC-10） | 没有桥接程序连着时，卡片截图和宿主渲染器按截图里的 `tick` 画出的图逐字节相同，`mode` 是 `unlinked` | 要 |

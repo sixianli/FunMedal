@@ -3,6 +3,7 @@
 #include "app.h"
 #include "character_art.h"
 #include "audio.h"
+#include "driver/usb_serial_jtag.h"
 #include "ble_link.h"
 #include "console.h"
 #include "display.h"
@@ -17,12 +18,14 @@
 #include "link_version.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "power.h"
 #include "screen.h"
 
 #define TICK_US (THEME_TICK_MS * 1000LL)
 #define THEME_NAMESPACE "funmedal"
 #define THEME_KEY "theme"
 #define THEME_SAVE_DELAY_US 1000000LL
+#define DARK_CHECK_MS 1000
 
 static const char *TAG = "app";
 static SemaphoreHandle_t lock;
@@ -35,6 +38,9 @@ static const char *top_state = "idle";
 static rows_table_t rows_table;
 static events_t events;
 static esp_timer_handle_t theme_save_timer;
+static power_t power;
+static bool pretend_battery;
+static const char *wake_reason = "";
 
 static const display_config_t DEFAULT_DISPLAY = {
     .invert = true,
@@ -156,6 +162,53 @@ void app_set_pattern(void)
     xTaskNotifyGive(display_task_handle);
 }
 
+static bool locked_touch(bool wakes, const char *reason, int64_t now)
+{
+    bool lit = power_touch(&power, wakes, now) == POWER_LIGHT;
+    if (lit) {
+        wake_reason = reason;
+    }
+    return lit;
+}
+
+static bool wake(const char *reason)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    bool lit = locked_touch(true, reason, esp_timer_get_time());
+    xSemaphoreGive(lock);
+    if (lit) {
+        xTaskNotifyGive(display_task_handle);
+    }
+    return lit;
+}
+
+void app_get_power(app_power_t *out)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    int64_t now = esp_timer_get_time();
+    *out = (app_power_t){.usb = power.usb, .pretend_battery = pretend_battery, .dark = power.dark,
+                         .idle_us = power.idle_us, .quiet_us = now - power.quiet_since_us};
+    xSemaphoreGive(lock);
+}
+
+void app_set_idle(int64_t idle_us)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (power_set_idle(&power, idle_us, esp_timer_get_time()) == POWER_LIGHT) {
+        wake_reason = "idle";
+    }
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+}
+
+void app_pretend_battery(bool on)
+{
+    xSemaphoreTake(lock, portMAX_DELAY);
+    pretend_battery = on;
+    xSemaphoreGive(lock);
+    xTaskNotifyGive(display_task_handle);
+}
+
 void app_rows_link(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -182,8 +235,13 @@ void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
     const char *top = kind == ROWS_TABLE ? rows_top_name(frame) : NULL;
     xSemaphoreTake(lock, portMAX_DELAY);
     int64_t now = esp_timer_get_time();
+    bool differs = kind == ROWS_TABLE && (!rows_table.has_table || power_rows_differ(&rows_table.frame, frame));
     rows_heard(&rows_table, kind, frame, now);
-    event_kind_t started = kind == ROWS_TABLE ? events_heard(&events, frame, now) : EVENT_NONE;
+    event_kind_t started = kind == ROWS_TABLE ? events_heard(&events, frame, !power.dark, now) : EVENT_NONE;
+    bool alert = started == EVENT_WAIT || started == EVENT_ERROR;
+    if (differs || alert) {
+        locked_touch(alert, "alert", now);
+    }
     char name[ROWS_NAME_MAX + 1];
     memcpy(name, events.name, sizeof name);
     bool changed = top != NULL && strcmp(top, top_state) != 0;
@@ -207,7 +265,11 @@ void app_rows_heard(rows_kind_t kind, const rows_frame_t *frame)
 bool app_start_event(event_kind_t kind, const char *name)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool started = events_start(&events, kind, name, esp_timer_get_time());
+    int64_t now = esp_timer_get_time();
+    bool started = events_start(&events, kind, name, now);
+    if (started) {
+        locked_touch(kind == EVENT_WAIT || kind == EVENT_ERROR, "alert", now);
+    }
     xSemaphoreGive(lock);
     if (started) {
         xTaskNotifyGive(display_task_handle);
@@ -264,6 +326,21 @@ static uint32_t take_snapshot(scene_t *snapshot)
     return wait_ms;
 }
 
+static power_change_t check_power(const scene_t *snapshot, bool *dark, const char **reason)
+{
+    bool usb = usb_serial_jtag_is_connected();
+    bool busy = snapshot->screen.event.kind != EVENT_NONE || audio_playing();
+    xSemaphoreTake(lock, portMAX_DELAY);
+    power_change_t change = power_check(&power, usb && !pretend_battery, busy, esp_timer_get_time());
+    if (change == POWER_LIGHT) {
+        wake_reason = "usb";
+    }
+    *dark = power.dark;
+    *reason = wake_reason;
+    xSemaphoreGive(lock);
+    return change;
+}
+
 static void display_task(void *arg)
 {
     static scene_t snapshot;
@@ -272,14 +349,26 @@ static void display_task(void *arg)
     bool valid = false;
     uint32_t drawn_generation = 0;
     uint32_t wait_ms = 0;
+    bool lit = true;
     for (;;) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
         drop_silent_link();
         wait_ms = take_snapshot(&snapshot);
+        bool dark;
+        const char *reason;
+        if (check_power(&snapshot, &dark, &reason) == POWER_DIM) {
+            display_backlight(0);
+            console_event("POWER dark\n");
+        }
+        if (dark) {
+            lit = false;
+            wait_ms = DARK_CHECK_MS;
+            continue;
+        }
         region_t regions[DIRTY_MAX_REGIONS];
         int count = scene_regions(&snapshot, regions);
         uint32_t generation = display_generation();
-        bool same_panel = valid && generation == drawn_generation;
+        bool same_panel = lit && valid && generation == drawn_generation;
         span_t spans[DIRTY_MAX_REGIONS];
         int span_count = dirty_spans(drawn, same_panel ? drawn_count : 0, regions, count, spans);
         if (span_count == 0) {
@@ -287,6 +376,11 @@ static void display_task(void *arg)
         }
         esp_err_t err = display_draw_spans(&snapshot, spans, span_count, NULL, NULL);
         valid = err == ESP_OK;
+        if (!lit) {
+            display_backlight(100);
+            lit = true;
+            console_event("POWER lit %s\n", reason);
+        }
         if (valid) {
             memcpy(drawn, regions, sizeof(region_t) * (size_t)count);
             drawn_count = count;
@@ -313,6 +407,9 @@ void app_set_pairing(scene_pairing_t pairing, uint32_t code)
     xSemaphoreTake(lock, portMAX_DELAY);
     scene.pairing = pairing;
     scene.pair_code = code;
+    if (pairing != SCENE_PAIRING_NONE) {
+        locked_touch(true, "pairing", esp_timer_get_time());
+    }
     xSemaphoreGive(lock);
     xTaskNotifyGive(display_task_handle);
 }
@@ -351,6 +448,9 @@ static void on_pairing_key(const scene_t *now, const key_event_t *event)
 
 static void on_key(const key_event_t *event)
 {
+    if (event->type == KEY_EVENT_PRESS && wake("key")) {
+        return;
+    }
     scene_t now;
     app_get_scene(&now);
     on_pairing_key(&now, event);
@@ -369,6 +469,7 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
     lock = xSemaphoreCreateMutex();
     events_init(&events, esp_timer_get_time());
+    power_init(&power, esp_timer_get_time());
     scene.theme = load_theme();
     const esp_timer_create_args_t save_args = {.callback = save_theme, .name = "theme_save"};
     ESP_ERROR_CHECK(esp_timer_create(&save_args, &theme_save_timer));

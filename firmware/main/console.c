@@ -28,6 +28,8 @@
 #define WRITE_LIMIT_US (2000 * 1000LL)
 #define EVENT_WAIT_MS 5
 #define REBOOT_DELAY_MS 100
+#define IDLE_MIN_S 5
+#define IDLE_MAX_S 3600
 
 static const char *TAG = "console";
 static _Atomic uint32_t events_dropped;
@@ -401,6 +403,37 @@ static void mute_command(const char *args)
     console_printf("OK mute %s\n", args);
 }
 
+static void idle_command(const char *args)
+{
+    char *end = NULL;
+    long seconds = strtol(args, &end, 10);
+    if (end == args || *end != '\0' || seconds < IDLE_MIN_S || seconds > IDLE_MAX_S) {
+        console_printf("ERR idle usage: idle <%d-%d seconds>\n", IDLE_MIN_S, IDLE_MAX_S);
+        return;
+    }
+    app_set_idle(seconds * 1000000LL);
+    console_printf("OK idle %ld\n", seconds);
+}
+
+static void power_command(const char *args)
+{
+    if (strcmp(args, "battery on") == 0 || strcmp(args, "battery off") == 0) {
+        app_pretend_battery(strcmp(args, "battery on") == 0);
+        console_printf("OK power %s\n", args);
+        return;
+    }
+    if (args[0] != '\0') {
+        console_printf("ERR power usage: power [battery on|off]\n");
+        return;
+    }
+    app_power_t power;
+    app_get_power(&power);
+    console_printf("OK power usb=%s battery=%s screen=%s backlight=%d idle_s=%lld quiet_ms=%lld\n",
+                   power.usb ? "yes" : "no", power.pretend_battery ? "pretend" : "real", power.dark ? "off" : "on",
+                   display_backlight_percent(), (long long)(power.idle_us / 1000000),
+                   (long long)(power.quiet_us / 1000));
+}
+
 static void bench_command(const char *args)
 {
     int y0 = 0;
@@ -531,6 +564,10 @@ static void handle(char *line)
         tone_command(args);
     } else if (strcmp(line, "mute") == 0) {
         mute_command(args);
+    } else if (strcmp(line, "idle") == 0) {
+        idle_command(args);
+    } else if (strcmp(line, "power") == 0) {
+        power_command(args);
     } else if (strcmp(line, "backlight") == 0) {
         display_backlight(atoi(args));
         console_printf("OK backlight %d\n", atoi(args));

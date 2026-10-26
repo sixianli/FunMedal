@@ -38,7 +38,7 @@ typedef struct {
 void events_init(events_t *events, int64_t now_us);
 void events_link(events_t *events, int64_t now_us);
 void events_lose(events_t *events, int64_t now_us);
-event_kind_t events_heard(events_t *events, const rows_frame_t *frame, int64_t now_us);
+event_kind_t events_heard(events_t *events, const rows_frame_t *frame, bool lit, int64_t now_us);
 bool events_start(events_t *events, event_kind_t kind, const char *name, int64_t now_us);
 void events_view(const events_t *events, int64_t now_us, event_view_t *out, int64_t *daily_us);
 const char *events_name(event_kind_t kind);

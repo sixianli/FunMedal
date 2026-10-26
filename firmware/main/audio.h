@@ -11,3 +11,4 @@ esp_err_t audio_tone(int hz, int ms, int volume);
 esp_err_t audio_play(chime_kind_t kind);
 void audio_mute(bool on);
 bool audio_muted(void);
+bool audio_playing(void);
