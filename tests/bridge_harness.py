@@ -275,7 +275,9 @@ def start_and_mark(bridge, card, *extra, timeout=5.0):
 
 
 def card_states(card, start):
-    return [line.split()[1] for _, line in card.since(start) if line.startswith("STATE ")]
+    lines = [line for _, line in card.since(start)]
+    first_frame = next((i for i, line in enumerate(lines) if line.startswith("BLE rows ")), len(lines))
+    return [line.split()[1] for line in lines[first_frame:] if line.startswith("STATE ")]
 
 
 def rows_writes(card, start):
