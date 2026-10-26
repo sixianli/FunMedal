@@ -241,6 +241,31 @@ def test_live_waits_survive_check(case, card, bridge, run_dir, fake):
     assert result["exit"] == 0, result
 
 
+@pytest.mark.parametrize("case", ["[SC-20] a waiting answer to a check that began before the permission prompt was "
+                                  "rejected in the terminal does not bring the waiting row back"])
+def test_check_older_than_hang_up_does_not_count(case, card, bridge, run_dir, fake):
+    begin = start(bridge, card, fake)
+    bridge.hook(event("UserPromptSubmit", "s", prompt="x"))
+    bridge.settle(["running"])
+    run = bridge.hook_async(event("PermissionRequest", "s", **bash("make deploy")))
+    bridge.settle(["waiting"])
+    after = fake.plays(("SLOW", {"s": "waiting"}), {"s": "busy"})
+    fake.wait_calls(after, 1)
+    asked = time.time()
+    run.proc.kill()
+    run.proc.wait(5.0)
+    bridge.settle(["running"])
+    status = hold_still(bridge, fake, ["running"], 3)
+    entries = bridge.log_entries()
+    closed = [e["t"] for e in entries if e.get("kind") == "wait_closed"]
+    slow = next(e for e in entries if e.get("kind") == "agents" and e["t"] > asked)
+    write_summary(run_dir, {"status": status, "states": card_states(card, begin), "closed": closed, "slow": slow,
+                            "asked": asked})
+    assert closed and closed[0] < slow["t"], (closed, slow)
+    assert "s" not in slow.get("seen", {}), slow
+    assert card_states(card, begin) == ["working", "waiting", "working"]
+
+
 @pytest.mark.parametrize("case", ["[SC-20] a session missing from the answer, a failing check and an unreadable "
                                   "answer change nothing and show in the status, and no check runs with no "
                                   "sessions"])

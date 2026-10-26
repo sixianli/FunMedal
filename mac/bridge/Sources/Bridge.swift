@@ -186,6 +186,8 @@ final class Bridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             if wait.outcome == nil {
                 wait.outcome = "hung_up"
                 waits.removeAll { $0 === wait }
+                lastEvent[wait.session] = Date().timeIntervalSince1970
+                answers[wait.session] = nil
                 sessions.hungUp(session: wait.session, hook: wait.id)
                 refresh()
             }
