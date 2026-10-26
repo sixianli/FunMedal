@@ -247,6 +247,8 @@ def test_check_older_than_hang_up_does_not_count(case, card, bridge, run_dir, fa
     begin = start(bridge, card, fake)
     bridge.hook(event("UserPromptSubmit", "s", prompt="x"))
     bridge.settle(["running"])
+    card.wait_for(lambda line: line.startswith("STATE working"), 5.0, begin)
+    working = card.mark()
     run = bridge.hook_async(event("PermissionRequest", "s", **bash("make deploy")))
     bridge.settle(["waiting"])
     after = fake.plays(("SLOW", {"s": "waiting"}), {"s": "busy"})
@@ -259,11 +261,11 @@ def test_check_older_than_hang_up_does_not_count(case, card, bridge, run_dir, fa
     entries = bridge.log_entries()
     closed = [e["t"] for e in entries if e.get("kind") == "wait_closed"]
     slow = next(e for e in entries if e.get("kind") == "agents" and e["t"] > asked)
-    write_summary(run_dir, {"status": status, "states": card_states(card, begin), "closed": closed, "slow": slow,
+    write_summary(run_dir, {"status": status, "states": card_states(card, working), "closed": closed, "slow": slow,
                             "asked": asked})
     assert closed and closed[0] < slow["t"], (closed, slow)
     assert "s" not in slow.get("seen", {}), slow
-    assert card_states(card, begin) == ["working", "waiting", "working"]
+    assert card_states(card, working) == ["waiting", "working"]
 
 
 @pytest.mark.parametrize("case", ["[SC-20] a session missing from the answer, a failing check and an unreadable "
