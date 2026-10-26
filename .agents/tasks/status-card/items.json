@@ -44,7 +44,8 @@
     "G40": "once",
     "G41": "once",
     "G42": "once",
-    "G43": "once"
+    "G43": "once",
+    "G44": "once"
   },
   "decision_docs": [
     "docs/prd-v0.1.md",
@@ -725,7 +726,7 @@
         },
         {
           "type": "user",
-          "ref": null,
+          "ref": "G44",
           "question": "当着你演示了合并 ×N、顶栏“还有 N 个等你”和新的排序，认可吗？"
         }
       ],
