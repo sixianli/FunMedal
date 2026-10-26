@@ -206,54 +206,54 @@ static void test_counts(void)
     at = row(data, at, 8, ROW_ERROR, ROWS_HIDDEN_MINUTES, "hermes");
     at = row(data, at, 9, ROW_RUNNING, ROWS_HIDDEN_MINUTES, "shop");
     at = row(data, at, 10, ROW_DONE, 12, "notes");
-    check(parse(data, at, &out) == ROWS_TABLE, "[SC-23] ten sessions merged into six rows parse");
-    check(out.total == 10 && out.shown == 6 && out.urgent == 8, "[SC-23] merged table keeps sessions and urgent");
+    check(parse(data, at, &out) == ROWS_TABLE, "ten sessions merged into six rows parse");
+    check(out.total == 10 && out.shown == 6 && out.urgent == 8, "merged table keeps sessions and urgent");
     check(out.rows[0].count == 3 && out.rows[1].count == 2 && out.rows[1].fresh && out.rows[3].count == 1,
-          "[SC-23] each row keeps its session count");
+          "each row keeps its session count");
 
     at = urgent_frame(data, 9, 6, 0, 9);
     for (int i = 0; i < 6; i++) {
         at = row(data, at, (uint8_t)(i + 1), ROW_WAITING, ROWS_HIDDEN_MINUTES, "w");
     }
-    check(parse(data, at, &out) == ROWS_TABLE && out.urgent == 9, "[SC-23] six waiting rows of nine waiting parse");
+    check(parse(data, at, &out) == ROWS_TABLE && out.urgent == 9, "six waiting rows of nine waiting parse");
 
     at = urgent_frame(data, 4, 2, 0, 4);
     at = counted_row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, 3, "a");
     at = row(data, at, 2, ROW_ERROR, ROWS_HIDDEN_MINUTES, "b");
-    check(parse(data, at, &out) == ROWS_TABLE, "[SC-23] two rows holding all four sessions parse");
+    check(parse(data, at, &out) == ROWS_TABLE, "two rows holding all four sessions parse");
 
     at = urgent_frame(data, 4, 2, 0, 2);
     at = row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, "a");
     at = row(data, at, 2, ROW_ERROR, ROWS_HIDDEN_MINUTES, "b");
-    expect_invalid(data, at, "[SC-23] fewer sessions than total while every row fits");
+    expect_invalid(data, at, "fewer sessions than total while every row fits");
     at = urgent_frame(data, 3, 1, 0, 3);
     at = counted_row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, 4, "a");
-    expect_invalid(data, at, "[SC-23] more sessions in rows than total");
+    expect_invalid(data, at, "more sessions in rows than total");
     at = urgent_frame(data, 1, 1, 0, 1);
     at = counted_row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, 0, "a");
-    expect_invalid(data, at, "[SC-23] a row of no session");
+    expect_invalid(data, at, "a row of no session");
     at = frame(data, 2, 1, 0);
     at = counted_row(data, at, 1, ROW_RUNNING, ROWS_HIDDEN_MINUTES, 2, "a");
-    expect_invalid(data, at, "[SC-23] merged running row");
+    expect_invalid(data, at, "merged running row");
     at = frame(data, 2, 1, 0);
     at = counted_row(data, at, 1, ROW_DONE, 4, 2, "a");
-    expect_invalid(data, at, "[SC-23] merged done row");
+    expect_invalid(data, at, "merged done row");
     at = urgent_frame(data, 1, 1, 0, 2);
     at = row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, "a");
-    expect_invalid(data, at, "[SC-23] more urgent sessions than sessions");
+    expect_invalid(data, at, "more urgent sessions than sessions");
     at = urgent_frame(data, 6, 6, 0, 5);
     for (int i = 0; i < 6; i++) {
         at = row(data, at, (uint8_t)(i + 1), ROW_RUNNING, ROWS_HIDDEN_MINUTES, "r");
     }
-    expect_invalid(data, at, "[SC-23] more running and done sessions in rows than sessions that are not urgent");
+    expect_invalid(data, at, "more running and done sessions in rows than sessions that are not urgent");
     at = urgent_frame(data, 2, 2, 0, 1);
     at = row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, "a");
     at = row(data, at, 2, ROW_ERROR, ROWS_HIDDEN_MINUTES, "b");
-    expect_invalid(data, at, "[SC-23] more urgent rows than urgent sessions");
+    expect_invalid(data, at, "more urgent rows than urgent sessions");
     at = urgent_frame(data, 2, 2, 0, 2);
     at = row(data, at, 1, ROW_WAITING, ROWS_HIDDEN_MINUTES, "a");
     at = row(data, at, 2, ROW_RUNNING, ROWS_HIDDEN_MINUTES, "b");
-    expect_invalid(data, at, "[SC-23] an urgent session missing while every row fits");
+    expect_invalid(data, at, "an urgent session missing while every row fits");
 }
 
 static void test_table_life(void)
