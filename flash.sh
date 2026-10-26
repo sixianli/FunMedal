@@ -72,4 +72,4 @@ fi
 echo "flash.sh: 写入 firmware/prebuilt 里编译好的固件。"
 (cd "$PREBUILT" && "$ESPTOOL" --chip esp32c3 -p "$PORT" write_flash $(cat flash_args)) \
     || fail "写入失败。卡片上的程序可能不完整，再运行一次这个脚本；还不行就照 README“恢复原厂固件”写回备份。"
-echo "flash.sh: 写好了，卡片会自己重启，屏幕上出现像素小人。"
+echo "flash.sh: 写好了，卡片会自己重启，屏幕上出现任务板。"

@@ -88,11 +88,12 @@ Claude Code 会话 ──hooks(stdin JSON)──▶ funmedal-bridge hook ──U
 hook 进程连上、报一声“等你”、然后只等不答，**永远不回答决定**：去掉 `Hook.swift:85-98` 的两个 `answer` 和卡片按键那一路。选择题和批准框一样走 `PermissionRequest` → `PostToolUse`；计划确认（`ExitPlanMode`）还没实测，走 `PreToolUse` → `PostToolUse`。
 
 - **沙箱命令的网络请求**：官方 hooks 参考页写明，沙箱里的命令要访问网络时弹出的权限请求不运行 `PermissionRequest` hook。这类弹窗只能靠 `Notification` 事件的 `permission_prompt` 类型捕获，它在弹窗出现约 6 秒后才发。所以 `Notification` 作为兜底：收到就记 `notification` 这条“等你”，被 `PostToolUse`、`UserPromptSubmit`、`Stop` 清掉。不把 `Notification` 当主信号的原因就是那 6 秒。`idle_prompt` 类型要等 60 秒且后台有代理时不发，不用。
-- **已知限制**：终端允许了一条要跑很久的命令，卡片会一直显示“等你”直到命令跑完（没有事件能区分“允许了在跑”和“还在等”）；用户按 Esc 打断生成时 `Stop` 不触发（hooks 参考页 Stop 一节原文），会话停在“在跑”直到下一句话。两条 PRD 都没要求处理，记为已知限制。
+- **已知限制和已处理的**：终端允许了一条要跑很久的命令，卡片会一直显示“等你”直到命令跑完（没有事件能区分“允许了在跑”和“还在等”），PRD 没要求处理，记为已知限制。用户按 Esc 打断生成时 `Stop` 不触发（hooks 参考页 Stop 一节原文），只靠 hook 事件的话会话会停在“在跑”；这一条 PRD 要求处理（[SOURCE: docs/prd-v0.1.md#business-rules] 里“会话其实已经停下”一条），由第 3 节“`claude agents` 核对”负责：连续两次说“闲着”就把“在跑”改成“答完了”。
+- **下一步框里的问题**（下一步框是 Claude Code 电脑端在一轮结束时显示的小结框，里面可以带一个问题）：电脑端用工具 `mcp__ccd_turn__wrap_up` 显示它，它的输入里有一个 `ask` 字段放问题。hook 进程看到这个工具的事件、`ask` 不是空白时，只给桥接程序多带一个布尔值 `asks`，**问题和小结的文字不传**（`Hook.swift` 的 `asksQuestion`）。桥接程序收到这个工具的 `PostToolUse` 且 `asks` 为真时，给该会话记一条 `question` 类的“等你”记录（`Sessions.swift`）；之后的 `Stop` 不清它，只有 `UserPromptSubmit`（用户回复了）、`StopFailure`、`SessionEnd` 清，所以这一行在“答完了”的同时一直显示“等你”，直到用户回复。依据：[SOURCE: docs/prd-v0.1.md#business-rules] 里“`等你`不区分权限请求……”一条（负责人 2026-10-25 定）。
 - 最可能怎么坏：`AskUserQuestion` 弹出时也会触发 `PermissionRequest`（T0 终端实测：`PreToolUse` 后 0.07 秒触发，约 6 秒后还有一条 `Notification`）；`ExitPlanMode` 有官方示例说会（hooks 指南“Auto-approve specific permission prompts”）。两条路都记“等你”、键不同，所以重复触发只会多一条记录，各自的结束信号去掉各自的，不会漏报。T0 桌面 App 实测：写文件的批准框和选择题都触发 `PermissionRequest`，和终端一样，所以 `AskUserQuestion` 从 `PreToolUse` 那一路去掉；`ExitPlanMode` 两边都没测，`PreToolUse` 这一路只为它留着（结果见 `notes/claude-code.md`“状态卡片开工实测：桌面 App”）。
 - 依据：事件和字段来自 hooks 参考页 `https://code.claude.com/docs/en/hooks` 的 Hook lifecycle、PermissionRequest、PreToolUse、Notification、Stop、StopFailure、SessionEnd 各节和“沙箱网络请求不运行 PermissionRequest hook”一句；`PermissionRequest` 的输入里没有 `tool_use_id`，所以它只能用 `toolKey` 配对。
 
-**项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的项目根目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），取最后一级目录名作为 `project` 字段发给桥接程序；没有这个变量时用 `SessionStart` 事件里的 `cwd` 的最后一级。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。为什么不用每个事件的 `cwd`：它跟着 Claude 的 `cd` 走，同一会话会在卡片上换名字。**工作副本**（git worktree，桌面 App 给每个会话单开的一份代码副本）：hooks 参考页说会话中途进工作副本时 `CLAUDE_PROJECT_DIR` 不变；T0 桌面 App 实测：一开始就在工作副本里启动的会话，`cwd` 是 `<项目>/.claude/worktrees/<名字>`，`CLAUDE_PROJECT_DIR` 是主项目目录，所以桌面 App 里直接取它的最后一级就对。用户自己 `cd` 进一个工作副本目录再启动 `claude` 时，`CLAUDE_PROJECT_DIR` 就是那个工作副本目录，所以规则仍定为“项目名 = 主仓库的目录名”：目录里的 `.git` 是文件而不是目录时，读它的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名；不用跑 `git` 子进程。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
+**项目名。** hook 进程读环境变量 `CLAUDE_PROJECT_DIR`（会话启动时的目录，Claude 在会话里 `cd` 或进工作副本也不变，hooks 参考页 Hook input 一节），对每个事件都重新算一遍：从该事件的 `cwd` 往上找最近的带 `.git`（文件或目录都算）的文件夹，最远找到 `CLAUDE_PROJECT_DIR` 下面一级，不越过启动的文件夹；找到了就用它，找不到（或 `cwd` 不在启动的文件夹里面）就用 `CLAUDE_PROJECT_DIR` 本身（`Hook.swift` 的 `project`、`nearestRepository`）。得到文件夹后取项目名（`projectName`、`mainRepository`）：这个文件夹里的 `.git` 是文件而不是目录时（它是 git 工作副本，桌面 App 给每个会话单开的一份代码副本），读那个文件的 `gitdir:` 一行（指向 `<主仓库>/.git/worktrees/<名字>`），取 `<主仓库>` 的目录名，所以工作副本和主仓库显示同一个名字；否则取这个文件夹的最后一级。不跑 `git` 子进程。没有 `CLAUDE_PROJECT_DIR` 时只有 `SessionStart` 事件用它自己的 `cwd` 取名，别的事件不带 `project`，桥接程序沿用已经记下的名字。这样定是为了会话在上一级文件夹启动、进里面某个仓库干活时（比如 claude.ai 项目派到这台 Mac 上的会话），卡片显示的是正在干活的那个仓库，在仓库根目录启动的普通会话名字不变；同一个会话里 `cd` 进另一个仓库，名字会跟着换。规则的原文在 [SOURCE: docs/prd-v0.1.md#business-rules] 的第一条。只发目录名、不发完整路径，所以 `tests/test_bridge.py:18` 的白名单 `HOOK_FIELDS` 加一项 `project`，`notes/bridge.md:123`“不传工作目录”改成“只传目录名”。T0 桌面 App 实测：一开始就在工作副本里启动的会话，`cwd` 是 `<项目>/.claude/worktrees/<名字>`，`CLAUDE_PROJECT_DIR` 是主项目目录，按上面的规则两条路都得到主项目名。两个不同目录同名（比如两处都叫 `app`）就显示两行一样的名字，和 PRD“同一项目两个会话显示两行一样的名字”一致，不加父目录区分。
 
 **幽灵会话。** Claude Code 被杀掉时有没有 `SessionEnd`，文档没写。T0 终端实测：收到 SIGTERM 或 SIGHUP（关终端窗口就是这种）时有，`reason: other`；收到 SIGKILL（系统直接结束进程）时没有。终端里 hook 的父进程就是 `claude` 本身。现有每条消息都带 `claude_pid`（`Hook.swift:49-54`，hook 进程的父进程号）。T0 桌面 App 实测：hook 的父进程是这个会话自己的 claude 命令行进程（上一级是 Claude.app），每个会话一个，所以 pid 检查盯的对象是对的；但负责人在 App 里关掉会话后，既没有 `SessionEnd`，claude 进程也没有退出（最后一条事件之后 3 到 4 分钟还活着），这一行会一直显示“答完了”；归档会话时才收到 `SessionEnd`（`reason: other`），进程随即退出。桌面会话按哪个操作算关掉，见“待负责人决定的事”第 3 条。退出整个 App 没测，但不管 App 发普通退出信号（有 `SessionEnd`）还是直接结束进程（pid 检查兜底），这一行都会消失。桥接程序每 15 秒对表里每个会话的 pid 做一次 `kill(pid, 0)`，进程不在就删会话。Mac 睡眠醒来、桥接程序重启也靠这个：桥接程序每次表变化都把会话表写到 `<套接字路径>.sessions.json`，启动时读回来再用 pid 核对一遍。为什么不用“多久没事件就删”：答完了的会话按 PRD 要一直显示到关掉，可能几小时没事件。
 
@@ -103,6 +104,17 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 **会话表**（改 `mac/bridge/Sources/Sessions.swift`）：每个会话记 `rowId`（1 字节，桥接程序分配，从 1 到 255 循环、跳过 0，会话删除后它的号不马上复用）、`project`、`activity`（在跑 / 答完了 / 出错）、`waiting`（“等你”记录的键的集合，每条记录带 hook 连接和建立时刻）、`since`（进入当前状态的时刻）、`pid`、`visible`（收到过 `UserPromptSubmit` 才为真）。去掉 `pending`、`allowedOnCard`、`answeredOnCard`、`rejectedInTerminal`、`followsCardAllow`（`Sessions.swift:5-23、74-85`）。
 
 **排序和截断**在 Mac：等你 → 出错 → 在跑 → 答完了；同状态按项目名的 Unicode 码位顺序；取前 6 行。连同总数一起发，总数大于 6 时卡片顶栏显示“+N”。格子型主题在卡片上再截成 5 行，“+N”按总数减 5 算；Mac 照旧发 6 行，因为主题只在卡片上切换。
+
+**项目 thread。** Claude Code 项目（几个 thread 归在一个项目里，由项目的协调会话把任务转给各个 thread）里派出来的 thread，卡片上要和普通本地 thread 区分开（[SOURCE: docs/prd-v0.1.md#business-rules] 里“Claude Code 项目”一条）。hook 进程在 `UserPromptSubmit` 事件的 `prompt` 以 `<relay from="coordinator"` 开头时，给桥接程序多带一个布尔值 `project_thread`，**消息内容不传**（`Hook.swift`）；桥接程序一旦收到就把该会话记成项目 thread，直到会话关掉（`Sessions.swift`），ROWS 里这一行的状态字置 bit6（`mac/bridge/Sources/Rows.swift` 的 `projectBit`，固件 `firmware/main/rows.h` 的 `ROWS_PROJECT_BIT`）。卡片怎么画见第 5 节。
+
+**`claude agents` 核对。** 有些情况 hook 事件不会来：生成回答时按 Esc 打断（`Stop` 不触发）、桥接程序停着的那段时间里会话弹出了批准框、沙箱命令的网络请求在终端里被拒绝。所以桥接程序每 15 秒在后台跑一次 Claude Code 自带的 `claude agents --json`（列出这台 Mac 上每个会话是在忙、在等人还是闲着，`Bridge.swift` 的 `checkAgents`、`agentsAnswered`，`Sessions.swift` 的 `observe`），用来补上没有 hook 的等待。规则（依据 [SOURCE: docs/prd-v0.1.md#business-rules] 里“会话其实已经停下”一条，负责人 2026-10-25 定）：
+
+- 说“在等人”而这一行没有任何“等你”记录：补一条“等你”记录，照常提醒。
+- 连续两次说“闲着”：去掉没有 hook 连着的“等你”记录，下一步框里的问题除外；这一行是“在跑”的改成“答完了”。
+- 连续两次说“在忙”：同样去掉没有 hook 连着的“等你”记录，下一步框里的问题除外。
+- 不算数的答案：这次核对开始之后，该会话又送来了 hook 事件，或者终端里答掉了权限弹窗（hook 连接断开，`ended`）；这时命令的答案可能已经过时，丢掉。列表里没有这个会话、命令运行失败、输出读不懂，也都不改。只说一次“在忙”或只说一次“闲着”时同样不改。
+
+因此按 Esc 打断后，这一行最多约 30 秒后从“在跑”变成“答完了”。
 
 **“新进入”标记。** 每行带一个标记位“本帧新进入等你或出错”，只在桥接程序看到该会话从别的显示状态变成等你或出错时置位一次；重连、重启后重发整表、因为别的行变化而重发时都不置位。卡片只用这个位决定要不要提醒，不自己比较前后两帧。为什么不让卡片比较：卡片按“项目名 + 状态”比较时，两个同名会话一个已经在等你、另一个新进入，看起来和上一帧一样，会漏提醒（PRD:46 允许两行同名）。
 
@@ -116,7 +128,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 ### 4. 蓝牙协议
 
-**特征值**：删 STATE（1002）、PROMPT（1003）、DECISION（1004）、AUDIO（1005）、VOICE（1006）、VOICE_IMAGE（1007）六个；保留 VERSION（1008）；新增 ROWS（`6D2F1009-6B0E-4A8E-9A4B-46756E4D6564`），Mac 写、带响应，权限和现在一样要求加密加认证（`firmware/main/ble_link.c:33-40` 的 `SECURE_FLAGS`）。`LINK_VERSION` 从 2 升到 3（`firmware/main/link_version.h`、`Bridge.swift:90`），两边不等时现有的“版本不配”画面照旧。固件里现有的“功能表指纹”（`ble_link.c:305` 的 `layout_fingerprint`，存 NVS 键 `gatt_layout` `:346`，不同就发 Service Changed `:378`）会在特征值表变化时通知 Mac。Mac 这边 `Bridge.swift` 现在只有连上后的 `discoverServices`（`:644`）和 `didDiscoverServices`（`:656`），没有实现接收这个通知的 `didModifyServices` 回调；刷固件时蓝牙必然断开、重连后本来就会重新发现，所以旧版能用，但要补上这个回调（收到就重新 `discoverServices`），并在 Task 2 的真机检查里加一条“刷新固件后 Mac 不重启也能重连并写 ROWS”。为什么不复用 1002 的 UUID 换内容：旧版 Mac 程序会把新内容当旧格式解析；新 UUID 加版本号让不配的两边一眼看出来。
+**特征值**：删 STATE（1002）、PROMPT（1003）、DECISION（1004）、AUDIO（1005）、VOICE（1006）、VOICE_IMAGE（1007）六个；保留 VERSION（1008）；新增 ROWS（`6D2F1009-6B0E-4A8E-9A4B-46756E4D6564`），Mac 写、带响应，权限和现在一样要求加密加认证（`firmware/main/ble_link.c:33-40` 的 `SECURE_FLAGS`）。`LINK_VERSION` 先从 2 升到 3，2026-10-26 状态字加了“项目 thread”位后又升到 4，现在两边都是 4（`firmware/main/link_version.h`、`mac/bridge/Sources/Bridge.swift` 的 `linkVersion`），两边不等时现有的“版本不配”画面照旧。固件里现有的“功能表指纹”（`ble_link.c:305` 的 `layout_fingerprint`，存 NVS 键 `gatt_layout` `:346`，不同就发 Service Changed `:378`）会在特征值表变化时通知 Mac。Mac 这边 `Bridge.swift` 现在只有连上后的 `discoverServices`（`:644`）和 `didDiscoverServices`（`:656`），没有实现接收这个通知的 `didModifyServices` 回调；刷固件时蓝牙必然断开、重连后本来就会重新发现，所以旧版能用，但要补上这个回调（收到就重新 `discoverServices`），并在 Task 2 的真机检查里加一条“刷新固件后 Mac 不重启也能重连并写 ROWS”。为什么不复用 1002 的 UUID 换内容：旧版 Mac 程序会把新内容当旧格式解析；新 UUID 加版本号让不配的两边一眼看出来。
 
 **ROWS 的内容**：二进制，一次写完，不分包。
 
@@ -126,7 +138,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 1     1     总会话数（0 表示“没有会话”）
 2     1     本帧行数 shown，0–6
 3     1     标志位：bit0 = heartbeat（心跳帧，只有这 4 字节，不改画面）；其余写 0
-4…    每行  行号(1, 1–255) + 状态(1: 低 4 位 1 等你 2 出错 3 在跑 4 答完了，bit7 = 本帧新进入等你或出错) + 已过分钟(2, 小端, 65535 表示不显示) + 名字字节数(1, ≤ 32) + 名字(UTF-8)
+4…    每行  行号(1, 1–255) + 状态(1: 低 4 位 1 等你 2 出错 3 在跑 4 答完了，bit7 = 本帧新进入等你或出错，bit6 = `0x40` 这一行是项目 thread，其余位写 0) + 已过分钟(2, 小端, 65535 表示不显示) + 名字字节数(1, ≤ 32) + 名字(UTF-8)
 ```
 
 最长 4 + 6 × (1 + 1 + 2 + 1 + 32) = 4 + 6 × 37 = 226 字节。依据：本机实测 ATT MTU 517，Mac 每次最多写 512 字节（`notes/ble-link.md:32`；固件 `CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512`），226 远低于此，所以不分包。名字按 UTF-8 字符边界截到 32 字节，卡片按像素宽再截并加“…”。为什么不用文本加制表符：要转义名字里的制表符和换行，二进制定长头更好校验；为什么不分包、不加序号确认：分包要处理丢包和乱序，蓝牙带响应写本身保证送达和顺序，226 字节一次写完就都不需要。
@@ -147,6 +159,8 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 另外三套主题负责人 2026-10-25 看 Task 4 的 PNG 和动图后定下：街机厅照现稿（黑底、像素字、扫描线、左下角一闪一闪的“INSERT COIN”），另加一条：出错那行像效果图一样左右抖，每 100 毫秒重画这一行；漫画分格照现稿：顶栏黑底白字，没有会话的格子只画虚线框，底部写“未完待续”；控制塔照现稿：灯直径 36 px，“答完了”的模块只写“N 分钟前”（写“答完了 N 分钟前”一格放不下），底部写“CONTROL · ONLINE”。格子型主题角色住的最后一格在 Task 5 画成角色的家（漫画是黑边浅黄格，控制塔是写着“CREW”的模块）。具体数值在 `firmware/main/theme_arcade.c`、`theme_comic.c`、`theme_tower.c` 开头的常量里。
 
+**项目 thread 的 P 贴纸**：状态字带 bit6 的行，名字前面画一个橙色 P 贴纸（橙色底、白圈、黑边、右下黑影、粗体白色 P），四套主题都画，普通本地 thread 没有；公用的画法是 `firmware/main/draw.c` 的 `draw_badge`，各主题在自己画名字之前调用，名字往右让出贴纸的宽度。依据：[SOURCE: docs/prd-v0.1.md#business-rules] 里“Claude Code 项目”一条（负责人 2026-10-25 看过两套样图后选了“橙色贴纸”）。
+
 格子型主题的角色一直住在最后一格（PRD:50、PRD:69-70）。这张表里的每个数字都要先用下面说的“Mac 上渲染 PNG”出图给负责人看过再写进代码，这是负责人定的规则：画面选择看图不看字。2026-10-25 负责人看了“5 个会话”“6 个会话（有 +1）”“没有会话”三种画面后定下现在的数字。提醒和“没有会话”“没连上”这些整屏消息时，格子型主题的角色站在大消息框里的右下角，列表型主题仍在底栏。具体数值在各主题文件的 `.home`（平时）和 `.message`（整屏消息时）两项里：角色框、裁剪范围、问号气泡和 zZ 的位置。
 
 **每套主题画什么**（照 PRD:67-70，主题只改画法不改信息）：
@@ -166,7 +180,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 | 像素 | 12 px，1 位 | 同上 | 缝合像素字体 Fusion Pixel 12px（OFL 许可；下载地址、版本、SHA-256 和许可证全文在实施时记进 `third_party/`，和 Noto 同一写法） | 3850 × 18 B ≈ 70 KB |
 | 大字 | 30 px，4 位 | 数字、拟声词、状态词、整屏提示共约 40 字 | 站酷快乐体 ZCOOL KuaiLe（OFL；同样记来源和校验值） | 40 × 450 B ≈ 18 KB |
 
-生成仍用 `tools/gen_fonts.py`，字符来源从“扫 scene.c 字面量”改成“ASCII + GB2312 一级表 + 扫源码字面量”。**输出改成二进制文件加索引**（每个字的码位、宽、位图偏移），由 CMake 的 `EMBED_FILES`（ESP-IDF 把文件原样嵌进程序的机制）放进固件，生成到 `build/` 下，不进仓库；现有 `font.c`、`font_text.c`（203,726 字节）、`font_large.c`（475,051 字节）删掉。为什么不再生成 C 数组：三套字库会是约 6 MB 的源码，编译慢、diff 不可读。宿主测试要断言两套全字库能画出 GB2312 一级表的每一个字。项目名里一级表以外的字（繁体、日文、emoji）显示成“□”，这是接受的限制。放弃“Mac 把项目名渲染成图发过来”：换主题在卡片上完成，Mac 不知道当前主题用哪种字体，就得每个名字发四份图。
+生成仍用 `tools/gen_fonts.py`，字符来源从“扫 scene.c 字面量”改成“ASCII + GB2312 一级表 + 扫源码字面量”。**输出改成二进制文件加索引**（每个字的码位、宽、位图偏移），由 CMake 的 `EMBED_FILES`（ESP-IDF 把文件原样嵌进程序的机制）放进固件，生成到 `build/` 下，不进仓库；旧的汉字位图数据文件 `font_text.c`（203,726 字节）、`font_large.c`（475,051 字节）删掉；`font.c` 留着，改成读新二进制字库和索引的代码，`font_data.c` 把嵌进固件的三个二进制文件交给它。为什么不再生成 C 数组：三套字库会是约 6 MB 的源码，编译慢、diff 不可读。宿主测试要断言两套全字库能画出 GB2312 一级表的每一个字。项目名里一级表以外的字（繁体、日文、emoji）显示成“□”，这是接受的限制。放弃“Mac 把项目名渲染成图发过来”：换主题在卡片上完成，Mac 不知道当前主题用哪种字体，就得每个名字发四份图。
 
 **主题的代码组织**：一个 `theme_t` 结构体，含颜色表、`draw_header`、`draw_slot`（画一个会话格子，参数是会话、格子序号、动画相位）、`draw_empty`、`draw_footer`、角色常驻位和提醒卡片的位置尺寸、动画节拍。四套主题是四个结构体实例，画线、圆角矩形、文字、斜纹、扫描线、精灵贴图是公用的绘图原语。为什么不写四份渲染函数：PRD 说主题只改画法不改信息，公用的“会话 → 格子”的循环写一份，主题只填怎么画一格。
 
@@ -197,7 +211,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 - 最大的风险原来是放音通路从未验证过。Task 0 已实测（`notes/hardware.md`“没有找到的”里喇叭功放那一条）：GPIO2 送 I2S 数据、ES8311 DAC 音量设成 0xBF，喇叭放出了连续稳定的 1 kHz 测试音，负责人听过，不需要另开功放。剩下要注意的是卡片上实时生成或解码声音时不能逐点调用软件浮点函数：第一版测试音逐点调用 `sinf`，算 1 秒的音要 4 秒，声音是断的（`notes/firmware.md`“测试音为什么一开始放得很慢”）。
 
-**素材包**（SC-15）：目录结构固定为 `pack/character/01-lying.png … 10-cheer.png`；原来还有 `pack/voice/wait.mp3、error.mp3`，2026-10-26 声音改成卡片现算的提示音后不再用。仓库里 `assets/default/` 放默认素材：十张用脚本画的简笔人形，不含负责人家人的任何形象和声音；负责人本机的是 `private-assets/pack/`，由现有的 `private-assets/character/real/` 十张图按这个结构整理一次（Task 5 的第一步，原目录不动）。CMake 变量 `FUNMEDAL_ASSET_PACK` 指定目录，默认 `assets/default`，构建时跑 `gen_assets.py` 生成到 `build/` 下，生成物不进仓库（`build/` 已在 `.gitignore`）。`tests/test_release.py` 的隐私扫描加一条：仓库里任何文件都不和 `private-assets` 下的文件字节相同；本机没有 `private-assets` 时这条测试报 skipped 而不是 passed。这条扫描只能挡住原文件被误放进仓库，挡不住转换后的位图（哈希已经变了）；真正的保障是生成物只落在 `build/`，加上 `tests/test_assets.py` 断言默认素材包构建出来的位图和私有包的不同。
+**素材包**（SC-15）：目录结构固定为 `pack/character/01-lying.png … 10-cheer.png`；原来还有 `pack/voice/wait.mp3、error.mp3`，2026-10-26 声音改成卡片现算的提示音后不再用。仓库里 `assets/default/` 放默认素材：十张用脚本画的简笔人形，不含负责人家人的任何形象和声音；负责人本机的是 `private-assets/pack/`，由现有的 `private-assets/character/real/` 十张图按这个结构整理一次（Task 5 的第一步，原目录不动）。CMake 变量 `FUNMEDAL_ASSET_PACK` 指定目录，默认 `assets/default`，构建时跑 `gen_assets.py` 生成到 `build/` 下，生成物不进仓库（`build/` 已在 `.gitignore`）。`tests/test_assets.py` 加一条：仓库里任何文件都不和 `private-assets` 下的文件字节相同；本机没有 `private-assets` 时这条测试报 skipped 而不是 passed。这条扫描只能挡住原文件被误放进仓库，挡不住转换后的位图（哈希已经变了）；真正的保障是生成物只落在 `build/`，加上 `tests/test_assets.py` 断言默认素材包构建出来的位图和私有包的不同。
 
 **删掉像素小人**：`pet_art.c/h`、`scene.c` 的 `render_pet`（`:393`、`:445`）、`scene.h` 的引用、`tools/gen_pet.py`。
 
@@ -211,7 +225,7 @@ hook 进程连上、报一声“等你”、然后只等不答，**永远不回�
 
 ### 8. 拆掉批准和按住说话
 
-固件：删 `prompt.c/h`、`voice.c/h` 里的录音部分（ES8311 和 I2S 初始化挪进 `audio.c`）、`voice_codec.c/h`、`pet_art.c/h`、`scene.c` 的 `render_prompt`、`render_voice`、`draw_voice_image`、`render_pet` 和相关字符串、`main.c` 的 `decide`、`held_approval`、`on_ok_key` 的批准分支、`voice_press/release`、`ble_link.c` 的六个旧特征值和 `ble_link_send_decision/send_audio/incoming_image`、`console.c` 的 `mic` 和 `ble decision` 命令、`font.c`/`font_text.c`/`font_large.c`；`tests/host/test_prompt.c`、`test_voice_codec.c` 删，解码测试新写在 `tests/host/test_audio.c`。宿主测试加一条：固件源码里不存在任何从按键到蓝牙写 allow/deny 的路径（grep 级断言，SC-11）。
+固件：删 `prompt.c/h`、`voice.c/h` 里的录音部分（ES8311 和 I2S 初始化挪进 `audio.c`）、`voice_codec.c/h`、`pet_art.c/h`、`scene.c` 的 `render_prompt`、`render_voice`、`draw_voice_image`、`render_pet` 和相关字符串、`main.c` 的 `decide`、`held_approval`、`on_ok_key` 的批准分支、`voice_press/release`、`ble_link.c` 的六个旧特征值和 `ble_link_send_decision/send_audio/incoming_image`、`console.c` 的 `mic` 和 `ble decision` 命令、旧字库数据文件 `font_text.c`/`font_large.c`（`font.c` 留着，改成读新字库）；`tests/host/test_prompt.c`、`test_voice_codec.c` 删，提示音合成的测试新写在 `tests/host/test_chime.c`。宿主测试加一条：固件源码里不存在任何从按键到蓝牙写 allow/deny 的路径（grep 级断言，SC-11）。
 Mac 和插件：见第 2、3 节。
 测试：`tests/test_approval.py`、`test_voice.py`、`test_voice_mod.py`、`voice_audio.py` 整文件删；`bridge_harness.py` 删 `approve`、`press`、`wait_prompt`；`test_bridge.py`、`test_bridge_start.py`、`test_plugin.py`、`test_doctor.py`、`test_signing.py`、`test_release.py`、`test_no_channel.py`、`test_card_display.py`、`test_firmware_host.py`、`test_link_version.py` 删改涉及批准、语音、五种旧状态、旧特征值的用例（`test_link_version.py:34-40`、`test_bridge_start.py:181`、`test_card_display.py:49` 直接依赖 STATE 特征值）。
 保留并要继续通过的：带 `[OB-7]`、`[OB-9]`、`[OB-11]`、`[OB-12]`、`[OB-13]`、`[OB-14]`、`[OB-15]`、`[OB-17]` 标签的测试（SC-16）。**顺序**：先加 ROWS、新协议在真机上通了再删旧特征值，中间不让 OB 测试变红；`[OB-15]` 预编译固件在每个改固件的批次收尾时重新生成。
@@ -230,7 +244,7 @@ Mac 和插件：见第 2、3 节。
 | 桌面 App 里归档一个会话 | 该行 3 秒内消失 | 归档时收到的 `SessionEnd`（`reason: other`） |
 | 权限弹窗等了超过 590 秒 | 该行一直“等你” | hook 超时标记让记录保留；终端答掉后由 `PostToolUse` 或下一句话清掉 |
 | 终端允许了一条很长的命令 | 该行“等你”直到命令结束 | 已知限制 |
-| 用户按 Esc 打断生成 | 该行停在“在跑” | 已知限制，下一句话或会话关掉时恢复 |
+| 用户按 Esc 打断生成 | 该行先停在“在跑”，最多约 30 秒后变“答完了” | 桥接程序每 15 秒问一次 `claude agents --json`，连续两次说“闲着”就改（第 3 节“`claude agents` 核对”）；检查失败时仍停在“在跑”，下一句话或会话关掉时恢复 |
 | ROWS 写失败 | 画面不变 | 1 秒后重试，直到写成功 |
 | 项目名含一级汉字表以外的字 | 那个字显示“□” | 已知限制 |
 | 喇叭放音失败（I2S 或功放） | 角色照常冒头，没声音 | 开工第一步在真机验证放音，失败时不进入提醒的开发 |
@@ -242,7 +256,7 @@ Mac 和插件：见第 2、3 节。
 
 1. **Mac 上渲染 PNG 的宿主渲染器**：`tests/host/` 现在已经能用 `cc` 在 Mac 上编译固件的 C 代码（`tests/test_firmware_host.py:9-15`）。加一个 `render_png.c`，输入一份会话表、主题号和虚拟时刻，用固件同一套 `scene_render_rows` 输出 PNG。它同时服务三件事：给负责人看版面（代替 HTML 效果图）、自动测试第 4 条（7 个会话只画 6 格，被挤掉的是在跑或答完了的，SC-6）和第 10 条（连续两帧角色区像素不同，SC-12）、四套主题各渲染一张作为回归基线。
 2. **桥接程序的 pytest**（`tests/bridge_harness.py` 用假 hooks 喂真桥接程序）：会话表状态机（含 590 秒超时保留、`PostToolUse` 清除、`Notification` 兜底、`/clear` 的 `SessionEnd` 删旧行）、排序、6 行截断和总数、ROWS 编码的字节级断言、“新进入”位只置一次（含两个同名会话先后进入等你）、只在表变化时重发、30 秒心跳、pid 检查删会话、重启后读回会话表、20 条权限请求连发不丢（SC-3、SC-4、SC-5、SC-6、SC-7、SC-10 的 Mac 侧）。
-3. **固件宿主测试**（`tests/host/`）：ROWS 解析、分钟数本地累加和 59→60 分钟的档位边界、心跳 90 秒超时、角色时间线各段起止（虚拟时钟）、ADPCM 解码对拍、两套全字库覆盖 GB2312 一级表、按键到蓝牙 allow/deny 路径不存在。
+3. **固件宿主测试**（`tests/host/`）：ROWS 解析、分钟数本地累加和 59→60 分钟的档位边界、心跳 90 秒超时、角色时间线各段起止（虚拟时钟）、提示音合成和样音算法逐个采样对拍（`tests/host/test_chime.c`）、熄屏计时（`tests/host/test_power.c`）、两套全字库覆盖 GB2312 一级表、按键到蓝牙 allow/deny 路径不存在。
 4. **真机串口测试**（现有 `tools/cardwatch.py` 读串口）：`rows`、`theme`、`idle`、`alert`、`power`、`snap` 命令；测空表“没有会话”、7 行只画 6 行、断开重连不闪旧表、主题切换和断电保持（SC-8）、熄屏唤醒（SC-9）、提醒触发和声音（SC-5）。
 5. **真实 Claude Code 会话测试**（`tools/claude_session.py`）：开三个项目各一个会话看三行（SC-3）；同项目第二个会话、关掉一个（SC-4）；进入权限请求 3 秒内变“等你”并在终端答掉后恢复（SC-5）；按卡片所有键，终端里的权限弹窗仍然等着（SC-11）。
 6. **开工前的实测 T0**：一个只记日志的最小插件，在终端和桌面 App 各跑一遍，回答：`AskUserQuestion` 是否触发 `PermissionRequest`；桌面 App 里 `PermissionRequest` 是否触发；强杀 Claude Code 有没有 `SessionEnd`；`/clear` 之后 `session_id` 变不变；hook 进程里 `CLAUDE_PROJECT_DIR` 有没有值、桌面 App 的工作副本会话里它指向哪；`claude_pid` 在桌面 App 里是哪个进程、关会话后退不退出；600 秒后权限弹窗还在不在；Mac 合盖 2 分钟卡片的蓝牙连接断不断。结果记进 `notes/claude-code.md` 和 `notes/ble-link.md`，状态机按结果调整。
